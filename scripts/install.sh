@@ -22,6 +22,8 @@ echo "  - hive-mind-gateway.service running (user unit)"
 echo "  - monitor token in gateway AGENT_TOKENS with AGENT_ROLES=monitor:read"
 echo "  - curl http://localhost:8888/health succeeds"
 echo ""
+echo "Before git push, run: ./scripts/pre-publish-check.sh"
+echo ""
 echo "==> Environment check"
 set +e
 uv run python -m sm_telemetry_monitor check

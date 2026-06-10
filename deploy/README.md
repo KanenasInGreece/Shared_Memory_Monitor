@@ -1,6 +1,6 @@
 # Deployment artifacts
 
-Files here are **templates for the operator machine** — copy or install from the repo checkout; they are not imported by the Python package at runtime.
+Templates for the operator machine — not imported by the Python package at runtime.
 
 ## systemd user unit
 
@@ -8,7 +8,9 @@ Files here are **templates for the operator machine** — copy or install from t
 |------|----------------|
 | `systemd/user/shared-memory-monitor.service` | `~/.config/systemd/user/shared-memory-monitor.service` |
 
-Keeps the poll loop and dashboard running after Grok Build / SSH logout when **user linger** is on (`loginctl enable-linger $USER`).
+The template uses `@MONITOR_ROOT@` placeholders. `install-systemd-user.sh` substitutes your checkout path and copies the unit into `~/.config/systemd/user/`.
+
+Keeps poll loop + dashboard running after logout when **user linger** is enabled (`loginctl enable-linger $USER`).
 
 ### Install
 
@@ -16,12 +18,13 @@ Keeps the poll loop and dashboard running after Grok Build / SSH logout when **u
 ./scripts/install-systemd-user.sh
 ```
 
-Or manually:
+### Manual install
 
 ```bash
+ROOT="$(pwd)"
 mkdir -p ~/.config/systemd/user
-cp deploy/systemd/user/shared-memory-monitor.service ~/.config/systemd/user/
-# Edit paths in the unit if your checkout is not at ~/grok-labs/projects/shared-memory-monitor
+sed "s|@MONITOR_ROOT@|$ROOT|g" deploy/systemd/user/shared-memory-monitor.service \
+  > ~/.config/systemd/user/shared-memory-monitor.service
 systemctl --user daemon-reload
 systemctl --user enable --now shared-memory-monitor.service
 ```
@@ -33,6 +36,6 @@ systemctl --user status shared-memory-monitor.service
 curl -s http://127.0.0.1:8765/api/meta
 ```
 
-Stop a foreground/Grok-started copy first if port 8765 is busy: `fuser -k 8765/tcp`.
+Stop a foreground copy first if port 8765 is busy: `fuser -k 8765/tcp`.
 
-Shipped in the repo under `deploy/` — install with `scripts/install-systemd-user.sh` (see root `README.md`).
+See root [README.md](../README.md#running-as-a-service).

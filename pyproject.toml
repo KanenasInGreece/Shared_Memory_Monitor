@@ -1,15 +1,34 @@
 [project]
 name = "sm-telemetry-monitor"
 version = "0.1.0"
-description = "Shared Memory Monitor — live dashboard for REM/NREM backlog, outbox health, and gateway status"
+description = "Sister-project ops dashboard for Shared Memory — REM/NREM backlog, gateway health, telemetry history"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
+keywords = ["shared-memory", "telemetry", "monitoring", "rem", "nrem", "dashboard"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Monitoring",
+]
 dependencies = [
     "httpx>=0.27",
     "matplotlib>=3.8",
     "python-dotenv>=1.0",
 ]
+
+# Uncomment after GitHub repo is created:
+# [project.urls]
+# Homepage = "https://github.com/OWNER/shared-memory-monitor"
+# Documentation = "https://github.com/OWNER/shared-memory-monitor#readme"
+# Repository = "https://github.com/OWNER/shared-memory-monitor"
+# Issues = "https://github.com/OWNER/shared-memory-monitor/issues"
 
 [project.scripts]
 sm-telemetry = "sm_telemetry_monitor.cli:main"

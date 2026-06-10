@@ -11,14 +11,8 @@ if [[ ! -f "$UNIT_SRC" ]]; then
 fi
 
 mkdir -p "$(dirname "$UNIT_DST")"
-cp "$UNIT_SRC" "$UNIT_DST"
-echo "Installed → $UNIT_DST"
-
-if [[ "$ROOT" != "$HOME/grok-labs/projects/shared-memory-monitor" ]]; then
-  echo ""
-  echo "NOTE: Unit file uses %h/grok-labs/projects/shared-memory-monitor paths."
-  echo "      Edit $UNIT_DST if your checkout lives elsewhere."
-fi
+sed "s|@MONITOR_ROOT@|$ROOT|g" "$UNIT_SRC" > "$UNIT_DST"
+echo "Installed → $UNIT_DST (MONITOR_ROOT=$ROOT)"
 
 systemctl --user daemon-reload
 systemctl --user enable shared-memory-monitor.service

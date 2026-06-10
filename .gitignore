@@ -5,16 +5,31 @@ __pycache__/
 dist/
 build/
 .venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
 # Secrets — never commit tokens or local overrides
 .env
 .env.*
 !.env.example
 
-# Grok project-local files (sandbox config, hooks, local skills)
+# Grok / IDE local config
 .grok/
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
 
-# Runtime data
-data/
-graphs/*.png
-graphs/*.html
+# Runtime data (local SQLite, JSONL, chart exports)
+data/*
+!data/.gitkeep
+graphs/*
+!graphs/.gitkeep
+
+# Local systemd install (generated from deploy/ template with your checkout path)
+# Keep deploy/systemd/ in git; ignore only if you copy a patched unit here:
+# config/systemd/

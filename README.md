@@ -1,10 +1,18 @@
 # Shared Memory Monitor
 
-Live operations dashboard for the Shared Memory Framework dream cycle — REM/NREM backlog, outbox health, gateway infrastructure status, and log tailing.
+> **Sister project** to the [Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory) — an optional, standalone operations dashboard for the REM/NREM dream cycle.
 
-This is a **standalone sister-repo plugin**. It talks to the hive-mind gateway over HTTP only (`GET /memory/telemetry`, `GET /health`, `POST /memory/graph`). It does not import `memory_bridge.py`, bundle the framework, or connect to Postgres.
+| Framework (memory layer) | Monitor (this repo) |
+|------------------------|---------------------|
+| Gateway, daemons, Postgres, Neo4j, consolidation | Backlog charts, health grid, logs, local history |
+| Agent skill: `memory_bridge.py` | Thin HTTP client — no framework code imported |
+| Runs on the gateway host | Runs anywhere with network access to `:8888` |
 
-Polls telemetry on an interval, stores history in SQLite, and serves the UI at **http://127.0.0.1:8765/**.
+Live operations UI: REM/NREM backlog, outbox health, gateway infrastructure, schema breakdown, and log tailing. Polls `GET /memory/telemetry` and `GET /health` over HTTP, stores history in SQLite, serves **http://127.0.0.1:8765/**.
+
+**Integration surface:** only public gateway routes (`/health`, `/memory/telemetry`, `/memory/graph`). No Postgres credentials required when the coordinator exposes `telemetry.nrem` and `telemetry.breakdown`.
+
+See [docs/SISTER_PROJECT.md](docs/SISTER_PROJECT.md) for the full relationship model.
 
 ## Prerequisites
 
@@ -390,7 +398,7 @@ A **foreground** start from Grok Build or a terminal stops when that session end
 ./scripts/install-systemd-user.sh
 ```
 
-Unit template: `deploy/systemd/user/shared-memory-monitor.service` (paths default to `%h/grok-labs/projects/shared-memory-monitor`). Details: `deploy/README.md`.
+Unit template: `deploy/systemd/user/shared-memory-monitor.service` (`@MONITOR_ROOT@` substituted at install). Details: `deploy/README.md`.
 
 **Manual install:**
 
@@ -411,7 +419,9 @@ shared-memory-monitor/
 ├── deploy/
 │   ├── README.md        # systemd install notes
 │   └── systemd/user/shared-memory-monitor.service
-├── docs/archive/        # superseded research (not product docs)
+├── docs/
+│   ├── SISTER_PROJECT.md
+│   └── archive/         # superseded research (not product docs)
 ├── scripts/
 │   ├── install.sh       # uv sync + .env scaffold + check
 │   ├── install-systemd-user.sh  # user unit → ~/.config/systemd/user/
@@ -451,11 +461,37 @@ shared-memory-monitor/
 | After moving monitor folder | Re-run `check-env.sh`; set `SHARED_MEMORY_ROOT` only for audit log paths |
 | Port 8765 in use | `fuser -k 8765/tcp` |
 
-## Related
+## Documentation
 
-- **Shared Memory Framework** — gateway, REM/NREM daemons, `GET /memory/telemetry`
-- **shared-memory skill** — agent CLI for save/search (monitor uses the same HTTP routes directly)
+| Doc | Contents |
+|-----|----------|
+| [README.md](README.md) | Prerequisites, quick start, API, troubleshooting |
+| [docs/SISTER_PROJECT.md](docs/SISTER_PROJECT.md) | Sister-repo model vs Shared Memory Framework |
+| [deploy/README.md](deploy/README.md) | systemd user unit install |
+| [SECURITY.md](SECURITY.md) | Secrets policy, pre-push audit |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | PR expectations |
+| [CHANGELOG.md](CHANGELOG.md) | Release notes |
+| [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | Dependency licenses |
+
+## Publishing to GitHub
+
+Before the first push:
+
+```bash
+./scripts/pre-publish-check.sh   # fails if .env, data/, or tokens would leak
+git remote add origin <your-repo-url>
+git push -u origin master
+```
+
+**Never committed** (see `.gitignore`): `.env`, `.grok/`, `data/*`, `graphs/*` (runtime exports), `.venv/`.
+
+After you create the remote, update `CHANGELOG.md` release links and `pyproject.toml` `[project.urls]` if desired.
+
+## Related projects
+
+- **[Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory)** — gateway, REM/NREM daemons, `GET /memory/telemetry`
+- **shared-memory skill** — agent CLI (`memory_bridge.py`); monitor uses the same HTTP routes directly
 
 ## License
 
-**MIT License** — see [LICENSE](LICENSE). Details: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+**MIT License** — see [LICENSE](LICENSE). This repository is independent of the framework's license; runtime integration is HTTP-only. Dependency notices: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
