@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shared Memory Monitor</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="/static/theme.css?v=13">
+</head>
+<body data-bar-meta="dashboard">
+
+<header class="bar">
+  <div class="bar-brand">
+    <h1>Shared Memory Monitor</h1>
+    <div class="sub">Infrastructure diagnostic</div>
+  </div>
+  <nav class="bar-nav view-tabs" aria-label="Views">
+    <div class="view-tabs-group" role="tablist" aria-label="Monitor pages">
+      <span class="view-tab is-active" role="tab" aria-current="page" aria-selected="true">Monitor</span>
+      <a href="/diagram" class="view-tab" role="tab" aria-selected="false">Diagram</a>
+      <a href="/logs" class="view-tab" role="tab" aria-selected="false">Logs</a>
+    </div>
+    <a id="neo4j-link" href="http://127.0.0.1:7474" target="_blank" rel="noopener noreferrer" class="view-tab view-tab-ext" title="Opens Neo4j Browser in a new tab">Neo4j<span class="view-ext-icon" aria-hidden="true">↗</span></a>
+  </nav>
+  <div class="bar-controls">
+    <div class="ranges" id="ranges"></div>
+    <div class="bar-meta">
+      <span class="live" id="live-label">live</span>
+      <span class="bar-stat" id="bar-updated"><span class="bar-stat-k">Last updated</span> <span class="bar-stat-v" id="bar-updated-v">connecting…</span></span>
+      <span class="bar-stat" id="bar-samples"><span class="bar-stat-v" id="bar-samples-v">—</span> <span class="bar-stat-k">samples</span></span>
+      <span class="sub bar-status" id="bar-status" hidden></span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="dashboard-grid">
+    <main class="main-col">
+      <section class="hero ok" id="hero">
+        <div class="hero-top">
+          <div>
+            <h2 id="hero-headline">Loading…</h2>
+            <p id="hero-detail"></p>
+          </div>
+          <span class="pill ok" id="hero-pill">—</span>
+        </div>
+      </section>
+
+      <div class="chart-card chart-primary">
+        <h3>Backlog over time</h3>
+        <canvas id="backlog"></canvas>
+      </div>
+
+      <div class="g2">
+        <div class="chart-card"><h3>Throughput</h3><canvas id="throughput"></canvas></div>
+        <div class="chart-card"><h3>Cumulative cleared</h3><canvas id="cumulative"></canvas></div>
+      </div>
+
+      <div class="chart-card">
+        <h3>Tier-3 growth &amp; errors</h3>
+        <canvas id="growth"></canvas>
+      </div>
+
+      <div class="chart-card samples-panel">
+        <h3>Raw samples</h3>
+        <div class="samples-scroll">
+          <table id="table"><thead><tr>
+            <th>Time</th><th>Backlog</th><th>REM</th><th>NREM cycles</th><th>Summaries</th><th>Failed</th>
+          </tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </main>
+
+    <aside class="sidebar" aria-label="Live status">
+      <div class="sidebar-head">
+        <span class="sidebar-title">Status</span>
+        <span class="pill ok" id="sidebar-system-pill" title="">—</span>
+      </div>
+
+      <div class="sidebar-metric featured">
+        <div class="label">Dream backlog</div>
+        <div class="value" id="v-backlog">—</div>
+        <div class="delta" id="d-backlog"></div>
+        <div class="spark"><canvas id="sp-backlog"></canvas></div>
+      </div>
+
+      <div class="sidebar-metric">
+        <div class="label">Bottleneck</div>
+        <div class="value value-sm" id="v-bottleneck">—</div>
+        <div class="split" id="split-bar"></div>
+        <div class="split-legend">
+          <span>REM <b id="v-rem">—</b></span>
+          <span>NREM cycles <b id="v-nrem">—</b></span>
+        </div>
+        <div class="hint" id="eta-hint"></div>
+      </div>
+
+      <div class="section-title section-title-tight">Pipeline queues</div>
+      <div class="pipe-grid pipe-grid-sidebar" id="pipeline"></div>
+
+      <div class="section-title section-title-tight">Infrastructure</div>
+      <div class="health-row health-row-sidebar" id="system-health-row">
+        <div class="health-item unknown" data-key="gateway"><div class="n">—</div><div class="l">Gateway</div></div>
+        <div class="health-item unknown" data-key="embedder"><div class="n">—</div><div class="l">Embed</div></div>
+        <div class="health-item unknown" data-key="reranker"><div class="n">—</div><div class="l">Rerank</div></div>
+        <div class="health-item unknown" data-key="llm"><div class="n">—</div><div class="l">LLM</div></div>
+        <div class="health-item unknown" data-key="nrem_daemon"><div class="n">—</div><div class="l">NREM</div></div>
+        <div class="health-item unknown" data-key="rem_daemon"><div class="n">—</div><div class="l">REM</div></div>
+      </div>
+      <div class="hint sidebar-hint" id="system-hint"></div>
+      <div class="sidebar-footer" id="sidebar-meta">—</div>
+
+      <button type="button" id="schema-open" class="schema-trigger" aria-expanded="false" aria-controls="schema-drawer">
+        <span class="schema-trigger-text">
+          <span class="schema-trigger-label">Schema breakdown</span>
+          <span class="schema-trigger-desc">Neo4j graph · Postgres inventory</span>
+        </span>
+        <span class="schema-trigger-go" aria-hidden="true">Open</span>
+      </button>
+    </aside>
+  </div>
+</div>
+
+<div id="schema-backdrop" class="schema-backdrop" hidden></div>
+<aside id="schema-drawer" class="schema-drawer" role="dialog" aria-modal="true" aria-labelledby="schema-drawer-title" hidden>
+  <header class="schema-drawer-head">
+    <div>
+      <h2 id="schema-drawer-title">Schema breakdown</h2>
+      <p class="schema-drawer-sub">Diagnostic drill-down — graph topology and relational store inventory</p>
+      <p id="schema-fetched" class="schema-fetched" hidden></p>
+    </div>
+    <div class="schema-drawer-actions">
+      <button type="button" id="schema-refresh" class="schema-refresh" title="Reload schema data">↻ Refresh</button>
+      <button type="button" id="schema-close" class="schema-close" aria-label="Close schema breakdown">×</button>
+    </div>
+  </header>
+  <div class="schema-drawer-body">
+    <p id="schema-loading" class="schema-loading">Loading schema data…</p>
+    <div id="schema-content" class="schema-content" hidden>
+      <div id="schema-errors" class="schema-errors" hidden></div>
+      <section class="schema-block">
+        <h3 class="schema-block-title">Neo4j graph</h3>
+        <div class="schema-charts g2">
+          <div class="schema-chart-card"><h4>Nodes by label</h4><div class="schema-chart" data-chart="bd-nodes"><canvas id="bd-nodes"></canvas><p class="schema-empty" hidden></p></div></div>
+          <div class="schema-chart-card"><h4>Relationships by type</h4><div class="schema-chart" data-chart="bd-rels"><canvas id="bd-rels"></canvas><p class="schema-empty" hidden></p></div></div>
+        </div>
+        <div class="schema-table-card">
+          <h4>Top graph paths <span class="schema-table-hint">from → relationship → to</span></h4>
+          <div class="schema-table-scroll">
+            <table id="bd-paths"><thead><tr><th>From</th><th>Relationship</th><th>To</th><th>Count</th></tr></thead><tbody></tbody></table>
+          </div>
+        </div>
+      </section>
+      <section class="schema-block">
+        <h3 class="schema-block-title">Postgres</h3>
+        <div class="schema-charts g2">
+          <div class="schema-chart-card"><h4>Record types</h4><div class="schema-chart" data-chart="bd-pg-types"><canvas id="bd-pg-types"></canvas><p class="schema-empty" hidden></p></div></div>
+          <div class="schema-chart-card"><h4>By agent</h4><div class="schema-chart" data-chart="bd-pg-agents"><canvas id="bd-pg-agents"></canvas><p class="schema-empty" hidden></p></div></div>
+        </div>
+        <div class="schema-chart-card schema-chart-card-wide">
+          <h4>By project / domain</h4>
+          <div class="schema-chart schema-chart-wide" data-chart="bd-pg-domains"><canvas id="bd-pg-domains"></canvas><p class="schema-empty" hidden></p></div>
+        </div>
+        <div class="schema-tables g2">
+          <div class="schema-table-card">
+            <h4>Sources</h4>
+            <div class="schema-table-scroll">
+              <table id="bd-sources"><thead><tr><th>Source</th><th>Documents</th></tr></thead><tbody></tbody></table>
+            </div>
+          </div>
+          <div class="schema-table-card">
+            <h4>Outbox &amp; summaries</h4>
+            <div class="schema-table-scroll">
+              <table id="bd-pg-meta"><thead><tr><th>Category</th><th>Detail</th><th>Count</th></tr></thead><tbody></tbody></table>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</aside>
+
+<script src="/static/bar-meta.js?v=1"></script>
+<script>
+const RANGES = ["1h","6h","24h","7d","all"];
+let curRange = localStorage.getItem("sm-range") || "6h";
+let charts = {};
+let breakdownAbort = null;
+let schemaDrawerGen = 0;
+const C = {rem:"#8bb4d9",nrem:"#b0b0b0",dec:"#3fb950",fail:"#f85149",sum:"#9a9a9a",cum:"#7a8a9a",warn:"#e3b341"};
+const CHART = {grid:"#4a4a4a",text:"#c9c9c9",textBright:"#f4f4f4"};
+
+document.getElementById("ranges").innerHTML = RANGES.map(r =>
+  `<button data-r="${r}" class="${r===curRange?"active":""}">${r}</button>`).join("");
+document.getElementById("ranges").onclick = e => {
+  if (!e.target.dataset.r) return;
+  curRange = e.target.dataset.r;
+  localStorage.setItem("sm-range", curRange);
+  document.querySelectorAll(".ranges button").forEach(b => b.classList.toggle("active", b.dataset.r===curRange));
+  refresh();
+};
+
+function mkChart(id, cfg) {
+  if (charts[id]) charts[id].destroy();
+  const el = document.getElementById(id);
+  if (!el) return;
+  charts[id] = new Chart(el, cfg);
+}
+
+const base = {responsive:true, scales:{x:{ticks:{color:CHART.text,maxTicksLimit:8},grid:{color:CHART.grid}},y:{ticks:{color:CHART.text},grid:{color:CHART.grid},beginAtZero:true}}, plugins:{legend:{labels:{color:CHART.textBright,boxWidth:10,font:{size:10}}}}};
+
+function spark(id, data, color) {
+  mkChart(id, {type:"line", data:{labels:data.map((_,i)=>i), datasets:[{data, borderColor:color, borderWidth:2, pointRadius:0, tension:.35, fill:true, backgroundColor:color+"18"}]},
+    options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{display:false},y:{display:false}}}});
+}
+
+function formatFailed(L) {
+  const failed = L.outbox_failed ?? 0;
+  const ignored = L.outbox_failed_ignored ?? 0;
+  if (ignored > 0 && failed === 0) return `0 (${ignored} ignored)`;
+  if (ignored > 0 && failed > 0) return `${failed} (+${ignored} ignored)`;
+  return String(failed);
+}
+
+function formatSampleTime(at) {
+  return window.SmBarMeta?.formatSampleTime(at) ?? String(at || "—");
+}
+
+function setBarStats({ updated, samples, mode = "ok", error = "" }) {
+  const title = mode !== "error" && updated && samples != null
+    ? `Last telemetry ${updated} · ${samples} samples in ${curRange} window`
+    : "";
+  window.SmBarMeta?.set({ updated, samples, mode, error, title });
+}
+
+function updateHero(story) {
+  const h = story?.health || "ok";
+  const hero = document.getElementById("hero");
+  hero.className = "hero " + h + (h === "ok" ? " hero-compact" : "");
+  document.getElementById("hero-headline").textContent = story.headline || "Pipeline healthy";
+  document.getElementById("hero-detail").textContent = story.detail || "";
+  const pill = document.getElementById("hero-pill");
+  pill.className = "pill " + (h === "critical" ? "danger" : h === "warn" ? "warn" : "ok");
+  pill.textContent = h.toUpperCase();
+}
+
+function updateSystemPill(status, title) {
+  const pill = document.getElementById("sidebar-system-pill");
+  const s = status || "—";
+  pill.textContent = s.toUpperCase();
+  pill.className = "pill " + (s === "critical" ? "danger" : s === "warn" ? "warn" : s === "ok" ? "ok" : "");
+  if (title) pill.title = title;
+}
+
+const _BORING_LOAD = new Set(["queue idle", "idle", "standby", "outbox synced"]);
+
+function healthUiState(state) {
+  if (state === "ok") return "ok";
+  if (state === "warn") return "warn";
+  if (state === "bad") return "bad";
+  return "unknown";
+}
+
+function healthLine(c) {
+  const proc = c.process || {};
+  const load = c.workload || {};
+  const title = [
+    proc.caption && `${proc.caption}: ${proc.value}`,
+    load.caption && `${load.caption}: ${load.value}`,
+  ].filter(Boolean).join(" · ");
+  if (proc.state === "bad") return { text: "down", state: "bad", title };
+
+  const p = proc.value || "—";
+  const lv = load.value || "";
+
+  if (c.kind === "daemon") {
+    if (load.state === "bad") return { text: lv || "down", state: "bad", title };
+    if (_BORING_LOAD.has(lv)) return { text: p, state: "ok", title };
+    const n = lv.match(/^(\d+)/);
+    return { text: n ? `${p} · ${n[1]}` : `${p} · ${lv}`, state: healthUiState(load.state), title };
+  }
+  if (c.key === "gateway" && lv && !_BORING_LOAD.has(lv)) {
+    const short = lv.replace(/^outbox /, "");
+    return { text: `${p} · ${short}`, state: healthUiState(load.state), title };
+  }
+  if (c.key === "llm") {
+    if (load.state === "bad") return { text: "down", state: "bad", title };
+    if (lv.startsWith("busy")) return { text: "busy", state: "ok", title };
+    return { text: p, state: "ok", title };
+  }
+  return { text: p, state: healthUiState(proc.state), title };
+}
+
+function renderSystemHealth(H) {
+  const status = H?.status || "unknown";
+  updateSystemPill(status, H?.summary || "");
+
+  const byKey = Object.fromEntries((H?.components || []).map(c => [c.key, c]));
+  document.querySelectorAll("#system-health-row .health-item").forEach(el => {
+    const c = byKey[el.dataset.key];
+    const nEl = el.querySelector(".n");
+    if (!c) {
+      el.className = "health-item unknown";
+      nEl.textContent = H?.reachable === false ? "down" : "—";
+      nEl.className = "n bad";
+      nEl.title = "";
+      return;
+    }
+    const line = healthLine(c);
+    nEl.textContent = line.text;
+    nEl.className = "n " + line.state;
+    nEl.title = line.title;
+    el.className = "health-item " + healthUiState(c.state || "unknown");
+  });
+
+  const hint = document.getElementById("system-hint");
+  if (H?.reachable === false) {
+    hint.textContent = H.error || "gateway unreachable";
+  } else if (H?.summary && status !== "ok") {
+    hint.textContent = H.summary;
+  } else {
+    hint.textContent = "";
+  }
+}
+
+async function loadSystemHealth() {
+  try {
+    const r = await fetch("/api/health");
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    renderSystemHealth(await r.json());
+  } catch (_) {
+    renderSystemHealth({ status: "critical", reachable: false, error: "monitor API offline" });
+  }
+}
+
+function hbar(id, labels, data, color) {
+  if (!labels.length) return;
+  mkChart(id, {
+    type: "bar",
+    data: { labels, datasets: [{ data, backgroundColor: color, borderRadius: 2 }] },
+    options: {
+      indexAxis: "y", responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: CHART.text, font: { size: 11 } }, grid: { color: CHART.grid }, beginAtZero: true },
+        y: { ticks: { color: CHART.text, font: { size: 11 } }, grid: { display: false } },
+      },
+    },
+  });
+}
+
+function esc(s) {
+  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function chartOrEmpty(id, labels, data, color, emptyText) {
+  const wrap = document.querySelector(`[data-chart="${id}"]`);
+  const emptyEl = wrap?.querySelector(".schema-empty");
+  const canvas = document.getElementById(id);
+  if (!labels.length) {
+    if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+    if (canvas) canvas.hidden = true;
+    if (emptyEl) { emptyEl.hidden = false; emptyEl.textContent = emptyText; }
+    return;
+  }
+  if (canvas) canvas.hidden = false;
+  if (emptyEl) emptyEl.hidden = true;
+  hbar(id, labels, data, color);
+}
+
+function resizeBreakdownCharts() {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      Object.keys(charts).filter(k => k.startsWith("bd-")).forEach(k => charts[k]?.resize());
+    });
+  });
+}
+
+function waitDrawerPaint() {
+  return new Promise(resolve => {
+    const drawer = document.getElementById("schema-drawer");
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      drawer.removeEventListener("transitionend", onEnd);
+      resolve();
+    };
+    const onEnd = e => { if (e.target === drawer && e.propertyName === "transform") finish(); };
+    drawer.addEventListener("transitionend", onEnd);
+    setTimeout(finish, 320);
+  });
+}
+
+function renderBreakdownErrors(nj, pg) {
+  const box = document.getElementById("schema-errors");
+  const msgs = [];
+  if (nj.error) msgs.push({ src: "Neo4j", msg: nj.error });
+  if (pg.error) msgs.push({ src: "Postgres", msg: pg.error });
+  if (!msgs.length) {
+    box.hidden = true;
+    box.innerHTML = "";
+    return;
+  }
+  box.hidden = false;
+  box.innerHTML = msgs.map(e =>
+    `<div class="schema-error"><strong>${esc(e.src)}</strong><span>${esc(e.msg)}</span></div>`
+  ).join("");
+}
+
+function renderBreakdown(B) {
+  const nj = B.neo4j || {}, pg = B.postgres || {};
+  renderBreakdownErrors(nj, pg);
+
+  const fetched = document.getElementById("schema-fetched");
+  if (fetched) {
+    if (B.fetched_at) {
+      fetched.hidden = false;
+      fetched.textContent = `Fetched ${B.fetched_at.replace("T", " ").replace("Z", " UTC")}`;
+    } else {
+      fetched.hidden = true;
+    }
+  }
+
+  const nodes = nj.nodes || [];
+  const rels = nj.relationships || [];
+  chartOrEmpty("bd-nodes", nodes.map(x => x.label), nodes.map(x => x.count), C.rem,
+    nj.error ? "Graph query failed — see alert above" : "No node labels returned");
+  chartOrEmpty("bd-rels", rels.map(x => x.type), rels.map(x => x.count), C.nrem,
+    nj.error ? "Graph query failed — see alert above" : "No relationships returned");
+
+  const types = pg.record_types || [];
+  const agents = pg.agents || [];
+  const domains = pg.domains || [];
+  chartOrEmpty("bd-pg-types", types.map(x => x.key), types.map(x => x.count), C.dec,
+    pg.error ? "Postgres unavailable — see alert above" : "No record types");
+  chartOrEmpty("bd-pg-agents", agents.map(x => x.key), agents.map(x => x.count), C.warn,
+    pg.error ? "Postgres unavailable — see alert above" : "No agent breakdown");
+  chartOrEmpty("bd-pg-domains", domains.map(x => x.key), domains.map(x => x.count), C.cum,
+    pg.error ? "Postgres unavailable — see alert above" : "No domain breakdown");
+
+  const paths = nj.pipelines || [];
+  document.querySelector("#bd-paths tbody").innerHTML = paths.length
+    ? paths.map(p => `<tr><td>${esc(p.from)}</td><td>${esc(p.rel)}</td><td>${esc(p.to)}</td><td>${p.count}</td></tr>`).join("")
+    : `<tr class="schema-row-empty"><td colspan="4">${esc(nj.error || "No graph paths")}</td></tr>`;
+
+  const sources = pg.sources || [];
+  document.querySelector("#bd-sources tbody").innerHTML = sources.length
+    ? sources.map(s => `<tr><td>${esc(s.key)}</td><td>${s.count}</td></tr>`).join("")
+    : `<tr class="schema-row-empty"><td colspan="2">${esc(pg.error || "No sources")}</td></tr>`;
+
+  const metaRows = [];
+  (pg.outbox || []).forEach(o => metaRows.push(["outbox", o.key, o.count]));
+  (pg.summaries || []).forEach(s => metaRows.push(["summary", `${s.kind} (active)`, s.active]));
+  (pg.summaries || []).forEach(s => metaRows.push(["summary", `${s.kind} (superseded)`, s.superseded]));
+  if (nj.facts) metaRows.push(["neo4j Fact", "total", nj.facts.total]);
+  if (nj.facts) metaRows.push(["neo4j Fact", "rem_processed", nj.facts.rem_done]);
+  if (nj.facts) metaRows.push(["neo4j Fact", "consolidated", nj.facts.consolidated]);
+  if (nj.decisions) metaRows.push(["neo4j Decision", "total", nj.decisions.total]);
+  if (nj.decisions) metaRows.push(["neo4j Decision", "rem_processed", nj.decisions.rem_done]);
+  const metaFallback = pg.error || nj.error || "No outbox or summary rows";
+  document.querySelector("#bd-pg-meta tbody").innerHTML = metaRows.length
+    ? metaRows.map(r => `<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td><td>${r[2]}</td></tr>`).join("")
+    : `<tr class="schema-row-empty"><td colspan="3">${esc(metaFallback)}</td></tr>`;
+
+  resizeBreakdownCharts();
+}
+
+async function loadBreakdown({ force = true, waitPaint = false } = {}) {
+  const gen = schemaDrawerGen;
+  if (breakdownAbort) breakdownAbort.abort();
+  breakdownAbort = new AbortController();
+  const loading = document.getElementById("schema-loading");
+  const content = document.getElementById("schema-content");
+  const refreshBtn = document.getElementById("schema-refresh");
+  try {
+    if (loading) { loading.hidden = false; loading.textContent = "Loading schema data…"; }
+    if (content) content.hidden = true;
+    if (refreshBtn) refreshBtn.disabled = true;
+    if (waitPaint) await waitDrawerPaint();
+    if (gen !== schemaDrawerGen) return;
+    const url = force ? "/api/breakdown?force=1" : "/api/breakdown";
+    const r = await fetch(url, { signal: breakdownAbort.signal });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const B = await r.json();
+    if (gen !== schemaDrawerGen) return;
+    renderBreakdown(B);
+    if (loading) loading.hidden = true;
+    if (content) content.hidden = false;
+    resizeBreakdownCharts();
+  } catch (err) {
+    if (err.name === "AbortError") return;
+    if (gen !== schemaDrawerGen) return;
+    if (loading) loading.hidden = true;
+    if (content) content.hidden = false;
+    const box = document.getElementById("schema-errors");
+    if (box) {
+      box.hidden = false;
+      const msg = err.message || "Could not reach /api/breakdown";
+      box.innerHTML = `<div class="schema-error"><strong>Monitor</strong><span>${esc(msg)}</span></div>`;
+    }
+  } finally {
+    if (refreshBtn) refreshBtn.disabled = false;
+  }
+}
+
+function openSchemaDrawer() {
+  schemaDrawerGen++;
+  const backdrop = document.getElementById("schema-backdrop");
+  const drawer = document.getElementById("schema-drawer");
+  const btn = document.getElementById("schema-open");
+  backdrop.hidden = false;
+  drawer.hidden = false;
+  requestAnimationFrame(() => {
+    backdrop.classList.add("open");
+    drawer.classList.add("open");
+  });
+  btn.setAttribute("aria-expanded", "true");
+  document.body.classList.add("schema-open");
+  loadBreakdown({ force: true, waitPaint: true });
+  document.getElementById("schema-close").focus();
+}
+
+function closeSchemaDrawer() {
+  schemaDrawerGen++;
+  if (breakdownAbort) breakdownAbort.abort();
+  const backdrop = document.getElementById("schema-backdrop");
+  const drawer = document.getElementById("schema-drawer");
+  const btn = document.getElementById("schema-open");
+  backdrop.classList.remove("open");
+  drawer.classList.remove("open");
+  btn.setAttribute("aria-expanded", "false");
+  document.body.classList.remove("schema-open");
+  btn.focus();
+  setTimeout(() => {
+    if (!drawer.classList.contains("open")) {
+      backdrop.hidden = true;
+      drawer.hidden = true;
+    }
+  }, 300);
+}
+
+document.getElementById("schema-open").addEventListener("click", openSchemaDrawer);
+document.getElementById("schema-refresh").addEventListener("click", () => loadBreakdown({ force: true, waitPaint: false }));
+document.getElementById("schema-close").addEventListener("click", closeSchemaDrawer);
+document.getElementById("schema-backdrop").addEventListener("click", closeSchemaDrawer);
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && document.getElementById("schema-drawer").classList.contains("open")) closeSchemaDrawer();
+});
+
+function renderSidebarMetrics(D) {
+  const s = D.story || {}, st = D.stats || {}, L = D.latest || {};
+  updateHero(s);
+
+  const backlog = L.dream_backlog ?? "—";
+  const bEl = document.getElementById("v-backlog");
+  bEl.textContent = backlog;
+  const backlogN = Number(backlog) || 0;
+  bEl.className = "value" + (backlogN > 50 ? " bad" : backlogN > 20 ? " warn" : backlogN === 0 ? " ok" : "");
+  const delta = st.dream_backlog_delta ?? 0;
+  const dEl = document.getElementById("d-backlog");
+  if (delta > 0) { dEl.className = "delta up"; dEl.textContent = `▼ ${delta} cleared`; }
+  else if (delta < 0) { dEl.className = "delta down"; dEl.textContent = `▲ ${-delta} grew`; }
+  else { dEl.className = "delta flat"; dEl.textContent = "No net change"; }
+  spark("sp-backlog", (D.series.dream_backlog||[]).slice(-24), C.rem);
+
+  const rem = L.rem_backlog || 0, nrem = L.nrem_backlog || 0;
+  const nremRaw = L.facts_unconsolidated || 0;
+  const total = rem + nrem || 1;
+  const bottleneck = s.bottleneck || "none";
+  document.getElementById("v-bottleneck").textContent =
+    bottleneck === "rem" ? "REM saturated" : bottleneck === "nrem" ? "NREM saturated" : "Caught up";
+  document.getElementById("v-rem").textContent = rem;
+  document.getElementById("v-nrem").textContent = nrem;
+  document.getElementById("split-bar").innerHTML =
+    `<div class="rem" style="width:${100*rem/total}%"></div><div class="nrem" style="width:${100*nrem/total}%"></div>`;
+  const eta = s.eta_rem_hours
+    ? `~${s.eta_rem_hours}h to clear REM`
+    : (bottleneck === "nrem"
+      ? `NREM: ${nrem} cycle(s) · ${nremRaw} raw facts`
+      : "");
+  document.getElementById("eta-hint").textContent = eta;
+
+  const meta = document.getElementById("sidebar-meta");
+  if (meta) {
+    const n = D.samples ?? 0;
+    const at = formatSampleTime(D.latest?.collected_at);
+    meta.textContent = n
+      ? `Last updated ${at} · ${n} sample${n === 1 ? "" : "s"}`
+      : "No samples yet";
+  }
+
+  const pmap = Object.fromEntries((D.pipeline||[]).map(x => [x.key, x]));
+  const stages = [
+    {k:"outbox_failed", l:"Failed", hot: v => v > 0, bad: true},
+    {k:"facts_rem_pending", l:"Facts REM", hot: v => v > 0},
+    {k:"decisions_rem_pending", l:"Dec REM", hot: v => v > 5},
+    {k:"nrem_backlog", l:"NREM cycles", hot: v => v > 0},
+    {k:"facts_unconsolidated", l:"NREM facts", hot: v => v > 10},
+  ];
+  document.getElementById("pipeline").innerHTML = stages.map(({k,l,hot,bad}) => {
+    const v = (pmap[k]||{}).value ?? 0;
+    const cls = bad && v > 0 ? "bad" : hot(v) ? "hot" : v === 0 ? "good" : "";
+    return `<div class="pipe-cell ${cls}"><div class="n">${v}</div><div class="l">${l}</div></div>`;
+  }).join("");
+}
+
+function renderCharts(D) {
+  mkChart("backlog", {type:"line", data:{labels:D.labels, datasets:[
+    {label:"Dream backlog", data:D.series.dream_backlog, borderColor:C.rem, borderWidth:2, tension:.2, fill:true, backgroundColor:C.rem+"15"},
+    {label:"REM", data:D.series.rem_backlog, borderColor:C.nrem, tension:.2},
+    {label:"NREM cycles", data:D.series.nrem_backlog, borderColor:C.warn, tension:.2},
+  ]}, options: base});
+
+  mkChart("cumulative", {type:"line", data:{labels:D.labels, datasets:[
+    {label:"Cleared", data:D.series.cumulative_cleared, borderColor:C.cum, fill:true, backgroundColor:C.cum+"25", tension:.2},
+  ]}, options: base});
+
+  const dL = (D.deltas||[]).map(d => d.time.slice(5,16).replace("T"," "));
+  mkChart("throughput", {type:"bar", data:{labels:dL.length?dL:["—"], datasets:[
+    {label:"REM cleared", data:(D.deltas||[]).map(d=>d.rem_cleared), backgroundColor:C.rem},
+    {label:"NREM cleared", data:(D.deltas||[]).map(d=>d.nrem_cleared), backgroundColor:C.nrem},
+  ]}, options: base});
+
+  mkChart("growth", {type:"line", data:{labels:D.labels, datasets:[
+    {label:"Summaries", data:D.series.summaries_total, borderColor:C.sum, tension:.2, yAxisID:"y"},
+    {label:"Failed", data:D.series.outbox_failed, borderColor:C.fail, stepped:true, yAxisID:"y1"},
+  ]}, options:{...base, scales:{x:base.scales.x, y:{position:"left",ticks:{color:CHART.text},grid:{color:CHART.grid}}, y1:{position:"right",ticks:{color:C.fail},grid:{drawOnChartArea:false},min:0}}}});
+
+  document.querySelector("#table tbody").innerHTML = [...(D.labels||[])].map((lb,i) =>
+    `<tr><td>${lb}</td><td>${D.series.dream_backlog[i]}</td><td>${D.series.rem_backlog[i]}</td>`+
+    `<td>${D.series.nrem_backlog[i]}</td><td>${D.series.summaries_total[i]}</td><td>${D.series.outbox_failed[i]}</td>`
+  ).reverse().join("");
+}
+
+function render(D) {
+  renderSidebarMetrics(D);
+  renderCharts(D);
+}
+
+async function refresh() {
+  try {
+    const hr = await fetch(`/api/history?range=${curRange}`);
+    if (!hr.ok) throw new Error(`history HTTP ${hr.status}`);
+    const D = await hr.json();
+    render(D);
+    const n = D.samples ?? 0;
+    setBarStats({
+      updated: formatSampleTime(D.latest?.collected_at),
+      samples: n,
+      mode: "ok",
+    });
+  } catch(e) {
+    setBarStats({ mode: "error", error: "Offline — run ./scripts/run-loop.sh --serve" });
+    document.getElementById("hero-headline").textContent = "Monitor unreachable";
+    const meta = document.getElementById("sidebar-meta");
+    if (meta) meta.textContent = "—";
+  }
+}
+
+async function loadSummary() {
+  try {
+    const r = await fetch("/api/summary");
+    if (!r.ok) return;
+    const S = await r.json();
+    if (S.story) updateHero(S.story);
+  } catch (_) {}
+}
+
+fetch("/api/meta").then(r=>r.json()).then(m=>{
+  if (m.neo4j_browser_url) document.getElementById("neo4j-link").href = m.neo4j_browser_url;
+}).catch(()=>{});
+loadSummary();
+loadSystemHealth();
+refresh();
+setInterval(loadSummary, 30000);
+setInterval(loadSystemHealth, 30000);
+setInterval(refresh, 60000);
+</script>
+</body>
+</html>

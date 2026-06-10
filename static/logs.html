@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shared Memory Monitor — Logs</title>
+<link rel="stylesheet" href="/static/theme.css?v=29">
+</head>
+<body class="logs-page">
+
+<header class="bar">
+  <div class="bar-brand">
+    <h1>Shared Memory Monitor</h1>
+    <div class="sub">Infrastructure diagnostic</div>
+  </div>
+  <nav class="bar-nav view-tabs" aria-label="Views">
+    <div class="view-tabs-group" role="tablist" aria-label="Monitor pages">
+      <a href="/" class="view-tab" role="tab" aria-selected="false">Monitor</a>
+      <a href="/diagram" class="view-tab" role="tab" aria-selected="false">Diagram</a>
+      <span class="view-tab is-active" role="tab" aria-current="page" aria-selected="true">Logs</span>
+    </div>
+    <a id="neo4j-link" href="http://127.0.0.1:7474" target="_blank" rel="noopener noreferrer" class="view-tab view-tab-ext" title="Opens Neo4j Browser in a new tab">Neo4j<span class="view-ext-icon" aria-hidden="true">↗</span></a>
+  </nav>
+  <div class="bar-controls">
+    <div class="ranges" id="ranges"></div>
+    <div class="bar-meta">
+      <span class="live" id="live-label">live</span>
+      <span class="bar-stat" id="bar-updated"><span class="bar-stat-k">Last updated</span> <span class="bar-stat-v" id="bar-updated-v">connecting…</span></span>
+      <span class="bar-stat" id="bar-samples"><span class="bar-stat-v" id="bar-samples-v">—</span> <span class="bar-stat-k">samples</span></span>
+      <span class="sub bar-status" id="bar-status" hidden></span>
+    </div>
+  </div>
+</header>
+
+<div class="logs-source-bar">
+  <div class="logs-source-filters" aria-label="Time range">
+    <span>From</span>
+    <input type="datetime-local" id="filter-from" step="1">
+    <span>To</span>
+    <input type="datetime-local" id="filter-to" step="1">
+    <button type="button" id="filter-apply" class="btn-apply">Apply</button>
+    <button type="button" id="filter-clear">Clear</button>
+  </div>
+  <nav class="logs-source-nav view-tabs" aria-label="Log source">
+    <div class="view-tabs-group" id="tabs" role="tablist" aria-label="Log sources"></div>
+  </nav>
+  <div class="source-stats">
+    <label class="source-ctl"><input type="checkbox" id="follow" checked> Follow</label>
+    <label class="source-ctl"><input type="checkbox" id="pause"> Pause</label>
+    <div class="chip" id="chip-lines"><span class="k">Lines</span><span class="v">0</span></div>
+    <div class="chip" id="chip-err" role="button" tabindex="0" aria-pressed="false" title="Show errors only"><span class="k">Errors</span><span class="v">0</span></div>
+    <div class="chip" id="chip-warn" role="button" tabindex="0" aria-pressed="false" title="Show warnings only"><span class="k">Warnings</span><span class="v">0</span></div>
+    <span class="log-status" id="log-status">loading…</span>
+  </div>
+</div>
+<div id="log" role="log" aria-live="polite"></div>
+
+<script src="/static/bar-meta.js?v=1"></script>
+<script>
+let source = localStorage.getItem("sm-log-source") || "gateway";
+let fileOffset = 0;
+let journalSince = null;
+let lastJournalLine = null;
+let sourceLabels = {};
+let totalLines = 0, totalErr = 0, totalWarn = 0;
+let lineBuffer = [];
+function loadSeverityFilters() {
+  const raw = localStorage.getItem("sm-log-severity") || "";
+  return new Set(raw.split(",").filter(k => k === "error" || k === "warn"));
+}
+function saveSeverityFilters() {
+  if (severityFilters.size) {
+    localStorage.setItem("sm-log-severity", [...severityFilters].sort().join(","));
+  } else {
+    localStorage.removeItem("sm-log-severity");
+  }
+}
+function hasSeverityFilter() {
+  return severityFilters.size > 0;
+}
+function severityEmptyMessage() {
+  if (!severityFilters.size) return "(no lines in range)";
+  const parts = [];
+  if (severityFilters.has("error")) parts.push("errors");
+  if (severityFilters.has("warn")) parts.push("warnings");
+  return `(no ${parts.join(" or ")} in view)`;
+}
+function severityStatusNote() {
+  if (!severityFilters.size) return "";
+  const parts = [];
+  if (severityFilters.has("error")) parts.push("errors");
+  if (severityFilters.has("warn")) parts.push("warnings");
+  return ` · showing ${parts.join(" + ")} only`;
+}
+let severityFilters = loadSeverityFilters();
+let filterFrom = localStorage.getItem("sm-log-from") || "";
+let filterTo = localStorage.getItem("sm-log-to") || "";
+const MAX_LOG_LINES = 2500;
+
+function hasTimeFilter() {
+  return Boolean(filterFrom || filterTo);
+}
+
+function classify(text){
+  const l = (text || "").toLowerCase();
+  if (l.includes("error") || l.includes("failed") || l.includes("critical")) return "line-err";
+  if (l.includes("warn") || l.includes("defer")) return "line-warn";
+  if (l.includes("info") || l.includes("done") || l.includes("applied")) return "line-info";
+  return "";
+}
+
+function countClasses(lines) {
+  let err = 0, warn = 0;
+  for (const ln of lines) {
+    const c = classify(ln);
+    if (c === "line-err") err++;
+    else if (c === "line-warn") warn++;
+  }
+  return {err, warn};
+}
+
+function setChip(id, val, cls, featured) {
+  const el = document.getElementById(id);
+  el.querySelector(".v").textContent = val;
+  let cn = "chip";
+  if (featured) cn += " featured";
+  if (cls) cn += " " + cls;
+  if (id === "chip-err" || id === "chip-warn") {
+    const kind = id === "chip-err" ? "error" : "warn";
+    if (severityFilters.has(kind)) cn += " chip-filter-active";
+    const count = kind === "error" ? totalErr : totalWarn;
+    if (count > 0 || severityFilters.has(kind)) cn += " chip-clickable";
+    el.setAttribute("aria-pressed", String(severityFilters.has(kind)));
+  }
+  el.className = cn;
+}
+
+function resetCounts() {
+  totalLines = 0;
+  totalErr = 0;
+  totalWarn = 0;
+  lineBuffer = [];
+}
+
+function recomputeStats() {
+  const c = countClasses(lineBuffer);
+  totalLines = lineBuffer.length;
+  totalErr = c.err;
+  totalWarn = c.warn;
+}
+
+function visibleLines() {
+  if (!severityFilters.size) return lineBuffer;
+  return lineBuffer.filter(ln => {
+    const c = classify(ln);
+    if (severityFilters.has("error") && c === "line-err") return true;
+    if (severityFilters.has("warn") && c === "line-warn") return true;
+    return false;
+  });
+}
+
+function updateChips() {
+  const shown = visibleLines().length;
+  setChip("chip-lines", hasSeverityFilter() ? `${shown}/${totalLines}` : String(totalLines));
+  setChip("chip-err", totalErr, totalErr > 0 ? "bad" : "good");
+  setChip("chip-warn", totalWarn, totalWarn > 0 ? "warn" : "");
+}
+
+function mergeLines(incoming, clear) {
+  lineBuffer = clear ? incoming.slice() : lineBuffer.concat(incoming);
+  if (lineBuffer.length > MAX_LOG_LINES) {
+    lineBuffer = lineBuffer.slice(-MAX_LOG_LINES);
+  }
+  recomputeStats();
+}
+
+function paintLog(emptyMsg) {
+  const el = document.getElementById("log");
+  const shown = visibleLines();
+  const html = shown.map(renderRawLine).join("");
+  el.innerHTML = html || `<div class="log-line">${escapeHtml(emptyMsg || "(no lines in range)")}</div>`;
+  updateChips();
+}
+
+function appendLog(lines) {
+  const el = document.getElementById("log");
+  const html = lines.map(renderRawLine).join("");
+  if (html) el.insertAdjacentHTML("beforeend", html);
+  updateChips();
+}
+
+function toggleSeverityFilter(kind) {
+  const count = kind === "error" ? totalErr : totalWarn;
+  if (severityFilters.has(kind)) {
+    severityFilters.delete(kind);
+  } else if (count > 0) {
+    severityFilters.add(kind);
+  } else {
+    return;
+  }
+  saveSeverityFilters();
+  paintLog(severityEmptyMessage());
+  const el = document.getElementById("log");
+  if (document.getElementById("follow").checked) el.scrollTop = el.scrollHeight;
+}
+
+function bindSeverityChips() {
+  for (const [id, kind] of [["chip-err", "error"], ["chip-warn", "warn"]]) {
+    const el = document.getElementById(id);
+    el.addEventListener("click", () => toggleSeverityFilter(kind));
+    el.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        toggleSeverityFilter(kind);
+      }
+    });
+  }
+}
+
+const JOURNAL_TS_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)/;
+
+function formatAuditLine(raw) {
+  let o;
+  try { o = JSON.parse(raw); } catch (_) { return null; }
+  const p = o.cypher_params || {};
+  const meta = [
+    `outbox=${o.outbox_id}`,
+    o.pg_id != null && `pg_id=${o.pg_id}`,
+    o.status && `status=${o.status}`,
+  ].filter(Boolean).join("  ·  ");
+
+  const fields = [];
+  if (p.type) fields.push(`type=${p.type}`);
+  if (p.source) fields.push(`source=${p.source}`);
+  if (p.agent_id) fields.push(`agent=${p.agent_id}`);
+  if (p.target_pg_id != null) fields.push(`target_pg_id=${p.target_pg_id}`);
+  if (o.created_at) fields.push(`created ${o.created_at}`);
+  if (o.applied_at) fields.push(`applied ${o.applied_at}`);
+  if (p.entities?.length) fields.push(`entities: ${p.entities.join(", ")}`);
+
+  const bodyParts = [];
+  if (p.decision?.title) {
+    bodyParts.push(`decision: ${p.decision.title}`);
+    if (p.decision.rationale) bodyParts.push(p.decision.rationale);
+    if (p.decision.project) bodyParts.push(`project: ${p.decision.project}`);
+  }
+  if (p.retrospective?.notes) {
+    const when = p.retrospective.date ? ` (${p.retrospective.date})` : "";
+    bodyParts.push(`retrospective${when}:`);
+    bodyParts.push(p.retrospective.notes);
+  }
+  const snippet = p.content_snippet || p.content;
+  if (snippet) bodyParts.push(snippet);
+
+  return {
+    ts: o.ts || "",
+    meta,
+    fields: fields.join("  ·  "),
+    body: bodyParts.join("\n").trim(),
+  };
+}
+
+function toApiTs(localValue) {
+  if (!localValue) return null;
+  const d = new Date(localValue);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+function syncFilterInputs() {
+  document.getElementById("filter-from").value = filterFrom;
+  document.getElementById("filter-to").value = filterTo;
+  const live = document.getElementById("live-label");
+  if (live) {
+    live.textContent = hasTimeFilter() ? "filtered" : "live";
+    live.classList.toggle("off", hasTimeFilter());
+  }
+}
+
+function renderRawLine(raw) {
+  const cls = classify(raw);
+  if (source === "rem_audit") {
+    const audit = formatAuditLine(raw);
+    if (audit) {
+      let html = `<div class="log-line log-audit ${cls}">`;
+      html += `<div class="log-audit-row">`;
+      if (audit.ts) html += `<span class="log-ts-inline">${escapeHtml(audit.ts)}</span>`;
+      html += `<span class="log-audit-meta">${escapeHtml(audit.meta)}</span>`;
+      html += `</div>`;
+      if (audit.fields) html += `<div class="log-audit-fields">${escapeHtml(audit.fields)}</div>`;
+      if (audit.body) html += `<div class="log-audit-body">${escapeHtml(audit.body)}</div>`;
+      html += `</div>`;
+      return html;
+    }
+  }
+  const journal = raw.match(JOURNAL_TS_RE);
+  if (journal) {
+    return `<div class="log-line ${cls}"><span class="log-ts-inline">${escapeHtml(journal[1])}</span>${escapeHtml(raw.slice(journal[1].length))}</div>`;
+  }
+  return `<div class="log-line ${cls}">${escapeHtml(raw)}</div>`;
+}
+
+function syncSourceTabs() {
+  document.querySelectorAll("#tabs .view-tab").forEach(btn => {
+    const on = btn.dataset.id === source;
+    btn.classList.toggle("is-active", on);
+    btn.setAttribute("aria-selected", String(on));
+  });
+}
+
+function bindSourceTabs(sources) {
+  document.getElementById("tabs").innerHTML = sources.map(s =>
+    `<button type="button" data-id="${s.id}" class="view-tab${s.id === source ? " is-active" : ""}" ` +
+    `role="tab" aria-selected="${s.id === source}" title="${escAttr(s.description || "")}">` +
+    `${escapeHtml(s.label)}</button>`).join("");
+  document.getElementById("tabs").onclick = e => {
+    const btn = e.target.closest("[data-id]");
+    if (!btn?.dataset.id) return;
+    source = btn.dataset.id;
+    localStorage.setItem("sm-log-source", source);
+    fileOffset = 0; journalSince = null; lastJournalLine = null;
+    severityFilters = new Set();
+    localStorage.removeItem("sm-log-severity");
+    resetCounts();
+    syncSourceTabs();
+    refresh(true);
+  };
+}
+
+function escAttr(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
+}
+
+async function loadSources(){
+  try {
+    const r = await fetch("/api/logs/sources");
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    const ids = new Set(d.sources.map(s => s.id));
+    if (!ids.has(source)) {
+      source = "gateway";
+      localStorage.setItem("sm-log-source", source);
+    }
+    sourceLabels = Object.fromEntries(d.sources.map(s => [s.id, s.label]));
+    bindSourceTabs(d.sources);
+  } catch (e) {
+    document.getElementById("log-status").textContent = "Could not load log sources — " + e;
+    sourceLabels = { gateway: "Gateway daemons" };
+    bindSourceTabs([{ id: "gateway", label: "Gateway daemons", description: "fallback" }]);
+  }
+}
+
+async function refresh(clear=false){
+  if (document.getElementById("pause").checked) return;
+  const filtered = hasTimeFilter();
+  const params = new URLSearchParams({source, lines: filtered ? "1000" : "200"});
+  const isJournal = source === "gateway";
+
+  if (filtered) {
+    const since = toApiTs(filterFrom);
+    const until = toApiTs(filterTo);
+    if (since) params.set("since", since);
+    if (until) params.set("until", until);
+    clear = true;
+  } else if (isJournal && journalSince && !clear) {
+    params.set("since", journalSince);
+  } else if (!isJournal && fileOffset && !clear) {
+    params.set("offset", String(fileOffset));
+  }
+
+  try{
+    const r = await fetch("/api/logs/tail?" + params);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    const el = document.getElementById("log");
+    let lines = d.lines || [];
+
+    if (d.error && clear) {
+      resetCounts();
+      el.innerHTML = `<div class="log-line line-err">Error: ${escapeHtml(d.error)}</div>`;
+      updateChips();
+    } else if (lines.length) {
+      if (isJournal && !filtered && !clear && lastJournalLine) {
+        lines = lines.filter((ln, i) => !(i === 0 && ln === lastJournalLine));
+      }
+      if (!lines.length && !clear) {
+        document.getElementById("log-status").textContent =
+          `Updated ${new Date().toLocaleTimeString()} · no new lines`;
+        return;
+      }
+      mergeLines(lines, clear);
+      if (hasSeverityFilter() || clear) {
+        paintLog();
+      } else {
+        appendLog(lines);
+      }
+      if (isJournal && d.lines?.length && !filtered) lastJournalLine = d.lines[d.lines.length - 1];
+      if (document.getElementById("follow").checked) el.scrollTop = el.scrollHeight;
+    } else if (clear) {
+      resetCounts();
+      paintLog(d.error || "(no log lines in range)");
+    }
+
+    if (d.offset != null && !isJournal && !filtered) fileOffset = d.offset;
+    if (isJournal && d.lines?.length && !filtered) {
+      const last = d.lines[d.lines.length - 1];
+      const m = last.match(/^(\d{4}-\d{2}-\d{2}T[\d:+. -]+)/);
+      if (m) journalSince = m[1].trim();
+    }
+
+    const rangeNote = filtered
+      ? ` · ${filterFrom || "…"} → ${filterTo || "…"}`
+      : "";
+    const severityNote = severityStatusNote();
+    document.getElementById("log-status").textContent =
+      `Updated ${new Date().toLocaleTimeString()} · ${d.fetched_at || ""}${rangeNote}${severityNote}`;
+  } catch(e) {
+    document.getElementById("log-status").textContent = "fetch failed: " + e;
+  }
+}
+
+function escapeHtml(s){
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+function applyFilter() {
+  filterFrom = document.getElementById("filter-from").value;
+  filterTo = document.getElementById("filter-to").value;
+  localStorage.setItem("sm-log-from", filterFrom);
+  localStorage.setItem("sm-log-to", filterTo);
+  fileOffset = 0;
+  journalSince = null;
+  lastJournalLine = null;
+  syncFilterInputs();
+  refresh(true);
+}
+
+function clearFilter() {
+  filterFrom = "";
+  filterTo = "";
+  localStorage.removeItem("sm-log-from");
+  localStorage.removeItem("sm-log-to");
+  document.getElementById("filter-from").value = "";
+  document.getElementById("filter-to").value = "";
+  fileOffset = 0;
+  journalSince = null;
+  lastJournalLine = null;
+  syncFilterInputs();
+  refresh(true);
+}
+
+document.getElementById("filter-apply").addEventListener("click", applyFilter);
+document.getElementById("filter-clear").addEventListener("click", clearFilter);
+document.getElementById("filter-from").addEventListener("keydown", e => { if (e.key === "Enter") applyFilter(); });
+document.getElementById("filter-to").addEventListener("keydown", e => { if (e.key === "Enter") applyFilter(); });
+
+fetch("/api/meta").then(r=>r.json()).then(m=>{
+  if (m.neo4j_browser_url) document.getElementById("neo4j-link").href = m.neo4j_browser_url;
+}).catch(()=>{});
+syncFilterInputs();
+bindSeverityChips();
+loadSources().then(() => {
+  refresh(true);
+  setInterval(() => refresh(false), 3000);
+}).catch(() => {
+  refresh(true);
+  setInterval(() => refresh(false), 3000);
+});
+</script>
+</body>
+</html>

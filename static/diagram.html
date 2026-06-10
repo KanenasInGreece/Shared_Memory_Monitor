@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shared Memory Monitor — Architecture</title>
+<link rel="stylesheet" href="/static/theme.css?v=20">
+</head>
+<body class="diagram-page">
+
+<header class="bar">
+  <div class="bar-brand">
+    <h1>Shared Memory Monitor</h1>
+    <div class="sub">Framework topology</div>
+  </div>
+  <nav class="bar-nav view-tabs" aria-label="Views">
+    <div class="view-tabs-group" role="tablist" aria-label="Monitor pages">
+      <a href="/" class="view-tab" role="tab" aria-selected="false">Monitor</a>
+      <span class="view-tab is-active" role="tab" aria-current="page" aria-selected="true">Diagram</span>
+      <a href="/logs" class="view-tab" role="tab" aria-selected="false">Logs</a>
+    </div>
+    <a id="neo4j-link" href="http://127.0.0.1:7474" target="_blank" rel="noopener noreferrer" class="view-tab view-tab-ext" title="Opens Neo4j Browser in a new tab">Neo4j<span class="view-ext-icon" aria-hidden="true">↗</span></a>
+  </nav>
+  <div class="bar-controls">
+    <div class="ranges" id="ranges"></div>
+    <div class="bar-meta">
+      <span class="live" id="live-label">live</span>
+      <span class="bar-stat" id="bar-updated"><span class="bar-stat-k">Last updated</span> <span class="bar-stat-v" id="bar-updated-v">connecting…</span></span>
+      <span class="bar-stat" id="bar-samples"><span class="bar-stat-v" id="bar-samples-v">—</span> <span class="bar-stat-k">samples</span></span>
+      <span class="sub bar-status" id="bar-status" hidden></span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap diagram-wrap">
+  <div class="diagram-status" id="diagram-status">
+    <h2 id="status-headline">Loading topology…</h2>
+    <span class="pill ok" id="status-pill">—</span>
+  </div>
+
+  <div class="arch-canvas-wrap">
+    <div class="diagram-legend" aria-label="Legend">
+      <span class="legend-item"><span class="legend-swatch ok"></span> OK</span>
+      <span class="legend-item"><span class="legend-swatch active"></span> Active</span>
+      <span class="legend-item"><span class="legend-swatch waiting"></span> Waiting</span>
+      <span class="legend-item"><span class="legend-swatch warn"></span> Backlog</span>
+      <span class="legend-item"><span class="legend-swatch bad"></span> Down</span>
+      <span class="legend-item legend-flow-write">Write</span>
+      <span class="legend-item legend-flow-read">Read</span>
+      <span class="legend-item legend-flow-logic">Logic / proxy</span>
+      <span class="legend-item legend-flow-dir">Directed</span>
+      <span class="legend-item legend-flow-bi">Bidirectional</span>
+    </div>
+
+    <div class="arch-canvas" id="arch-canvas">
+      <svg class="arch-flows" id="arch-flows" aria-hidden="true"></svg>
+
+      <section class="arch-layer arch-layer-agents" data-layer="agents">
+        <div class="arch-layer-head">
+          <span class="arch-layer-title">Agent layer</span>
+          <span class="arch-layer-badge unknown" id="layer-agents-badge">—</span>
+        </div>
+        <p class="arch-layer-note">HTTP only — agents never touch the databases directly</p>
+        <div class="arch-chips">
+          <span class="arch-chip">Claude Code</span>
+          <span class="arch-chip">Grok</span>
+          <span class="arch-chip">Codex CLI</span>
+          <span class="arch-chip">Antigravity</span>
+          <span class="arch-chip">LM Studio (MCP)</span>
+          <span class="arch-chip">Any HTTP client</span>
+        </div>
+        <div class="arch-node-detail" id="node-agents-detail">memory_bridge.py · vector-skill.py</div>
+        <div class="arch-egress" data-node="agents_egress">
+          <span class="arch-port" data-port="top" title="Retrieve responses"></span>
+          <span class="arch-egress-label">HTTP → :8888</span>
+          <span class="arch-port" data-port="bottom" title="Save / retrieve requests"></span>
+        </div>
+      </section>
+
+      <div class="arch-link-gap" data-gap="agents-gateway" aria-hidden="true"></div>
+
+      <section class="arch-layer arch-layer-gateway" data-layer="gateway">
+        <div class="arch-layer-head">
+          <span class="arch-layer-title">Gateway cluster</span>
+          <span class="arch-layer-badge unknown" id="layer-gateway-badge">—</span>
+        </div>
+        <p class="arch-layer-note">hive_mind_proxy.py spawns coordinator + REM/NREM daemons · owns all DB I/O</p>
+        <div class="arch-cluster-grid">
+          <div class="arch-node arch-node-main unknown" id="node-gateway" data-node="gateway">
+            <span class="arch-port" data-port="top" title="From agents"></span>
+            <span class="arch-port" data-port="bottom" title="To memory / inference"></span>
+            <div class="arch-node-head">
+              <span class="arch-node-title">Hive-Mind Gateway + Coordinator</span>
+              <span class="arch-node-state" id="node-gateway-state">—</span>
+            </div>
+            <div class="arch-node-sub">hive_mind_proxy.py · coordinator.py · 127.0.0.1:8888</div>
+            <div class="arch-node-metrics" id="node-gateway-metrics"><span>—</span></div>
+          </div>
+          <div class="arch-node arch-node-daemon unknown" id="node-rem" data-node="rem_daemon">
+            <span class="arch-port" data-port="top" title="Reads Postgres"></span>
+            <span class="arch-port" data-port="bottom" title="Reads Neo4j · LLM logic"></span>
+            <div class="arch-node-head">
+              <span class="arch-node-title">REM daemon</span>
+              <span class="arch-node-state" id="node-rem-state">—</span>
+            </div>
+            <div class="arch-node-sub">rem_loop.py · enrichment</div>
+            <div class="arch-node-metrics" id="node-rem-metrics"><span>—</span></div>
+          </div>
+          <div class="arch-node arch-node-daemon unknown" id="node-nrem" data-node="nrem_daemon">
+            <span class="arch-port" data-port="top" title="Reads Neo4j"></span>
+            <span class="arch-port" data-port="bottom" title="Writes summaries · LLM logic"></span>
+            <div class="arch-node-head">
+              <span class="arch-node-title">NREM daemon</span>
+              <span class="arch-node-state" id="node-nrem-state">—</span>
+            </div>
+            <div class="arch-node-sub">consolidation_loop.py · LISTEN new_artifact</div>
+            <div class="arch-node-metrics" id="node-nrem-metrics"><span>—</span></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="arch-link-gap" data-gap="gateway-infra" aria-hidden="true"></div>
+
+      <div class="arch-infra-row" data-layer="infra">
+        <section class="arch-layer arch-layer-memory" data-layer="memory">
+          <div class="arch-layer-head">
+            <span class="arch-layer-title">Memory layer</span>
+            <span class="arch-layer-badge unknown" id="layer-memory-badge">—</span>
+          </div>
+          <p class="arch-layer-note">Red write · green read · blue logic — three lanes between stores</p>
+          <div class="arch-memory-grid">
+            <div class="arch-node arch-node-store unknown" id="node-postgres" data-node="postgres">
+              <span class="arch-port" data-port="top" title="Gateway save (write) / retrieve (read)"></span>
+              <span class="arch-port" data-port="outbox" title="Outbox WAL write → Neo4j"></span>
+              <span class="arch-port" data-port="rem" title="REM read → Neo4j"></span>
+              <span class="arch-port" data-port="summaries" title="NREM write ← summaries"></span>
+              <div class="arch-node-head">
+                <span class="arch-node-title">PostgreSQL + pgvector</span>
+                <span class="arch-node-state" id="node-postgres-state">—</span>
+              </div>
+              <div class="arch-node-sub">Tier 1 episodic · Tier 3 summaries · neo4j_outbox</div>
+              <div class="arch-node-metrics" id="node-postgres-metrics"><span>—</span></div>
+            </div>
+            <div class="arch-memory-bridge" aria-hidden="true">
+              <div class="arch-memory-lane arch-memory-lane--write" id="lane-outbox">
+                <span class="arch-lane-io">write</span>
+                <span class="arch-lane-label">Outbox</span>
+                <span class="arch-lane-arrow" aria-hidden="true">→</span>
+              </div>
+              <div class="arch-memory-lane arch-memory-lane--read" id="lane-rem">
+                <span class="arch-lane-io">read</span>
+                <span class="arch-lane-label">REM</span>
+                <span class="arch-lane-arrow" aria-hidden="true">→</span>
+              </div>
+              <div class="arch-memory-lane arch-memory-lane--write" id="lane-nrem">
+                <span class="arch-lane-arrow" aria-hidden="true">←</span>
+                <span class="arch-lane-label">NREM</span>
+                <span class="arch-lane-io">write</span>
+              </div>
+            </div>
+            <div class="arch-node arch-node-store unknown" id="node-neo4j" data-node="neo4j">
+              <span class="arch-port" data-port="top" title="Gateway retrieve (read)"></span>
+              <span class="arch-port" data-port="outbox" title="Outbox WAL write"></span>
+              <span class="arch-port" data-port="rem" title="REM read"></span>
+              <span class="arch-port" data-port="consolidate" title="NREM write source"></span>
+              <div class="arch-node-head">
+                <span class="arch-node-title">Neo4j</span>
+                <span class="arch-node-state" id="node-neo4j-state">—</span>
+              </div>
+              <div class="arch-node-sub">Tier 2 structural · Facts · Entity hubs</div>
+              <div class="arch-node-metrics" id="node-neo4j-metrics"><span>—</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="arch-layer arch-layer-inference" data-layer="inference">
+          <div class="arch-layer-head">
+            <span class="arch-layer-title">Inference backends</span>
+            <span class="arch-layer-badge unknown" id="layer-inference-badge">—</span>
+          </div>
+          <p class="arch-layer-note">Proxied by gateway — Docker / external services, not gateway processes</p>
+          <div class="arch-inference-grid">
+            <div class="arch-node arch-node-svc unknown" id="node-embedder" data-node="embedder">
+              <span class="arch-port" data-port="top" title="From gateway"></span>
+              <div class="arch-node-head">
+                <span class="arch-node-title">Embedder</span>
+                <span class="arch-node-state" id="node-embedder-state">—</span>
+              </div>
+              <div class="arch-node-sub">BGE-M3 · :8070</div>
+              <div class="arch-node-metrics" id="node-embedder-metrics"><span>—</span></div>
+            </div>
+            <div class="arch-node arch-node-svc unknown" id="node-reranker" data-node="reranker">
+              <span class="arch-port" data-port="top" title="From gateway"></span>
+              <div class="arch-node-head">
+                <span class="arch-node-title">Reranker</span>
+                <span class="arch-node-state" id="node-reranker-state">—</span>
+              </div>
+              <div class="arch-node-sub">BGE-Reranker · :8071</div>
+              <div class="arch-node-metrics" id="node-reranker-metrics"><span>—</span></div>
+            </div>
+            <div class="arch-node arch-node-svc unknown" id="node-llm" data-node="llm">
+              <span class="arch-port" data-port="top" title="From gateway / daemons"></span>
+              <div class="arch-node-head">
+                <span class="arch-node-title">Reasoning LLM</span>
+                <span class="arch-node-state" id="node-llm-state">—</span>
+              </div>
+              <div class="arch-node-sub">OpenAI-compatible · :5000</div>
+              <div class="arch-node-metrics" id="node-llm-metrics"><span>—</span></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="diagram-replay is-live" id="diagram-replay" aria-label="History replay">
+      <span class="diagram-replay-label" id="tl-label">Loading history…</span>
+      <input type="range" id="tl-index" min="0" max="0" value="0" disabled aria-label="Scrub poll history">
+      <span class="diagram-replay-events" id="tl-events">—</span>
+    </div>
+  </div>
+
+  <footer class="diagram-footer">
+    <span id="footer-health-ts">Health: —</span>
+    <span id="footer-telemetry-ts">Telemetry: —</span>
+    <span id="footer-version">—</span>
+  </footer>
+</div>
+
+<script src="/static/bar-meta.js?v=1"></script>
+<script>
+const HEALTH_MS = 30_000;
+const HISTORY_RANGE = "7d";
+const SERIES_KEYS = [
+  "technical_docs", "outbox_pending", "outbox_applied", "outbox_rem_reviewed",
+  "outbox_failed", "summaries_total", "facts_total", "facts_rem_pending",
+  "facts_unconsolidated", "decisions_rem_pending", "rem_backlog", "nrem_backlog",
+  "dream_backlog",
+];
+
+let historyData = null;
+let tlIndex = 0;
+let liveHealth = null;
+let liveStory = null;
+let liveLatest = null;
+let healthTimer = null;
+
+const STATE_LABEL = {
+  ok: "OK",
+  active: "Active",
+  waiting: "Waiting",
+  warn: "Backlog",
+  bad: "Down",
+  unknown: "—",
+};
+
+function sampleCount() {
+  return historyData?.samples || 0;
+}
+
+function isLiveMode() {
+  const n = sampleCount();
+  return n > 0 && tlIndex >= n - 1;
+}
+
+function setNodeState(el, state, label) {
+  if (!el) return;
+  const visual = ["ok", "active", "waiting", "warn", "bad"].includes(state) ? state : "unknown";
+  el.className = el.className.replace(/\b(ok|active|waiting|warn|bad|unknown)\b/g, "").trim();
+  el.classList.add(visual);
+  const stateEl = el.querySelector(".arch-node-state");
+  if (stateEl) stateEl.textContent = label || STATE_LABEL[visual] || "—";
+}
+
+function setMetrics(id, parts) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = parts.filter(Boolean).map(p =>
+    `<span class="arch-metric${p.hot ? " hot" : ""}${p.bad ? " bad" : ""}">${p.k}: <b>${p.v}</b></span>`
+  ).join("") || "<span>—</span>";
+}
+
+function setLayerBadge(id, state, text) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = "arch-layer-badge " + (state || "unknown");
+  el.textContent = text || "—";
+}
+
+function deriveVisualState(c, { backlog, activeWhenBacklog } = {}) {
+  if (!c) return { state: "unknown", label: "—" };
+  const proc = c.process?.state;
+  const load = c.workload?.state;
+  if (proc === "bad" || load === "bad") return { state: "bad", label: "Down" };
+  const lv = (c.workload?.value || "").toLowerCase();
+  if (lv.includes("busy")) return { state: "active", label: "Active" };
+  if (backlog > 0 || (activeWhenBacklog && load === "warn")) {
+    return { state: backlog >= 10 ? "warn" : "active", label: backlog >= 10 ? "Backlog" : "Active" };
+  }
+  if (proc === "warn" || load === "warn") return { state: "warn", label: "Degraded" };
+  if (lv === "idle" || lv === "standby" || lv === "queue idle" || lv === "outbox synced") {
+    return { state: "waiting", label: "Waiting" };
+  }
+  return { state: "ok", label: "OK" };
+}
+
+function renderGatewayNodes(health, latest) {
+  const by = Object.fromEntries((health?.components || []).map(c => [c.key, c]));
+  const reachable = health?.reachable !== false;
+
+  const agentsState = reachable ? "ok" : "bad";
+  setLayerBadge("layer-agents-badge", agentsState, reachable ? "Connected" : "Unreachable");
+  document.querySelector(".arch-layer-agents")?.classList.toggle("layer-hot", reachable);
+
+  const gw = by.gateway;
+  const gwVis = !reachable ? { state: "bad", label: "Down" } : deriveVisualState(gw, {
+    backlog: (latest?.outbox_pending || 0) + (latest?.outbox_failed || 0),
+    activeWhenBacklog: true,
+  });
+  if ((latest?.outbox_failed || 0) > 0) { gwVis.state = "bad"; gwVis.label = "Outbox failed"; }
+  setNodeState(document.getElementById("node-gateway"), gwVis.state, gwVis.label);
+  setMetrics("node-gateway-metrics", [
+    { k: "Process", v: gw?.process?.value || (reachable ? "—" : "down"), hot: gwVis.state === "active" },
+    { k: "Pipeline", v: gw?.workload?.value || "—", hot: gwVis.state === "warn", bad: gwVis.state === "bad" },
+    health?.version ? { k: "Version", v: health.version } : null,
+  ]);
+
+  for (const key of ["embedder", "reranker", "llm"]) {
+    const c = by[key];
+    const extra = key === "llm" ? { backlog: (latest?.dream_backlog || 0), activeWhenBacklog: true } : {};
+    const vis = !reachable ? { state: "bad", label: "Down" } : deriveVisualState(c, extra);
+    if (key === "llm" && (c?.workload?.value || "").toLowerCase().includes("busy")) {
+      vis.state = "active"; vis.label = "Dreaming";
+    }
+    setNodeState(document.getElementById(`node-${key}`), vis.state, vis.label);
+    setMetrics(`node-${key}-metrics`, [
+      { k: "Process", v: c?.process?.value || "—" },
+      { k: "Load", v: c?.workload?.value || "—", hot: vis.state === "active" || vis.state === "warn" },
+    ]);
+  }
+
+  const remQ = latest?.rem_backlog || 0;
+  const nremQ = latest?.nrem_backlog || 0;
+  for (const [key, elId, q] of [
+    ["rem_daemon", "node-rem", remQ],
+    ["nrem_daemon", "node-nrem", nremQ],
+  ]) {
+    const c = by[key];
+    const vis = !reachable ? { state: "bad", label: "Down" } : deriveVisualState(c, { backlog: q, activeWhenBacklog: true });
+    setNodeState(document.getElementById(elId), vis.state, vis.label);
+    setMetrics(`${elId}-metrics`, [
+      { k: "Process", v: c?.process?.value || "—" },
+      { k: "Backlog", v: q, hot: q > 0, bad: (c?.workload?.value || "").includes("blocked") },
+      key === "nrem_daemon" && latest?.nrem_backlog_source
+        ? { k: "Source", v: latest.nrem_backlog_source } : null,
+    ]);
+  }
+
+  const clusterWorst = [by.gateway, by.rem_daemon, by.nrem_daemon].reduce((w, c) => {
+    const s = c?.state || "unknown";
+    const rank = { bad: 3, warn: 2, ok: 1, unknown: 0 };
+    return rank[s] > rank[w] ? s : w;
+  }, "ok");
+  const dream = remQ + nremQ;
+  setLayerBadge("layer-gateway-badge",
+    clusterWorst === "bad" ? "bad" : dream > 0 ? (dream >= 10 ? "warn" : "active") : "ok",
+    dream > 0 ? `${dream} dream backlog` : (clusterWorst === "bad" ? "Down" : "Operational"));
+
+  const infWorst = ["embedder", "reranker", "llm"].reduce((w, key) => {
+    const s = by[key]?.state || "unknown";
+    const rank = { bad: 3, warn: 2, ok: 1, unknown: 0 };
+    return rank[s] > rank[w] ? s : w;
+  }, "ok");
+  const llmBusy = (by.llm?.workload?.value || "").toLowerCase().includes("busy") || dream > 0;
+  setLayerBadge("layer-inference-badge",
+    infWorst === "bad" ? "bad" : llmBusy ? "active" : infWorst === "warn" ? "warn" : "ok",
+    llmBusy ? "Dream cycle load" : (infWorst === "bad" ? "Unavailable" : "Proxied"));
+
+  const pending = latest?.outbox_pending || 0;
+  const failed = latest?.outbox_failed || 0;
+  const pgState = failed > 0 ? "bad" : pending > 0 ? "active" : "ok";
+  setNodeState(document.getElementById("node-postgres"), pgState, failed > 0 ? "Failed" : pending > 0 ? "Syncing" : "OK");
+  setMetrics("node-postgres-metrics", [
+    { k: "Docs", v: latest?.technical_docs ?? "—" },
+    { k: "Summaries", v: latest?.summaries_total ?? "—" },
+    { k: "Outbox pending", v: pending, hot: pending > 0 },
+    failed > 0 ? { k: "Outbox failed", v: failed, bad: true } : null,
+  ]);
+
+  const remP = latest?.facts_rem_pending || 0;
+  const decP = latest?.decisions_rem_pending || 0;
+  const njState = remP + decP > 0 ? "active" : (latest?.facts_unconsolidated || 0) > 0 ? "waiting" : "ok";
+  setNodeState(document.getElementById("node-neo4j"), njState, remP + decP > 0 ? "REM queue" : "OK");
+  setMetrics("node-neo4j-metrics", [
+    { k: "Facts", v: latest?.facts_total ?? "—" },
+    { k: "REM pending", v: remP + decP, hot: remP + decP > 0 },
+    { k: "Unconsolidated", v: latest?.facts_unconsolidated ?? "—" },
+    { k: "Decisions", v: latest?.decisions_total ?? "—" },
+  ]);
+
+  const memState = failed > 0 ? "bad" : (pending > 0 || remP + decP > 0 || nremQ > 0) ? "active" : "ok";
+  setLayerBadge("layer-memory-badge", memState, failed > 0 ? "Outbox errors" : (pending ? "Writes pending" : "Synced"));
+
+  const canvas = document.getElementById("arch-canvas");
+  if (canvas) {
+    canvas.dataset.reachable = reachable ? "1" : "0";
+    canvas.dataset.remQ = String(remQ);
+    canvas.dataset.nremQ = String(nremQ);
+    canvas.dataset.pending = String(pending);
+    canvas.dataset.dream = String(dream);
+  }
+}
+
+function updateStatus(story, health) {
+  const h = story?.health || health?.status || "ok";
+  document.getElementById("status-headline").textContent =
+    story?.headline || health?.summary || "Pipeline topology";
+  const pill = document.getElementById("status-pill");
+  const pillState = h === "critical" || health?.status === "critical" ? "danger"
+    : h === "warn" || health?.status === "warn" ? "warn" : "ok";
+  pill.className = "pill " + pillState;
+  pill.textContent = (health?.status || h || "—").toUpperCase();
+  const liveLabel = document.getElementById("live-label");
+  if (liveLabel) {
+    liveLabel.textContent = isLiveMode() ? "live" : "replay";
+    liveLabel.classList.toggle("off", !isLiveMode());
+  }
+}
+
+function fmtTs(iso) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  } catch (_) { return iso; }
+}
+
+function rowAt(index) {
+  if (!historyData?.series) return {};
+  const row = {};
+  for (const k of SERIES_KEYS) {
+    row[k] = historyData.series[k]?.[index] ?? 0;
+  }
+  row.collected_at = historyData.timestamps?.[index] || historyData.labels?.[index];
+  return row;
+}
+
+const SAVE_FLOW_KEYS = ["save-agents-gw", "save-gw-pg", "outbox-pg-nj"];
+const REM_FLOW_KEYS = ["rem-read-pg", "rem-read-pg-nj", "rem-logic-llm", "rem-read-nj"];
+const NREM_FLOW_KEYS = ["nrem-read-nj", "nrem-write-nj-pg", "nrem-logic-llm"];
+const RETRIEVE_FLOW_KEYS = [
+  "retrieve-agents-gw", "retrieve-gw-embed", "retrieve-gw-rerank",
+  "retrieve-gw-pg", "retrieve-gw-nj", "retrieve-gw-agents",
+];
+
+function flowEventsBetween(prev, cur) {
+  const events = new Set();
+  if (!prev || !cur) return events;
+  const applied = (cur.outbox_applied || 0) - (prev.outbox_applied || 0);
+  const remReviewed = (cur.outbox_rem_reviewed || 0) - (prev.outbox_rem_reviewed || 0);
+  const docs = (cur.technical_docs || 0) - (prev.technical_docs || 0);
+  const remCleared = (prev.rem_backlog || 0) - (cur.rem_backlog || 0);
+  const nremCleared = (prev.nrem_backlog || 0) - (cur.nrem_backlog || 0);
+  const summaries = (cur.summaries_total || 0) - (prev.summaries_total || 0);
+  const pendingDelta = (cur.outbox_pending || 0) - (prev.outbox_pending || 0);
+
+  if (docs > 0) {
+    for (const k of SAVE_FLOW_KEYS) events.add(k);
+  }
+  if (pendingDelta > 0 || applied > 0) events.add("outbox-pg-nj");
+
+  if (remCleared > 0 || remReviewed > 0) {
+    for (const k of REM_FLOW_KEYS) events.add(k);
+  }
+  if (nremCleared > 0 || summaries > 0) {
+    for (const k of NREM_FLOW_KEYS) events.add(k);
+  }
+  return events;
+}
+
+function aggregateFlowEvents(startIdx, endIdx) {
+  const events = new Set();
+  if (!historyData || endIdx <= startIdx) return events;
+  for (let i = startIdx + 1; i <= endIdx; i++) {
+    for (const key of flowEventsBetween(rowAt(i - 1), rowAt(i))) events.add(key);
+  }
+  return events;
+}
+
+function flowEventsForView() {
+  const n = sampleCount();
+  if (n < 2) return new Set();
+  if (isLiveMode()) return aggregateFlowEvents(Math.max(0, n - 2), n - 1);
+  return aggregateFlowEvents(0, tlIndex);
+}
+
+const FLOW_LABELS = {
+  "save-agents-gw": "save → gateway",
+  "save-gw-pg": "save → Postgres",
+  "outbox-pg-nj": "outbox write → Neo4j",
+  "rem-read-pg": "REM read Postgres",
+  "rem-read-pg-nj": "REM read → Neo4j",
+  "rem-logic-llm": "REM logic → LLM",
+  "rem-read-nj": "REM read Neo4j",
+  "nrem-read-nj": "NREM read Neo4j",
+  "nrem-write-nj-pg": "NREM write → summaries",
+  "nrem-logic-llm": "NREM logic → LLM",
+  "retrieve-agents-gw": "retrieve → gateway",
+  "retrieve-gw-embed": "read embedder",
+  "retrieve-gw-rerank": "read reranker",
+  "retrieve-gw-pg": "read Postgres",
+  "retrieve-gw-nj": "read Neo4j",
+  "retrieve-gw-agents": "results → agent",
+  "gw-logic-llm": "gateway logic → LLM",
+};
+
+function updateReplayUi() {
+  const n = sampleCount();
+  const slider = document.getElementById("tl-index");
+  const label = document.getElementById("tl-label");
+  const eventsEl = document.getElementById("tl-events");
+  const replay = document.getElementById("diagram-replay");
+  const live = isLiveMode();
+
+  replay?.classList.toggle("is-live", live);
+
+  if (!n) {
+    label.textContent = "No poll history yet";
+    eventsEl.textContent = "—";
+    slider.disabled = true;
+    return;
+  }
+
+  slider.disabled = n < 2;
+  slider.min = "0";
+  slider.max = String(Math.max(0, n - 1));
+  slider.value = String(Math.min(tlIndex, n - 1));
+
+  const ts = fmtTs(historyData.timestamps?.[Math.min(tlIndex, n - 1)]);
+  const t0 = fmtTs(historyData.timestamps?.[0]);
+
+  if (live && n >= 2) {
+    const prevTs = fmtTs(historyData.timestamps?.[n - 2]);
+    label.textContent = `Live · last interval ${prevTs} → ${ts}`;
+  } else if (n < 2) {
+    label.textContent = `Sample ${ts}`;
+  } else {
+    label.textContent = `Replay ${t0} → ${ts}`;
+  }
+
+  const events = flowEventsForView();
+  if (!events.size) {
+    eventsEl.textContent = live ? "Quiet last interval" : "No events in range";
+  } else {
+    eventsEl.textContent = [...events].map(k => FLOW_LABELS[k] || k).join(" · ");
+  }
+}
+
+function snapshotForView() {
+  const n = sampleCount();
+  if (!n) return liveLatest || {};
+  if (isLiveMode()) {
+    return liveLatest
+      ? { ...liveLatest, collected_at: historyData.timestamps?.[n - 1] }
+      : rowAt(n - 1);
+  }
+  return rowAt(Math.min(tlIndex, n - 1));
+}
+
+function storyForView(health) {
+  if (isLiveMode() && liveStory) return liveStory;
+  const snap = snapshotForView();
+  const n = sampleCount();
+  return {
+    headline: n ? (isLiveMode() ? (liveStory?.headline || "Latest poll snapshot") : `Snapshot at ${fmtTs(snap.collected_at)}`)
+      : "No samples",
+    detail: "",
+    health: snap.outbox_failed > 0 ? "critical" : (snap.dream_backlog > 30 ? "warn" : "ok"),
+  };
+}
+
+function applyView() {
+  const health = liveHealth || { reachable: false };
+  const snapshot = snapshotForView();
+
+  updateStatus(storyForView(health), health);
+  renderGatewayNodes(health, snapshot);
+
+  const events = flowEventsForView();
+  const reachable = health.reachable !== false;
+  const flowCtx = {
+    reachable,
+    events,
+    health,
+    remQ: snapshot.rem_backlog || 0,
+    nremQ: snapshot.nrem_backlog || 0,
+    pending: snapshot.outbox_pending || 0,
+    unconsolidated: snapshot.facts_unconsolidated || 0,
+    dream: snapshot.dream_backlog || 0,
+  };
+  drawFlows(flowCtx);
+  updateMemoryBridge(flowCtx, events);
+  updateReplayUi();
+}
+
+function onReplayInput() {
+  tlIndex = Number(document.getElementById("tl-index").value);
+  syncHealthPolling();
+  applyView();
+}
+
+function syncHealthPolling() {
+  if (healthTimer) {
+    clearInterval(healthTimer);
+    healthTimer = null;
+  }
+  if (isLiveMode()) {
+    healthTimer = setInterval(() => {
+      loadDiagram({ refreshHistory: true });
+    }, HEALTH_MS);
+  }
+}
+
+async function loadHistory() {
+  try {
+    const r = await fetch(`/api/history?range=${HISTORY_RANGE}&bucket=raw`);
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    historyData = await r.json();
+    const n = historyData.samples || 0;
+    tlIndex = Math.min(tlIndex, Math.max(0, n - 1));
+    applyView();
+  } catch (e) {
+    document.getElementById("tl-label").textContent = "History load failed: " + e.message;
+  }
+}
+
+function renderPayload(data) {
+  liveHealth = data.health || {};
+  liveStory = data.summary?.story || null;
+  liveLatest = data.summary?.latest || null;
+
+  document.getElementById("footer-health-ts").textContent = "Health polled: " + fmtTs(liveHealth.fetched_at);
+  document.getElementById("footer-telemetry-ts").textContent = isLiveMode()
+    ? "Live — flows from last poll interval · health refreshes every 30s"
+    : "Replay — cumulative flows through selected sample · scrub right for live";
+  document.getElementById("footer-version").textContent = liveHealth.version
+    ? `Gateway ${liveHealth.version}${liveHealth.api_version ? " · API " + liveHealth.api_version : ""}`
+    : (liveHealth.reachable === false ? (liveHealth.error || "Gateway unreachable") : "");
+
+  if (liveHealth.reachable === false) {
+    window.SmBarMeta?.set({ mode: "error", error: liveHealth.error || "gateway unreachable" });
+  } else {
+    window.SmBarMeta?.load();
+  }
+  applyView();
+}
+
+async function loadDiagram({ refreshHistory = false } = {}) {
+  try {
+    const r = await fetch("/api/diagram");
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    renderPayload(await r.json());
+    document.getElementById("bar-status").hidden = true;
+    if (refreshHistory && isLiveMode()) await loadHistory();
+  } catch (e) {
+    window.SmBarMeta?.set({ mode: "error", error: String(e.message || e) });
+  }
+}
+
+const PORT_SPREAD = 10;
+const ROUTE_SPREAD = 11;
+
+/* io: write/red · read/green · logic/blue — dir: solid+arrow · bi: dotted, no arrow */
+const FLOW_DEFS = [
+  { key: "save-agents-gw", from: "agents_egress", fPort: "bottom", to: "gateway", tPort: "top", io: "write", dir: "dir" },
+  { key: "save-gw-pg", from: "gateway", fPort: "bottom", to: "postgres", tPort: "top", io: "write", dir: "dir" },
+  { key: "retrieve-agents-gw", from: "agents_egress", fPort: "bottom", to: "gateway", tPort: "top", io: "logic", dir: "dir" },
+  { key: "retrieve-gw-agents", from: "gateway", fPort: "top", to: "agents_egress", tPort: "top", io: "read", dir: "dir" },
+  { key: "retrieve-gw-embed", from: "gateway", fPort: "bottom", to: "embedder", tPort: "top", io: "read", dir: "bi" },
+  { key: "retrieve-gw-rerank", from: "gateway", fPort: "bottom", to: "reranker", tPort: "top", io: "read", dir: "bi" },
+  { key: "retrieve-gw-pg", from: "gateway", fPort: "bottom", to: "postgres", tPort: "top", io: "read", dir: "dir" },
+  { key: "retrieve-gw-nj", from: "gateway", fPort: "bottom", to: "neo4j", tPort: "top", io: "read", dir: "dir" },
+  { key: "outbox-pg-nj", from: "postgres", fPort: "outbox", to: "neo4j", tPort: "outbox", io: "write", dir: "dir", route: "direct" },
+  { key: "rem-read-pg-nj", from: "postgres", fPort: "rem", to: "neo4j", tPort: "rem", io: "read", dir: "dir", route: "direct" },
+  { key: "nrem-write-nj-pg", from: "neo4j", fPort: "consolidate", to: "postgres", tPort: "summaries", io: "write", dir: "dir", route: "direct" },
+  { key: "rem-read-pg", from: "postgres", fPort: "top", to: "rem_daemon", tPort: "top", io: "read", dir: "dir" },
+  { key: "rem-read-nj", from: "rem_daemon", fPort: "bottom", to: "neo4j", tPort: "top", io: "read", dir: "dir" },
+  { key: "rem-logic-llm", from: "rem_daemon", fPort: "bottom", to: "llm", tPort: "top", io: "logic", dir: "bi" },
+  { key: "nrem-read-nj", from: "neo4j", fPort: "top", to: "nrem_daemon", tPort: "top", io: "read", dir: "dir" },
+  { key: "nrem-logic-llm", from: "nrem_daemon", fPort: "bottom", to: "llm", tPort: "top", io: "logic", dir: "bi" },
+  { key: "gw-logic-llm", from: "gateway", fPort: "bottom", to: "llm", tPort: "top", io: "logic", dir: "bi" },
+];
+
+function routeKey(def) {
+  return `${def.from}:${def.fPort}>${def.to}:${def.tPort}:${def.route || "ortho"}`;
+}
+
+function portKey(def) {
+  return `${def.from}:${def.fPort}`;
+}
+
+function parallelLane(index, total, step) {
+  if (total < 2) return 0;
+  return (index - (total - 1) / 2) * step;
+}
+
+function portPoint(canvas, nodeKey, port) {
+  const portEl = canvas.querySelector(`[data-node="${nodeKey}"] [data-port="${port}"]`);
+  if (!portEl) return null;
+  const r = portEl.getBoundingClientRect();
+  const c = canvas.getBoundingClientRect();
+  return { x: r.left + r.width / 2 - c.left, y: r.top + r.height / 2 - c.top, el: portEl };
+}
+
+function gapMidY(canvas, fromKey, toKey) {
+  const fromNode = canvas.querySelector(`[data-node="${fromKey}"]`);
+  const toNode = canvas.querySelector(`[data-node="${toKey}"]`);
+  if (!fromNode || !toNode) return null;
+  const c = canvas.getBoundingClientRect();
+  const a = fromNode.getBoundingClientRect();
+  const b = toNode.getBoundingClientRect();
+  return (a.bottom - c.top + (b.top - c.top)) / 2;
+}
+
+function orthoPath(a, b, midY, lane = 0) {
+  const dx = Math.abs(a.x - b.x);
+  if (dx < 6) return `M ${a.x} ${a.y} L ${b.x} ${b.y}`;
+  const y = (midY ?? a.y + (b.y - a.y) * 0.55) + lane;
+  return `M ${a.x} ${a.y} L ${a.x} ${y} L ${b.x} ${y} L ${b.x} ${b.y}`;
+}
+
+function flowPath(a, b, midY, lane, route) {
+  if (route === "direct") {
+    const dy = a.y - b.y;
+    const dx = a.x - b.x;
+    if (Math.abs(dy) < 6) {
+      return `M ${a.x} ${a.y + lane} L ${b.x} ${b.y + lane}`;
+    }
+    if (Math.abs(dx) < 6) {
+      return `M ${a.x + lane} ${a.y} L ${b.x + lane} ${b.y}`;
+    }
+    return `M ${a.x} ${a.y + lane} L ${b.x} ${b.y + lane}`;
+  }
+  return orthoPath(a, b, midY, lane);
+}
+
+function retrieveLikelyActive(ctx) {
+  if (!ctx.reachable || ctx.dream > 0 || ctx.pending > 0) return false;
+  const by = Object.fromEntries((ctx.health?.components || []).map(c => [c.key, c]));
+  const busy = ["embedder", "reranker", "gateway"].some(k => {
+    const v = (by[k]?.workload?.value || "").toLowerCase();
+    return v.includes("busy") || v.includes("active");
+  });
+  return busy;
+}
+
+function flowIsActive(def, eventKeys, ctx) {
+  if (eventKeys.has(def.key)) return true;
+  if (def.key === "outbox-pg-nj" && ctx.pending > 0) return true;
+  if (REM_FLOW_KEYS.includes(def.key) && ctx.remQ > 0) return true;
+  if (NREM_FLOW_KEYS.includes(def.key) && (ctx.nremQ > 0 || ctx.unconsolidated > 0)) return true;
+  if (SAVE_FLOW_KEYS.includes(def.key) && ctx.pending > 0) return true;
+  if (RETRIEVE_FLOW_KEYS.includes(def.key) && retrieveLikelyActive(ctx)) return true;
+  return false;
+}
+
+function updateMemoryBridge(ctx, eventKeys) {
+  document.getElementById("lane-outbox")?.classList.toggle(
+    "is-hot", flowIsActive({ key: "outbox-pg-nj" }, eventKeys, ctx));
+  document.getElementById("lane-rem")?.classList.toggle(
+    "is-hot", REM_FLOW_KEYS.some(k => flowIsActive({ key: k }, eventKeys, ctx)));
+  document.getElementById("lane-nrem")?.classList.toggle(
+    "is-hot", flowIsActive({ key: "nrem-write-nj-pg" }, eventKeys, ctx));
+}
+
+function ensureFlowMarkers(svg) {
+  if (svg.querySelector("#arch-marker-write")) return;
+  const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+  defs.innerHTML = `
+    <marker id="arch-marker-write" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#ff7b72"></path>
+    </marker>
+    <marker id="arch-marker-read" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#56d364"></path>
+    </marker>
+    <marker id="arch-marker-logic" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#8bb4d9"></path>
+    </marker>`;
+  svg.appendChild(defs);
+}
+
+function drawFlows(ctx) {
+  const canvas = document.getElementById("arch-canvas");
+  const svg = document.getElementById("arch-flows");
+  if (!canvas || !svg) return;
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  svg.innerHTML = "";
+  ensureFlowMarkers(svg);
+  canvas.querySelectorAll(".arch-port").forEach(p => {
+    p.classList.remove("is-linked", "is-active");
+    delete p.dataset.io;
+  });
+
+  const eventKeys = ctx.events instanceof Set ? ctx.events : new Set();
+
+  const routeTotals = {};
+  const portTotals = {};
+  for (const def of FLOW_DEFS) {
+    const rk = routeKey(def);
+    routeTotals[rk] = (routeTotals[rk] || 0) + 1;
+    const pk = portKey(def);
+    portTotals[pk] = (portTotals[pk] || 0) + 1;
+  }
+
+  const routeCursor = {};
+  const portCursor = {};
+
+  for (const def of FLOW_DEFS) {
+    const a = portPoint(canvas, def.from, def.fPort);
+    const b = portPoint(canvas, def.to, def.tPort);
+    if (!a || !b) continue;
+    const midY = gapMidY(canvas, def.from, def.to);
+    const rk = routeKey(def);
+    const ridx = routeCursor[rk] || 0;
+    routeCursor[rk] = ridx + 1;
+    let lane = parallelLane(ridx, routeTotals[rk], ROUTE_SPREAD);
+    if (routeTotals[rk] < 2) {
+      const pk = portKey(def);
+      const pidx = portCursor[pk] || 0;
+      portCursor[pk] = pidx + 1;
+      lane += parallelLane(pidx, portTotals[pk], PORT_SPREAD);
+    }
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", flowPath(a, b, midY, lane, def.route));
+    const on = flowIsActive(def, eventKeys, ctx);
+    const lineDir = def.dir || "dir";
+    let cls = `arch-flow arch-flow--${def.io || "logic"} arch-flow--${lineDir}`;
+    if (on) cls += " is-event";
+    path.setAttribute("class", cls);
+    if (lineDir === "dir" && def.io) {
+      path.setAttribute("marker-end", `url(#arch-marker-${def.io})`);
+    }
+    svg.appendChild(path);
+
+    if (on) {
+      for (const pt of [a, b]) {
+        if (!pt.el) continue;
+        pt.el.classList.add("is-linked", "is-active");
+        pt.el.dataset.io = def.io;
+      }
+    }
+  }
+}
+
+async function loadMeta() {
+  try {
+    const r = await fetch("/api/meta");
+    if (!r.ok) return;
+    const m = await r.json();
+    const link = document.getElementById("neo4j-link");
+    if (m.neo4j_browser_url) link.href = m.neo4j_browser_url;
+  } catch (_) {}
+}
+
+document.getElementById("tl-index").addEventListener("input", onReplayInput);
+
+async function boot() {
+  await loadMeta();
+  await Promise.all([loadHistory(), loadDiagram()]);
+  tlIndex = Math.max(0, sampleCount() - 1);
+  syncHealthPolling();
+  applyView();
+}
+boot();
+window.addEventListener("resize", () => applyView());
+</script>
+</body>
+</html>

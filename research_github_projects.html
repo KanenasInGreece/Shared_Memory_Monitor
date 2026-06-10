@@ -1,0 +1,956 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Research — Companion UI Patterns for Shared Memory Monitor</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #2a2a2a;
+      --surface: #333333;
+      --card: #3c3c3c;
+      --card-inset: #454545;
+      --border: #5c5c5c;
+      --border-dark: #1f1f1f;
+      --text: #f4f4f4;
+      --muted: #a3a3a3;
+      --mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", monospace;
+      --ok: #3fb950;
+      --ok-tint: rgba(63, 185, 80, 0.14);
+      --warn: #e3b341;
+      --warn-tint: rgba(227, 179, 65, 0.14);
+      --bad: #f85149;
+      --bad-tint: rgba(248, 81, 73, 0.14);
+      --accent: #8bb4d9;
+      --accent2: #b794f6;
+      --shadow: 0 1px 0 rgba(255,255,255,.05) inset, 0 2px 8px rgba(0,0,0,.35);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    .bar {
+      position: sticky; top: 0; z-index: 20;
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem;
+      padding: .85rem 1.5rem;
+      background: var(--surface);
+      border-bottom: 2px solid var(--border-dark);
+      box-shadow: var(--shadow);
+    }
+    .bar h1 { margin: 0; font-size: .95rem; letter-spacing: .05em; text-transform: uppercase; }
+    .bar .meta { font-size: .72rem; color: var(--muted); }
+    nav.toc {
+      display: flex; flex-wrap: wrap; gap: .35rem;
+    }
+    nav.toc a {
+      font-size: .7rem; text-decoration: none; color: var(--muted);
+      padding: .25rem .55rem; border: 1px solid var(--border); border-radius: 3px;
+      background: var(--card);
+    }
+    nav.toc a:hover { color: var(--text); border-color: var(--accent); }
+    main { max-width: 1100px; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
+    section { margin-bottom: 2.75rem; }
+    h2 {
+      font-size: 1.05rem; letter-spacing: .03em; text-transform: uppercase;
+      margin: 0 0 1rem; padding-bottom: .45rem;
+      border-bottom: 1px solid var(--border);
+    }
+    h3 { font-size: .92rem; margin: 1.5rem 0 .6rem; color: var(--accent); }
+    h4 { font-size: .82rem; margin: 1rem 0 .4rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    p { margin: 0 0 .75rem; }
+    .lead { font-size: 1rem; color: #ddd; max-width: 72ch; }
+    .tag {
+      display: inline-block; font-size: .65rem; font-weight: 600; letter-spacing: .06em;
+      text-transform: uppercase; padding: .15rem .45rem; border-radius: 3px; margin-right: .35rem;
+    }
+    .tag-ok { background: var(--ok-tint); color: var(--ok); border: 1px solid rgba(63,185,80,.35); }
+    .tag-warn { background: var(--warn-tint); color: var(--warn); border: 1px solid rgba(227,179,65,.35); }
+    .tag-bad { background: var(--bad-tint); color: var(--bad); border: 1px solid rgba(248,81,73,.35); }
+    .tag-new { background: rgba(139,180,217,.15); color: var(--accent); border: 1px solid rgba(139,180,217,.35); }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 4px;
+      padding: 1rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow);
+    }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: .85rem; }
+    @media (max-width: 800px) {
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    }
+    table {
+      width: 100%; border-collapse: collapse; font-size: .82rem; margin: .75rem 0;
+    }
+    th, td {
+      text-align: left; padding: .45rem .55rem;
+      border-bottom: 1px solid var(--border);
+    }
+    th { color: var(--muted); font-weight: 600; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
+    tr:hover td { background: rgba(255,255,255,.03); }
+    a { color: var(--accent); }
+    a:hover { color: #a8cce8; }
+    code, .mono { font-family: var(--mono); font-size: .82em; }
+    pre {
+      background: #222; border: 1px solid var(--border-dark); border-radius: 4px;
+      padding: .75rem 1rem; overflow-x: auto; font-size: .78rem; line-height: 1.45;
+      font-family: var(--mono); margin: .75rem 0;
+    }
+    .diagram-wrap {
+      background: #262626; border: 1px solid var(--border); border-radius: 4px;
+      padding: 1rem; margin: 1rem 0; overflow-x: auto;
+    }
+    .diagram-wrap svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+    .mermaid { background: transparent; }
+    .idea-card {
+      border-left: 3px solid var(--accent);
+      padding-left: 1rem;
+      margin: 1.5rem 0 2rem;
+    }
+    .idea-num {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 1.6rem; height: 1.6rem; border-radius: 50%;
+      background: var(--accent); color: #1a1a1a; font-weight: 700; font-size: .85rem;
+      margin-right: .5rem;
+    }
+    .idea-title { font-size: 1rem; font-weight: 700; margin-bottom: .35rem; }
+    .refs { font-size: .78rem; color: var(--muted); margin: .5rem 0; }
+    .refs a { margin-right: .75rem; }
+    ul { margin: .4rem 0 .75rem; padding-left: 1.25rem; }
+    li { margin: .25rem 0; }
+    .wireframe {
+      background: #2e2e2e; border: 1px dashed var(--border); border-radius: 6px;
+      padding: .65rem; font-size: .72rem; font-family: var(--mono);
+      margin: .85rem 0;
+    }
+    .wf-bar {
+      display: flex; gap: .35rem; padding: .4rem .5rem; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 3px; margin-bottom: .5rem;
+    }
+    .wf-bar span { padding: .15rem .4rem; background: var(--card-inset); border-radius: 2px; }
+    .wf-bar span.active { background: var(--ok-tint); color: var(--ok); border: 1px solid rgba(63,185,80,.4); }
+    .wf-alert {
+      background: var(--bad-tint); border: 1px solid rgba(248,81,73,.5);
+      color: var(--bad); padding: .35rem .5rem; border-radius: 3px; margin-bottom: .5rem;
+    }
+    .wf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
+    .wf-panel {
+      background: var(--card); border: 1px solid var(--border); border-radius: 3px;
+      padding: .45rem; min-height: 4.5rem;
+    }
+    .wf-panel h5 { margin: 0 0 .3rem; font-size: .68rem; color: var(--muted); text-transform: uppercase; }
+    .wf-row {
+      display: flex; gap: .3rem; padding: .2rem 0; border-bottom: 1px solid #444;
+      font-size: .68rem;
+    }
+    .wf-row .id { color: var(--accent); min-width: 2rem; }
+    .wf-row .err { color: var(--bad); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .wf-terminal {
+      background: #1a1a1a; border: 1px solid var(--border-dark); border-radius: 3px;
+      padding: .5rem; color: #8f8; line-height: 1.35;
+    }
+    .wf-terminal .dim { color: #666; }
+    .wf-terminal .warn { color: var(--warn); }
+    .wf-terminal .json { color: var(--accent); }
+    .wf-metrics {
+      display: flex; flex-wrap: wrap; gap: .35rem;
+    }
+    .wf-metric {
+      background: #1e1e1e; border: 1px solid #444; padding: .3rem .45rem; border-radius: 2px;
+    }
+    .wf-metric .name { color: var(--muted); font-size: .62rem; }
+    .wf-metric .val { color: var(--ok); font-size: .75rem; }
+    .wf-timeline {
+      display: flex; align-items: stretch; gap: 2px; height: 3.5rem; margin: .5rem 0;
+    }
+    .wf-timeline .tick {
+      flex: 1; background: var(--card-inset); border-radius: 2px; position: relative;
+    }
+    .wf-timeline .tick.hit { background: var(--bad); }
+    .wf-timeline .tick.sel { outline: 2px solid var(--accent); }
+    .compare-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; }
+    @media (max-width: 700px) { .compare-cols { grid-template-columns: 1fr; } }
+    .compare-cols h5 { margin: 0 0 .5rem; font-size: .75rem; color: var(--muted); text-transform: uppercase; }
+    .priority-list { counter-reset: pri; list-style: none; padding: 0; }
+    .priority-list li {
+      counter-increment: pri; padding: .55rem .75rem .55rem 2.5rem; position: relative;
+      background: var(--card); border: 1px solid var(--border); border-radius: 4px; margin: .4rem 0;
+    }
+    .priority-list li::before {
+      content: counter(pri); position: absolute; left: .65rem; top: .55rem;
+      width: 1.35rem; height: 1.35rem; border-radius: 50%;
+      background: var(--accent); color: #111; font-weight: 700; font-size: .75rem;
+      display: flex; align-items: center; justify-content: center;
+    }
+    footer {
+      margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border);
+      font-size: .75rem; color: var(--muted);
+    }
+    .project-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: .85rem;
+      margin: 1rem 0;
+    }
+    .project-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: .85rem 1rem;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      gap: .35rem;
+    }
+    .project-card:hover { border-color: var(--accent); }
+    .project-card .name {
+      font-weight: 700;
+      font-size: .9rem;
+    }
+    .project-card .name a { text-decoration: none; }
+    .project-card .name a:hover { text-decoration: underline; }
+    .project-card .desc {
+      font-size: .78rem;
+      color: var(--muted);
+      flex: 1;
+    }
+    .project-card .idea-map {
+      font-size: .72rem;
+      color: var(--accent);
+      margin-top: .15rem;
+    }
+    .link-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .35rem;
+      margin-top: .25rem;
+    }
+    .link-row a {
+      font-size: .68rem;
+      text-decoration: none;
+      padding: .18rem .45rem;
+      border-radius: 3px;
+      border: 1px solid var(--border);
+      background: var(--card-inset);
+      color: var(--accent);
+    }
+    .link-row a:hover {
+      border-color: var(--accent);
+      color: #a8cce8;
+      background: rgba(139, 180, 217, 0.1);
+    }
+    .link-row a.github::before { content: "⌥ "; opacity: .7; }
+    .link-row a.docs::before { content: "↗ "; opacity: .7; }
+    td .sub-links {
+      display: block;
+      margin-top: .2rem;
+      font-size: .68rem;
+    }
+    td .sub-links a {
+      margin-right: .5rem;
+      color: var(--muted);
+    }
+    td .sub-links a:hover { color: var(--accent); }
+  </style>
+</head>
+<body>
+
+<header class="bar">
+  <div>
+    <h1>Companion UI Research</h1>
+    <div class="meta">Shared Memory Monitor · June 2026 · GitHub pattern survey</div>
+  </div>
+  <nav class="toc">
+    <a href="#influences">Projects</a>
+    <a href="#pattern">Pattern</a>
+    <a href="#survey">Survey</a>
+    <a href="#baseline">Baseline</a>
+    <a href="#gaps">Gaps</a>
+    <a href="#ideas">Top 5</a>
+    <a href="#priority">Priority</a>
+    <a href="#deferred">Deferred</a>
+  </nav>
+</header>
+
+<main>
+
+<section id="intro">
+  <p class="lead">
+    This document surveys open-source projects that add a <strong>visual or ops layer on top of an existing system</strong>
+    without owning it — the same architectural stance as <code>shared-memory-monitor</code> over the hive-mind gateway,
+    Postgres, Neo4j, and log files. Findings inform a roadmap of five high-fit features not yet implemented.
+  </p>
+</section>
+
+<!-- ── Influential projects ── -->
+<section id="influences">
+  <h2>Influential open-source projects</h2>
+  <p>Primary references that shaped the top-five roadmap. Each card links to the GitHub repo and official docs or demos where available.</p>
+
+  <div class="project-grid">
+    <div class="project-card">
+      <div class="name"><a href="https://github.com/mher/flower">Flower</a> <span style="color:var(--muted);font-weight:400">· mher/flower</span></div>
+      <div class="desc">Real-time Celery monitor — per-task drill-down, broker queue stats, REST API, Prometheus export.</div>
+      <div class="idea-map">→ Ideas #1 (queue drill-down), #3 (Prometheus)</div>
+      <div class="link-row">
+        <a class="github" href="https://github.com/mher/flower">GitHub</a>
+        <a class="docs" href="https://flower.readthedocs.io/">Docs</a>
+        <a class="docs" href="https://flower.readthedocs.io/en/latest/api.html">REST API</a>
+      </div>
+    </div>
+
+    <div class="project-card">
+      <div class="name"><a href="https://github.com/felixmosh/bull-board">Bull Board</a> <span style="color:var(--muted);font-weight:400">· felixmosh/bull-board</span></div>
+      <div class="desc">Queue inspector UI for Bull/BullMQ — per-job status, payload, errors, and retry actions over Redis.</div>
+      <div class="idea-map">→ Idea #1 (outbox row inspector)</div>
+      <div class="link-row">
+        <a class="github" href="https://github.com/felixmosh/bull-board">GitHub</a>
+        <a class="docs" href="https://www.npmjs.com/org/bull-board">npm packages</a>
+      </div>
+    </div>
+
+    <div class="project-card">
+      <div class="name"><a href="https://github.com/getsentry/spotlight">Spotlight</a> <span style="color:var(--muted);font-weight:400">· getsentry/spotlight</span></div>
+      <div class="desc">Sentry for development — local sidecar, web UI, <code>spotlight tail</code>, and MCP for AI coding assistants.</div>
+      <div class="idea-map">→ Ideas #2 (CLI + MCP), #4 (unified stream)</div>
+      <div class="link-row">
+        <a class="github" href="https://github.com/getsentry/spotlight">GitHub</a>
+        <a class="docs" href="https://spotlightjs.com/docs/getting-started/">Docs</a>
+        <a class="docs" href="https://spotlightjs.com/docs/sidecar/">Sidecar</a>
+        <a class="docs" href="https://blog.sentry.io/sentry-for-development/">Blog post</a>
+      </div>
+    </div>
+
+    <div class="project-card">
+      <div class="name"><a href="https://github.com/langfuse/langfuse">Langfuse</a> <span style="color:var(--muted);font-weight:400">· langfuse/langfuse</span></div>
+      <div class="desc">LLM engineering observability — trace/session drill-down, compare runs, pipeline dashboards.</div>
+      <div class="idea-map">→ Idea #4 (incident timeline / correlation)</div>
+      <div class="link-row">
+        <a class="github" href="https://github.com/langfuse/langfuse">GitHub</a>
+        <a class="docs" href="https://langfuse.com/docs">Docs</a>
+        <a class="docs" href="https://langfuse.com/docs/observability/overview">Observability</a>
+        <a class="docs" href="https://langfuse.com/demo">Live demo</a>
+      </div>
+    </div>
+
+    <div class="project-card">
+      <div class="name"><a href="https://github.com/sosedoff/pgweb">pgweb</a> <span style="color:var(--muted);font-weight:400">· sosedoff/pgweb</span></div>
+      <div class="desc">Minimal PostgreSQL web explorer — single binary, read-focused table/query browser.</div>
+      <div class="idea-map">→ Idea #1 (scoped read-only PG view, not full SQL)</div>
+      <div class="link-row">
+        <a class="github" href="https://github.com/sosedoff/pgweb">GitHub</a>
+        <a class="docs" href="https://github.com/sosedoff/pgweb/wiki">Wiki</a>
+        <a class="docs" href="https://pgweb-demo.fly.dev/">Live demo</a>
+      </div>
+    </div>
+
+    <div class="project-card">
+      <div class="name"><a href="https://github.com/BigBoot/AutoKuma">AutoKuma</a> <span style="color:var(--muted);font-weight:400">· BigBoot/AutoKuma</span></div>
+      <div class="desc">Declarative Uptime Kuma monitor provisioning from Docker labels and JSON/TOML files.</div>
+      <div class="idea-map">→ Idea #5 (doctor → external monitor emit)</div>
+      <div class="link-row">
+        <a class="github" href="https://github.com/BigBoot/AutoKuma">GitHub</a>
+        <a class="docs" href="https://autokuma.bigboot.dev/dev/">Docs</a>
+        <a class="docs" href="https://github.com/louislam/uptime-kuma">Uptime Kuma</a>
+      </div>
+    </div>
+  </div>
+
+  <h3>Related references (deferred ideas)</h3>
+  <div class="link-row">
+    <a class="github" href="https://github.com/louislam/uptime-kuma">Uptime Kuma</a>
+    <a class="docs" href="https://grafana.com/docs/grafana/latest/setup-grafana/set-up-grafana-live/">Grafana Live</a>
+    <a class="docs" href="https://docs.celeryq.dev/en/stable/userguide/monitoring.html">Celery monitoring guide</a>
+  </div>
+</section>
+
+<!-- ── Pattern diagram ── -->
+<section id="pattern">
+  <h2>The companion-layer pattern</h2>
+  <p>All surveyed projects share a thin-client relationship: read upstream state, present it, optionally export or alert — but do not replace the core runtime.</p>
+
+  <div class="diagram-wrap">
+    <svg viewBox="0 0 820 320" xmlns="http://www.w3.org/2000/svg" aria-label="Companion layer architecture">
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="#8bb4d9"/>
+        </marker>
+        <linearGradient id="coreGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#4a4a4a"/>
+          <stop offset="100%" stop-color="#333"/>
+        </linearGradient>
+        <linearGradient id="compGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#3d5a73"/>
+          <stop offset="100%" stop-color="#2d4458"/>
+        </linearGradient>
+      </defs>
+      <!-- Core system box -->
+      <rect x="40" y="40" width="280" height="240" rx="6" fill="url(#coreGrad)" stroke="#5c5c5c" stroke-width="2"/>
+      <text x="180" y="68" text-anchor="middle" fill="#f4f4f4" font-size="13" font-weight="bold">UPSTREAM SYSTEM</text>
+      <text x="180" y="88" text-anchor="middle" fill="#a3a3a3" font-size="10">(owns data &amp; processing)</text>
+      <rect x="60" y="105" width="110" height="36" rx="3" fill="#454545" stroke="#6e6e6e"/>
+      <text x="115" y="127" text-anchor="middle" fill="#c9c9c9" font-size="10">Workers / Daemons</text>
+      <rect x="190" y="105" width="110" height="36" rx="3" fill="#454545" stroke="#6e6e6e"/>
+      <text x="245" y="127" text-anchor="middle" fill="#c9c9c9" font-size="10">Queue / Outbox</text>
+      <rect x="60" y="155" width="110" height="36" rx="3" fill="#454545" stroke="#6e6e6e"/>
+      <text x="115" y="177" text-anchor="middle" fill="#c9c9c9" font-size="10">API / Events</text>
+      <rect x="190" y="155" width="110" height="36" rx="3" fill="#454545" stroke="#6e6e6e"/>
+      <text x="245" y="177" text-anchor="middle" fill="#c9c9c9" font-size="10">Database</text>
+      <rect x="60" y="205" width="240" height="36" rx="3" fill="#454545" stroke="#6e6e6e"/>
+      <text x="180" y="227" text-anchor="middle" fill="#c9c9c9" font-size="10">Logs / Audit trails</text>
+      <!-- Companion layer -->
+      <rect x="400" y="40" width="380" height="240" rx="6" fill="url(#compGrad)" stroke="#8bb4d9" stroke-width="2"/>
+      <text x="590" y="68" text-anchor="middle" fill="#f4f4f4" font-size="13" font-weight="bold">COMPANION LAYER</text>
+      <text x="590" y="88" text-anchor="middle" fill="#a3c4dc" font-size="10">(observe &amp; explain — our monitor)</text>
+      <rect x="420" y="105" width="100" height="50" rx="3" fill="#2a3d4d" stroke="#8bb4d9"/>
+      <text x="470" y="128" text-anchor="middle" fill="#8bb4d9" font-size="9">Web UI</text>
+      <text x="470" y="142" text-anchor="middle" fill="#7a9ab0" font-size="8">dashboard</text>
+      <rect x="535" y="105" width="100" height="50" rx="3" fill="#2a3d4d" stroke="#8bb4d9"/>
+      <text x="585" y="128" text-anchor="middle" fill="#8bb4d9" font-size="9">CLI / MCP</text>
+      <text x="585" y="142" text-anchor="middle" fill="#7a9ab0" font-size="8">agents</text>
+      <rect x="650" y="105" width="110" height="50" rx="3" fill="#2a3d4d" stroke="#8bb4d9"/>
+      <text x="705" y="128" text-anchor="middle" fill="#8bb4d9" font-size="9">/metrics</text>
+      <text x="705" y="142" text-anchor="middle" fill="#7a9ab0" font-size="8">Prometheus</text>
+      <rect x="420" y="170" width="165" height="50" rx="3" fill="#2a3d4d" stroke="#8bb4d9"/>
+      <text x="502" y="193" text-anchor="middle" fill="#8bb4d9" font-size="9">SQLite history</text>
+      <text x="502" y="207" text-anchor="middle" fill="#7a9ab0" font-size="8">poll loop → store</text>
+      <rect x="600" y="170" width="160" height="50" rx="3" fill="#2a3d4d" stroke="#8bb4d9"/>
+      <text x="680" y="193" text-anchor="middle" fill="#8bb4d9" font-size="9">External monitors</text>
+      <text x="680" y="207" text-anchor="middle" fill="#7a9ab0" font-size="8">Uptime Kuma JSON</text>
+      <rect x="420" y="235" width="340" height="30" rx="3" fill="#1e3040" stroke="#5c8aaa"/>
+      <text x="590" y="254" text-anchor="middle" fill="#b794f6" font-size="9">Read-only · local-first · no secret leakage</text>
+      <!-- Arrows -->
+      <line x1="320" y1="120" x2="400" y2="120" stroke="#8bb4d9" stroke-width="2" marker-end="url(#arrow)"/>
+      <text x="360" y="112" text-anchor="middle" fill="#8bb4d9" font-size="9">poll / query</text>
+      <line x1="320" y1="175" x2="400" y2="175" stroke="#8bb4d9" stroke-width="2" marker-end="url(#arrow)"/>
+      <line x1="320" y1="223" x2="400" y2="223" stroke="#8bb4d9" stroke-width="2" marker-end="url(#arrow)"/>
+      <!-- Our label -->
+      <rect x="40" y="290" width="200" height="22" rx="3" fill="#238636" opacity=".25" stroke="#3fb950"/>
+      <text x="140" y="305" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="bold">shared-memory-monitor today</text>
+      <rect x="260" y="290" width="200" height="22" rx="3" fill="#8bb4d9" opacity=".2" stroke="#8bb4d9"/>
+      <text x="360" y="305" text-anchor="middle" fill="#8bb4d9" font-size="10">proposed extensions →</text>
+    </svg>
+  </div>
+
+  <div class="diagram-wrap">
+    <pre class="mermaid">
+flowchart LR
+  subgraph upstream ["Hive-Mind Gateway :8888"]
+    T["/memory/telemetry"]
+    H["/health"]
+    D["REM / NREM daemons"]
+  end
+  subgraph stores ["Data stores"]
+    PG[(Postgres + outbox)]
+    NJ[Neo4j graph]
+    LG[Logs / journal]
+  end
+  subgraph monitor ["Shared Memory Monitor :8765"]
+    Loop[Poll loop]
+    DB[(SQLite + JSONL)]
+    UI[Dashboard + Logs]
+    DOC[doctor / check]
+  end
+  subgraph proposed ["Proposed extensions"]
+    OBX[Outbox inspector]
+    TAIL[CLI tail + MCP]
+    PROM["/metrics"]
+    INC[Incident timeline]
+    EXT[External monitor emit]
+  end
+  T --> Loop
+  H --> UI
+  Loop --> DB
+  DB --> UI
+  PG --> UI
+  NJ --> UI
+  LG --> UI
+  DOC --> EXT
+  PG --> OBX
+  DB --> TAIL
+  DB --> PROM
+  UI --> INC
+  LG --> INC
+    </pre>
+  </div>
+</section>
+
+<!-- ── Survey table ── -->
+<section id="survey">
+  <h2>GitHub projects surveyed</h2>
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>Project</th>
+          <th>Stars</th>
+          <th>Visualizes</th>
+          <th>Key companion tricks</th>
+          <th>Analog to our monitor</th>
+          <th>Links</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><a href="https://github.com/mher/flower">mher/flower</a></td>
+          <td>~7.2k</td>
+          <td>Celery workers &amp; tasks</td>
+          <td>Real-time events, per-task drill-down, REST API, Prometheus</td>
+          <td>Pipeline queue observability</td>
+          <td>
+            <span class="sub-links">
+              <a href="https://flower.readthedocs.io/">docs</a>
+              <a href="https://flower.readthedocs.io/en/latest/api.html">API</a>
+            </span>
+          </td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/felixmosh/bull-board">felixmosh/bull-board</a></td>
+          <td>~3k+</td>
+          <td>Bull / BullMQ job queues</td>
+          <td>Per-job status, payload, errors, retry actions</td>
+          <td>neo4j_outbox row inspection</td>
+          <td>
+            <span class="sub-links">
+              <a href="https://www.npmjs.com/org/bull-board">npm</a>
+            </span>
+          </td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/getsentry/spotlight">getsentry/spotlight</a></td>
+          <td>~600</td>
+          <td>Sentry dev telemetry</td>
+          <td>Sidecar proxy, CLI <code>tail</code>, MCP for AI agents</td>
+          <td>Agent-facing ops without browser</td>
+          <td>
+            <span class="sub-links">
+              <a href="https://spotlightjs.com/docs/getting-started/">docs</a>
+              <a href="https://spotlightjs.com/docs/sidecar/">sidecar</a>
+            </span>
+          </td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/langfuse/langfuse">langfuse/langfuse</a></td>
+          <td>~10k+</td>
+          <td>LLM pipeline runs</td>
+          <td>Trace/session drill-down, compare runs, custom dashboards</td>
+          <td>REM cycle incident correlation</td>
+          <td>
+            <span class="sub-links">
+              <a href="https://langfuse.com/docs">docs</a>
+              <a href="https://langfuse.com/demo">demo</a>
+            </span>
+          </td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/sosedoff/pgweb">sosedoff/pgweb</a></td>
+          <td>~9.4k</td>
+          <td>PostgreSQL</td>
+          <td>Thin read-only DB explorer, zero-deps binary</td>
+          <td>Scoped outbox row browser (not full SQL)</td>
+          <td>
+            <span class="sub-links">
+              <a href="https://github.com/sosedoff/pgweb/wiki">wiki</a>
+              <a href="https://pgweb-demo.fly.dev/">demo</a>
+            </span>
+          </td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/BigBoot/AutoKuma">BigBoot/AutoKuma</a></td>
+          <td>~833</td>
+          <td>Uptime Kuma monitors</td>
+          <td>Declarative monitor specs from labels/files</td>
+          <td><code>check</code> → external uptime JSON</td>
+          <td>
+            <span class="sub-links">
+              <a href="https://autokuma.bigboot.dev/dev/">docs</a>
+              <a href="https://github.com/louislam/uptime-kuma">Uptime Kuma</a>
+            </span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ── Baseline ── -->
+<section id="baseline">
+  <h2>What we already implement</h2>
+  <div class="grid-3">
+    <div class="card"><span class="tag tag-ok">Done</span><strong>Pipeline dashboard</strong><br>REM/NREM backlog, bottleneck, ETA, hero story</div>
+    <div class="card"><span class="tag tag-ok">Done</span><strong>System health</strong><br>Gateway, embedder, reranker, LLM, daemons (30s poll)</div>
+    <div class="card"><span class="tag tag-ok">Done</span><strong>Historical charts</strong><br>1h–all ranges, auto-downsampling, PNG exports</div>
+    <div class="card"><span class="tag tag-ok">Done</span><strong>Schema drawer</strong><br>Neo4j + Postgres aggregate counts</div>
+    <div class="card"><span class="tag tag-ok">Done</span><strong>Live logs page</strong><br>Gateway journal, audit JSONL, client logs (3s refresh)</div>
+    <div class="card"><span class="tag tag-ok">Done</span><strong>Ops tooling</strong><br><code>doctor</code>/<code>check</code>, stale outbox filter, credential sanitization</div>
+  </div>
+</section>
+
+<!-- ── Gaps ── -->
+<section id="gaps">
+  <h2>Gap analysis</h2>
+  <div class="compare-cols">
+    <div>
+      <h5>Today — aggregate view</h5>
+      <div class="wireframe">
+        <div class="wf-alert">⚠ 1 outbox failure — pipeline may be stuck</div>
+        <div class="wf-grid">
+          <div class="wf-panel"><h5>Outbox counts</h5>failed: <span style="color:var(--bad)">1</span><br>applied: 106<br>pending: 0</div>
+          <div class="wf-panel"><h5>Schema drawer</h5>neo4j_outbox · failed · 1<br><span style="color:var(--muted)">(no row detail)</span></div>
+        </div>
+        <p style="margin:.5rem 0 0;color:var(--muted)">User must leave monitor → query Postgres manually</p>
+      </div>
+    </div>
+    <div>
+      <h5>After idea #1 — row drill-down</h5>
+      <div class="wireframe">
+        <div class="wf-alert">⚠ 1 actionable failure <span style="color:var(--muted)">(1 ignored)</span></div>
+        <div class="wf-panel">
+          <h5>Failed outbox rows</h5>
+          <div class="wf-row"><span class="id">#7</span><span>Fact</span><span class="err">Neo4j constraint violation: …</span></div>
+          <div class="wf-row"><span class="id" style="color:var(--muted)">#4</span><span>test</span><span class="err" style="color:var(--muted)">ignored (stale)</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Top 5 ideas ── -->
+<section id="ideas">
+  <h2>Top 5 unimplemented ideas</h2>
+  <p>Ranked by debug value, fit with thin-client model, and reuse of existing wiring.</p>
+
+  <!-- Idea 1 -->
+  <article class="idea-card" id="idea-1">
+    <div class="idea-title"><span class="idea-num">1</span> Outbox row inspector</div>
+    <div class="refs">
+      Inspired by:
+      <a href="https://github.com/felixmosh/bull-board">bull-board</a>
+      <a href="https://github.com/mher/flower">flower</a>
+      <a href="https://github.com/sosedoff/pgweb">pgweb</a> (scoped subset)
+    </div>
+    <p><span class="tag tag-bad">Gap</span> Schema drawer shows outbox <em>counts</em> only. When the alert bar fires, there is no in-UI path to the failing row's error message or entity type.</p>
+    <p><span class="tag tag-ok">Fit</span> Outbox health is the #1 critical alert. <code>outbox.py</code> already queries <code>neo4j_outbox</code> and respects <code>SM_IGNORED_OUTBOX_IDS</code>. A read-only API with whitelisted columns keeps the no-secret model.</p>
+    <h4>Proposed API</h4>
+    <pre>GET /api/outbox?status=failed&amp;limit=50
+→ { rows: [{ id, status, entity_type, error, created_at, ignored }] }</pre>
+    <h4>Wireframe illustration</h4>
+    <div class="wireframe">
+      <div class="wf-bar">
+        <span>Dashboard</span><span>Logs</span><span class="active">Outbox ▾</span>
+        <span style="margin-left:auto;color:var(--muted)">filter: failed ▾</span>
+      </div>
+      <table style="font-size:.68rem;margin:0">
+        <thead><tr><th>ID</th><th>Status</th><th>Entity</th><th>Error</th><th>Created</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>7</td><td style="color:var(--bad)">failed</td><td>Fact</td><td>ConstraintViolation on :Fact …</td><td>2026-06-09</td><td><span style="color:var(--accent)">logs ▸</span></td></tr>
+          <tr style="opacity:.5"><td>4</td><td>failed</td><td>test</td><td>phase2_test</td><td>2025-11-01</td><td><span style="color:var(--muted)">ignored</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 700 120" xmlns="http://www.w3.org/2000/svg">
+        <rect x="10" y="30" width="120" height="50" rx="4" fill="#3c3c3c" stroke="#5c5c5c"/>
+        <text x="70" y="52" text-anchor="middle" fill="#a3a3a3" font-size="9">Alert bar</text>
+        <text x="70" y="68" text-anchor="middle" fill="#f85149" font-size="9">outbox_failed &gt; 0</text>
+        <line x1="130" y1="55" x2="180" y2="55" stroke="#8bb4d9" stroke-width="2" marker-end="url(#arrow)"/>
+        <rect x="180" y="30" width="140" height="50" rx="4" fill="#2d4458" stroke="#8bb4d9"/>
+        <text x="250" y="52" text-anchor="middle" fill="#8bb4d9" font-size="9">GET /api/outbox</text>
+        <text x="250" y="68" text-anchor="middle" fill="#7a9ab0" font-size="8">read-only PG query</text>
+        <line x1="320" y1="55" x2="370" y2="55" stroke="#8bb4d9" stroke-width="2" marker-end="url(#arrow)"/>
+        <rect x="370" y="20" width="310" height="70" rx="4" fill="#3c3c3c" stroke="#3fb950"/>
+        <text x="525" y="42" text-anchor="middle" fill="#3fb950" font-size="9">Row table in drawer</text>
+        <text x="525" y="58" text-anchor="middle" fill="#a3a3a3" font-size="8">id · entity · error · created_at</text>
+        <text x="525" y="74" text-anchor="middle" fill="#8bb4d9" font-size="8">→ jump to correlated logs (idea #4)</text>
+      </svg>
+    </div>
+  </article>
+
+  <!-- Idea 2 -->
+  <article class="idea-card" id="idea-2">
+    <div class="idea-title"><span class="idea-num">2</span> CLI event stream + MCP for AI agents</div>
+    <div class="refs">
+      Inspired by:
+      <a href="https://github.com/getsentry/spotlight">spotlight</a>
+      (<code>spotlight tail</code>, <code>spotlight mcp</code>)
+    </div>
+    <p><span class="tag tag-bad">Gap</span> CLI is <code>loop</code> / <code>serve</code> / <code>check</code> only. Agents using <code>memory_bridge.py</code> cannot ask “is REM backlog growing?” without opening the browser.</p>
+    <p><span class="tag tag-ok">Fit</span> Shared Memory is a multi-agent workstation surface. Spotlight's MCP pattern maps directly: agents save facts → dream cycle processes → agents observe pipeline state headlessly.</p>
+    <h4>Proposed commands</h4>
+    <pre>python -m sm_telemetry_monitor tail [--follow] [--format json|logfmt]
+python -m sm_telemetry_monitor mcp   # stdio MCP: get_pipeline_status, get_health, list_outbox_failures</pre>
+    <h4>Terminal illustration</h4>
+    <div class="wireframe">
+      <div class="wf-terminal">
+        <span class="dim">$</span> sm-telemetry tail --follow --format logfmt<br>
+        <span class="json">ts=2026-06-10T12:00:00Z</span> health=warn facts_rem_pending=3 outbox_failed=1 backlog_total=48<br>
+        <span class="json">ts=2026-06-10T12:10:00Z</span> health=warn facts_rem_pending=2 outbox_failed=1 backlog_total=45<br>
+        <span class="warn">▲ backlog clearing — applied_delta=+4</span><br>
+        <span class="dim">--- MCP tool call: get_pipeline_status ---</span><br>
+        <span class="json">{"health":"warn","headline":"REM clearing","eta_h":1.2}</span>
+      </div>
+    </div>
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg">
+        <rect x="20" y="50" width="100" height="60" rx="4" fill="#4a3d6b" stroke="#b794f6"/>
+        <text x="70" y="78" text-anchor="middle" fill="#d4b8ff" font-size="9">Grok / Claude</text>
+        <text x="70" y="94" text-anchor="middle" fill="#a78bcc" font-size="8">MCP client</text>
+        <line x1="120" y1="80" x2="170" y2="80" stroke="#b794f6" stroke-width="2" marker-end="url(#arrow)"/>
+        <rect x="170" y="40" width="130" height="80" rx="4" fill="#2d4458" stroke="#8bb4d9"/>
+        <text x="235" y="68" text-anchor="middle" fill="#8bb4d9" font-size="9">sm-telemetry</text>
+        <text x="235" y="84" text-anchor="middle" fill="#7a9ab0" font-size="8">mcp · tail</text>
+        <text x="235" y="100" text-anchor="middle" fill="#7a9ab0" font-size="8">check</text>
+        <line x1="300" y1="80" x2="350" y2="80" stroke="#8bb4d9" stroke-width="2" marker-end="url(#arrow)"/>
+        <rect x="350" y="30" width="120" height="40" rx="3" fill="#3c3c3c" stroke="#5c5c5c"/>
+        <text x="410" y="55" text-anchor="middle" fill="#a3a3a3" font-size="9">SQLite / JSONL</text>
+        <rect x="350" y="80" width="120" height="40" rx="3" fill="#3c3c3c" stroke="#5c5c5c"/>
+        <text x="410" y="105" text-anchor="middle" fill="#a3a3a3" font-size="9">:8765 API</text>
+        <line x1="470" y1="60" x2="520" y2="60" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <line x1="470" y1="100" x2="520" y2="100" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <rect x="520" y="40" width="180" height="70" rx="4" fill="#2a3d2a" stroke="#3fb950"/>
+        <text x="610" y="68" text-anchor="middle" fill="#3fb950" font-size="9">No browser required</text>
+        <text x="610" y="86" text-anchor="middle" fill="#7ab88a" font-size="8">SSH · homelab · agent loops</text>
+      </svg>
+    </div>
+  </article>
+
+  <!-- Idea 3 -->
+  <article class="idea-card" id="idea-3">
+    <div class="idea-title"><span class="idea-num">3</span> Prometheus <code>/metrics</code> export</div>
+    <div class="refs">
+      Inspired by:
+      <a href="https://github.com/mher/flower">flower</a>
+      (built-in Prometheus + <code>prometheus.yml</code> in repo)
+    </div>
+    <p><span class="tag tag-bad">Gap</span> Metrics live in SQLite and dashboard JSON only. No overnight alerting when <code>outbox_failed &gt; 0</code> or the poll loop stops.</p>
+    <p><span class="tag tag-ok">Fit</span> Observe-don't-control philosophy — exporting gauges is safer than Flower-style remote worker control. Homelab users often already run Grafana/Alertmanager.</p>
+    <h4>Example metrics</h4>
+    <pre># HELP sm_outbox_failed Actionable failed neo4j_outbox rows
+sm_outbox_failed 1
+# HELP sm_facts_rem_pending Facts awaiting REM review
+sm_facts_rem_pending 3
+# HELP sm_poll_staleness_seconds Seconds since last telemetry poll
+sm_poll_staleness_seconds 42</pre>
+    <h4>Grafana stack illustration</h4>
+    <div class="wireframe">
+      <div class="wf-grid">
+        <div class="wf-panel">
+          <h5>Shared Memory Monitor :8765</h5>
+          <div class="wf-metrics">
+            <div class="wf-metric"><div class="name">outbox_failed</div><div class="val">1</div></div>
+            <div class="wf-metric"><div class="name">rem_pending</div><div class="val">3</div></div>
+            <div class="wf-metric"><div class="name">poll_age_s</div><div class="val">42</div></div>
+          </div>
+          <div style="margin-top:.4rem;color:var(--accent)">GET /metrics</div>
+        </div>
+        <div class="wf-panel">
+          <h5>Grafana panel (external)</h5>
+          <div class="wf-timeline">
+            <div class="tick"></div><div class="tick"></div><div class="tick hit"></div>
+            <div class="tick hit"></div><div class="tick"></div><div class="tick"></div>
+            <div class="tick"></div><div class="tick"></div>
+          </div>
+          <div style="font-size:.65rem;color:var(--bad)">Alert: outbox_failed &gt; 0 for 5m</div>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <!-- Idea 4 -->
+  <article class="idea-card" id="idea-4">
+    <div class="idea-title"><span class="idea-num">4</span> Correlated incident timeline</div>
+    <div class="refs">
+      Inspired by:
+      <a href="https://github.com/langfuse/langfuse">langfuse</a>
+      (trace → logs/spans)
+      <a href="https://github.com/getsentry/spotlight">spotlight</a>
+      (unified stream)
+    </div>
+    <p><span class="tag tag-bad">Gap</span> Dashboard (<code>/</code>) and logs (<code>/logs</code>) are separate. On a backlog spike, users manually guess which log source and time window to open.</p>
+    <p><span class="tag tag-ok">Fit</span> REM/NREM debugging is temporal — a change at <em>T</em> should surface gateway journal + REM audit ±5 min at <em>T</em>. All sources exist in <code>logs_reader.py</code>; correlation is composition, not new gateway instrumentation.</p>
+    <h4>Wireframe illustration</h4>
+    <div class="wireframe">
+      <div class="wf-bar"><span class="active">Dashboard</span><span>Logs</span></div>
+      <div class="wf-grid">
+        <div class="wf-panel" style="min-height:7rem">
+          <h5>Recent samples — click row</h5>
+          <div class="wf-row" style="background:var(--ok-tint)"><span>12:00</span><span>failed=1</span><span>rem_pend=3</span><span style="color:var(--accent)">◉ selected</span></div>
+          <div class="wf-row"><span>11:50</span><span>failed=1</span><span>rem_pend=4</span></div>
+        </div>
+        <div class="wf-panel" style="min-height:7rem;border-color:var(--accent)">
+          <h5>Incident @ 12:00 UTC</h5>
+          <div style="font-size:.65rem;color:var(--muted)">gateway · rem_audit · outbox #7</div>
+          <div style="font-size:.65rem;margin-top:.3rem;color:#c9c9c9">[12:00:04] OutboxWorker: retry failed id=7</div>
+          <div style="font-size:.65rem;color:#c9c9c9">[12:00:02] REM: batch 8 reviewed, 1 deferred</div>
+        </div>
+      </div>
+    </div>
+    <div class="diagram-wrap">
+      <pre class="mermaid">
+sequenceDiagram
+  participant U as Operator
+  participant D as Dashboard
+  participant API as /api/incident
+  participant L as logs_reader
+  participant S as SQLite history
+  U->>D: Click sample row at T
+  D->>API: ?at=2026-06-10T12:00:00Z
+  API->>S: snapshot at T
+  API->>L: tail gateway + audit ±5m
+  API-->>D: metrics + log excerpts + outbox ids
+  D-->>U: Side panel — no tab switching
+      </pre>
+    </div>
+  </article>
+
+  <!-- Idea 5 -->
+  <article class="idea-card" id="idea-5">
+    <div class="idea-title"><span class="idea-num">5</span> Doctor-driven external monitor emit</div>
+    <div class="refs">
+      Inspired by:
+      <a href="https://github.com/BigBoot/AutoKuma">AutoKuma</a>
+      (declarative JSON/TOML → Uptime Kuma)
+    </div>
+    <p><span class="tag tag-bad">Gap</span> <code>doctor.py</code> has a <code>FEATURE_MATRIX</code> and <code>check</code> prints readiness, but emits nothing for external uptime tools. In-browser alerts only help when the tab is open.</p>
+    <p><span class="tag tag-ok">Fit</span> Extends portability (<code>SHARED_MEMORY_ROOT</code>, <code>check-env.sh</code>) into unattended ops without building notifications inside the monitor. Generated files contain URLs and paths only — never tokens.</p>
+    <h4>Proposed command</h4>
+    <pre>python -m sm_telemetry_monitor check --emit-monitors uptime-kuma.json</pre>
+    <h4>Generated monitor illustration</h4>
+    <div class="wireframe">
+      <pre style="margin:0;background:transparent;border:none;padding:0;font-size:.68rem">{
+  "monitors": [
+    { "name": "SM Gateway /health", "type": "http", "url": "http://127.0.0.1:8888/health" },
+    { "name": "SM Monitor API", "type": "http", "url": "http://127.0.0.1:8765/api/health" },
+    { "name": "SM Poll freshness", "type": "http", "url": "http://127.0.0.1:8765/api/meta",
+      "jsonPath": "$.last_collected_at", "maxAgeMinutes": 15 }
+  ]
+}</pre>
+    </div>
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 700 130" xmlns="http://www.w3.org/2000/svg">
+        <rect x="20" y="40" width="150" height="55" rx="4" fill="#3c3c3c" stroke="#e3b341"/>
+        <text x="95" y="62" text-anchor="middle" fill="#e3b341" font-size="9">doctor / check</text>
+        <text x="95" y="78" text-anchor="middle" fill="#a3a3a3" font-size="8">FEATURE_MATRIX probes</text>
+        <line x1="170" y1="67" x2="220" y2="67" stroke="#8bb4d9" stroke-width="2" marker-end="url(#arrow)"/>
+        <text x="195" y="58" text-anchor="middle" fill="#8bb4d9" font-size="7">--emit</text>
+        <rect x="220" y="40" width="160" height="55" rx="4" fill="#2d4458" stroke="#8bb4d9"/>
+        <text x="300" y="62" text-anchor="middle" fill="#8bb4d9" font-size="9">monitors.json</text>
+        <text x="300" y="78" text-anchor="middle" fill="#7a9ab0" font-size="8">gitignored output</text>
+        <line x1="380" y1="67" x2="430" y2="67" stroke="#3fb950" stroke-width="2" marker-end="url(#arrow)"/>
+        <rect x="430" y="30" width="250" height="75" rx="4" fill="#2a3d2a" stroke="#3fb950"/>
+        <text x="555" y="55" text-anchor="middle" fill="#3fb950" font-size="9">Uptime Kuma / AutoKuma</text>
+        <text x="555" y="72" text-anchor="middle" fill="#7ab88a" font-size="8">Discord · email · SMS</text>
+        <text x="555" y="90" text-anchor="middle" fill="#7ab88a" font-size="8">alerts when you're away</text>
+      </svg>
+    </div>
+  </article>
+</section>
+
+<!-- ── Priority ── -->
+<section id="priority">
+  <h2>Suggested implementation order</h2>
+  <ol class="priority-list">
+    <li><strong>Outbox row inspector</strong> — highest debug value; smallest scope; uses existing Postgres path.</li>
+    <li><strong>CLI tail</strong> — quick win before MCP; unblocks headless agent workflows.</li>
+    <li><strong>Prometheus export</strong> — unlocks unattended alerting via existing Grafana stack.</li>
+    <li><strong>Incident timeline</strong> — best operator UX; composes dashboard + logs + outbox.</li>
+    <li><strong>Doctor monitor emit</strong> — completes portability story; delegates notifications externally.</li>
+  </ol>
+
+  <div class="diagram-wrap">
+    <pre class="mermaid">
+flowchart TD
+  I1["① Outbox inspector"]
+  I2["② CLI tail + MCP"]
+  I3["③ /metrics"]
+  I4["④ Incident timeline"]
+  I5["⑤ Monitor emit"]
+  I1 --> I4
+  I2 --> I4
+  I3 --> I5
+  I1 --> I2
+    </pre>
+  </div>
+</section>
+
+<!-- ── Deferred ── -->
+<section id="deferred">
+  <h2>Deliberately not in top 5</h2>
+  <div class="card">
+    <table>
+      <thead>
+        <tr><th>Idea</th><th>Source</th><th>Why lower priority</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Full pgweb embed</td>
+          <td><a href="https://github.com/sosedoff/pgweb">pgweb</a></td>
+          <td>Arbitrary SQL is a security footgun; scoped outbox API is enough</td>
+        </tr>
+        <tr>
+          <td>Remote worker control</td>
+          <td><a href="https://github.com/mher/flower">flower</a></td>
+          <td>Violates read-only thin-client boundary; belongs in framework ops</td>
+        </tr>
+        <tr>
+          <td>Full Langfuse-style tracing</td>
+          <td><a href="https://github.com/langfuse/langfuse">langfuse</a></td>
+          <td>Requires per-save instrumentation in gateway, not monitor-only work</td>
+        </tr>
+        <tr>
+          <td>SSE / WebSocket live dashboard</td>
+          <td>Grafana Live, Flower events</td>
+          <td>600s telemetry poll interval limits value vs CLI + Prometheus</td>
+        </tr>
+        <tr>
+          <td>Built-in webhooks / Slack</td>
+          <td>AutoKuma notifications</td>
+          <td>Better delegated via ideas #3 + #5 than a second alerting system</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  Generated for review · <code>shared-memory-monitor/research_github_projects.html</code> ·
+  Open in any browser (Mermaid renders via CDN; works offline except diagrams).<br>
+  Influences:
+  <a href="https://github.com/mher/flower">Flower</a> ·
+  <a href="https://github.com/felixmosh/bull-board">Bull Board</a> ·
+  <a href="https://github.com/getsentry/spotlight">Spotlight</a> ·
+  <a href="https://github.com/langfuse/langfuse">Langfuse</a> ·
+  <a href="https://github.com/sosedoff/pgweb">pgweb</a> ·
+  <a href="https://github.com/BigBoot/AutoKuma">AutoKuma</a>
+</footer>
+
+</main>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      primaryColor: '#2d4458',
+      primaryTextColor: '#f4f4f4',
+      primaryBorderColor: '#8bb4d9',
+      lineColor: '#8bb4d9',
+      secondaryColor: '#3c3c3c',
+      tertiaryColor: '#333',
+      background: '#262626',
+      mainBkg: '#3c3c3c',
+      nodeBorder: '#5c5c5c',
+      clusterBkg: '#2a2a2a',
+      titleColor: '#8bb4d9',
+      edgeLabelBackground: '#333'
+    },
+    flowchart: { curve: 'basis', padding: 12 },
+    sequence: { actorMargin: 40 }
+  });
+</script>
+</body>
+</html>

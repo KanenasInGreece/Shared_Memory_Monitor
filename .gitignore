@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+
+# Secrets — never commit tokens or local overrides
+.env
+.env.*
+!.env.example
+
+# Grok project-local files (sandbox config, hooks, local skills)
+.grok/
+
+# Runtime data
+data/
+graphs/*.png
+graphs/*.html
