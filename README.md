@@ -14,6 +14,30 @@ Live operations UI: REM/NREM backlog, outbox health, gateway infrastructure, sch
 
 See [docs/SISTER_PROJECT.md](docs/SISTER_PROJECT.md) for the full relationship model.
 
+## Screenshots
+
+Live views of the gateway and dream-cycle pipeline (captured from a running monitor at `http://127.0.0.1:8765/`).
+
+### Pipeline dashboard
+
+REM/NREM backlog charts, pipeline queues, infrastructure health from `GET /health`, and schema breakdown drill-down.
+
+![Pipeline dashboard — backlog charts, pipeline queues, and infrastructure health](docs/images/dashboard.png)
+
+### Architecture diagram
+
+Live framework topology: agents → Hive-Mind Gateway (:8888) → REM/NREM daemons → Postgres + Neo4j, with inference backends.
+
+![Architecture diagram — live gateway cluster and memory layer topology](docs/images/diagram.png)
+
+### Gateway logs
+
+User journal tail for `hive-mind-gateway.service` (`journalctl --user`) plus REM audit JSONL — filterable, follow mode, error/warning counts.
+
+![Gateway logs — journal tail and REM audit viewer](docs/images/logs.png)
+
+Regenerate after UI changes: `./scripts/capture-screenshots.sh` (requires headless Chrome and a running monitor).
+
 ## Prerequisites
 
 Install and run the monitor only after the items below are in place.
@@ -420,6 +444,7 @@ shared-memory-monitor/
 │   ├── README.md        # systemd install notes
 │   └── systemd/user/shared-memory-monitor.service
 ├── docs/
+│   ├── images/          # README screenshots (regenerate with capture-screenshots.sh)
 │   ├── SISTER_PROJECT.md
 │   ├── GITHUB.md        # agent publish workflow
 │   └── archive/         # superseded research (not product docs)
@@ -428,6 +453,7 @@ shared-memory-monitor/
 │   ├── install-systemd-user.sh  # user unit → ~/.config/systemd/user/
 │   ├── pre-publish-check.sh   # secret audit before git push
 │   ├── publish.sh             # audit + push origin/main
+│   ├── capture-screenshots.sh # README UI captures (headless Chrome)
 │   ├── check-env.sh     # Framework wiring doctor
 │   ├── run-loop.sh      # Poll loop (optional --serve)
 │   └── serve.sh         # Dashboard only
