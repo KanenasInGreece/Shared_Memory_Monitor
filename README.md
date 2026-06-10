@@ -287,7 +287,7 @@ Equivalent entry point: `sm-telemetry` (after install).
 | **REM / NREM split** | Derived | REM = pending enrichments; **NREM = pending consolidation cycles** (see below) |
 | **Pipeline queues** | Telemetry + derived | Per-stage counts; **NREM cycles** and **NREM facts (raw)** shown separately |
 | **Infrastructure** | Live `/health` | Process + workload per component |
-| **Schema breakdown** | On-demand `/api/breakdown` | Neo4j + Postgres drill-down |
+| **Schema breakdown** | On-demand `/api/breakdown` | Neo4j graph + telemetry.breakdown drill-down |
 
 ### Pipeline vs system health
 
@@ -318,7 +318,7 @@ Live rendering of the framework topology (Shared Memory README §3). Not a stati
 | `GET /api/health` | Live gateway infrastructure health |
 | `GET /api/diagram` | Bundled `summary` + `health` for diagram view |
 | `GET /api/history?range=6h` | Time series + stats + pipeline snapshot |
-| `GET /api/breakdown` | Neo4j + Postgres schema breakdown (60s cache) |
+| `GET /api/breakdown` | Neo4j graph + telemetry.breakdown schema panels (60s cache) |
 | `GET /api/logs/sources` | Available log sources |
 | `GET /api/logs/tail?source=gateway&lines=200` | Tail logs (`since=` for journal incremental) |
 
@@ -376,39 +376,45 @@ The framework does **not** consolidate one fact per NREM wake. A consolidation *
 
 ## Running as a service
 
-Example systemd user unit (`~/.config/systemd/user/shared-memory-monitor.service`):
+A **foreground** start from Grok Build or a terminal stops when that session ends. For persistence across logout, use the **systemd user unit** shipped in the repo.
 
-```ini
-[Unit]
-Description=Shared Memory Monitor
-After=network-online.target hive-mind-gateway.service
-Wants=hive-mind-gateway.service
+| Prerequisite | Check |
+|--------------|-------|
+| User linger | `loginctl show-user $USER -p Linger` → `yes` (else `loginctl enable-linger $USER`) |
+| Gateway user unit | `systemctl --user is-active hive-mind-gateway.service` |
+| Monitor `.env` | `AGENT_TOKEN` + `COORDINATOR_URL` in project `.env` |
 
-[Service]
-Type=simple
-WorkingDirectory=%h/path/to/shared-memory-monitor
-EnvironmentFile=%h/path/to/shared-memory-monitor/.env
-ExecStart=%h/path/to/shared-memory-monitor/.venv/bin/python -m sm_telemetry_monitor loop --serve --interval 600
-Restart=on-failure
-RestartSec=30
-
-[Install]
-WantedBy=default.target
-```
-
-Put `AGENT_TOKEN` and `COORDINATOR_URL` in the monitor `.env` referenced by `EnvironmentFile`. Add `SHARED_MEMORY_ROOT` only if you need REM audit log path discovery.
+**Install (recommended):**
 
 ```bash
+./scripts/install-systemd-user.sh
+```
+
+Unit template: `deploy/systemd/user/shared-memory-monitor.service` (paths default to `%h/grok-labs/projects/shared-memory-monitor`). Details: `deploy/README.md`.
+
+**Manual install:**
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp deploy/systemd/user/shared-memory-monitor.service ~/.config/systemd/user/
+# edit paths in the unit if your checkout is elsewhere
 systemctl --user daemon-reload
 systemctl --user enable --now shared-memory-monitor.service
 ```
+
+Put `AGENT_TOKEN` and `COORDINATOR_URL` in the monitor `.env` referenced by `EnvironmentFile`. Add `SHARED_MEMORY_ROOT` only if you need REM audit log path discovery.
 
 ## Project layout
 
 ```
 shared-memory-monitor/
+├── deploy/
+│   ├── README.md        # systemd install notes
+│   └── systemd/user/shared-memory-monitor.service
+├── docs/archive/        # superseded research (not product docs)
 ├── scripts/
 │   ├── install.sh       # uv sync + .env scaffold + check
+│   ├── install-systemd-user.sh  # user unit → ~/.config/systemd/user/
 │   ├── check-env.sh     # Framework wiring doctor
 │   ├── run-loop.sh      # Poll loop (optional --serve)
 │   └── serve.sh         # Dashboard only
@@ -440,7 +446,7 @@ shared-memory-monitor/
 | NREM cycles show `estimate` | Gateway must expose `telemetry.nrem` — upgrade/restart framework coordinator |
 | `AGENT_TOKEN source: skill:grok` | Put a dedicated monitor token in monitor `.env` — do not borrow agent tokens |
 | Telemetry poll fails / 401 | Check `AGENT_TOKEN` in monitor `.env`; confirm token is in gateway `AGENT_TOKENS` |
-| Postgres breakdown empty | Gateway must expose `telemetry.breakdown` — upgrade/restart coordinator |
+| Schema breakdown empty | Gateway must expose `telemetry.breakdown` — upgrade/restart coordinator |
 | Gateway log tab empty | Confirm user unit: `journalctl --user -u hive-mind-gateway.service -n 5`; check linger |
 | After moving monitor folder | Re-run `check-env.sh`; set `SHARED_MEMORY_ROOT` only for audit log paths |
 | Port 8765 in use | `fuser -k 8765/tcp` |

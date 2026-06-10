@@ -112,7 +112,7 @@
       <button type="button" id="schema-open" class="schema-trigger" aria-expanded="false" aria-controls="schema-drawer">
         <span class="schema-trigger-text">
           <span class="schema-trigger-label">Schema breakdown</span>
-          <span class="schema-trigger-desc">Neo4j graph · Postgres inventory</span>
+          <span class="schema-trigger-desc">Neo4j graph · telemetry breakdown</span>
         </span>
         <span class="schema-trigger-go" aria-hidden="true">Open</span>
       </button>
@@ -151,7 +151,7 @@
         </div>
       </section>
       <section class="schema-block">
-        <h3 class="schema-block-title">Postgres</h3>
+        <h3 class="schema-block-title">Telemetry breakdown</h3>
         <div class="schema-charts g2">
           <div class="schema-chart-card"><h4>Record types</h4><div class="schema-chart" data-chart="bd-pg-types"><canvas id="bd-pg-types"></canvas><p class="schema-empty" hidden></p></div></div>
           <div class="schema-chart-card"><h4>By agent</h4><div class="schema-chart" data-chart="bd-pg-agents"><canvas id="bd-pg-agents"></canvas><p class="schema-empty" hidden></p></div></div>
@@ -395,7 +395,7 @@ function renderBreakdownErrors(nj, pg) {
   const box = document.getElementById("schema-errors");
   const msgs = [];
   if (nj.error) msgs.push({ src: "Neo4j", msg: nj.error });
-  if (pg.error) msgs.push({ src: "Postgres", msg: pg.error });
+  if (pg.error) msgs.push({ src: "Breakdown", msg: pg.error });
   if (!msgs.length) {
     box.hidden = true;
     box.innerHTML = "";
@@ -432,11 +432,11 @@ function renderBreakdown(B) {
   const agents = pg.agents || [];
   const domains = pg.domains || [];
   chartOrEmpty("bd-pg-types", types.map(x => x.key), types.map(x => x.count), C.dec,
-    pg.error ? "Postgres unavailable — see alert above" : "No record types");
+    pg.error ? "Breakdown unavailable — see alert above" : "No record types");
   chartOrEmpty("bd-pg-agents", agents.map(x => x.key), agents.map(x => x.count), C.warn,
-    pg.error ? "Postgres unavailable — see alert above" : "No agent breakdown");
+    pg.error ? "Breakdown unavailable — see alert above" : "No agent breakdown");
   chartOrEmpty("bd-pg-domains", domains.map(x => x.key), domains.map(x => x.count), C.cum,
-    pg.error ? "Postgres unavailable — see alert above" : "No domain breakdown");
+    pg.error ? "Breakdown unavailable — see alert above" : "No domain breakdown");
 
   const paths = nj.pipelines || [];
   document.querySelector("#bd-paths tbody").innerHTML = paths.length

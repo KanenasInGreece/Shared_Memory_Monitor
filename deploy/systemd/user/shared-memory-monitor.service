@@ -1,0 +1,20 @@
+# Shared Memory Monitor — systemd user unit
+# Installs to: ~/.config/systemd/user/shared-memory-monitor.service
+# Survives logout when user linger is enabled: loginctl enable-linger $USER
+
+[Unit]
+Description=Shared Memory Monitor (poll loop + dashboard :8765)
+Documentation=file://%h/grok-labs/projects/shared-memory-monitor/README.md#running-as-a-service
+After=network-online.target hive-mind-gateway.service
+Wants=hive-mind-gateway.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/grok-labs/projects/shared-memory-monitor
+EnvironmentFile=%h/grok-labs/projects/shared-memory-monitor/.env
+ExecStart=%h/grok-labs/projects/shared-memory-monitor/.venv/bin/python -m sm_telemetry_monitor loop --serve --interval 600
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target
