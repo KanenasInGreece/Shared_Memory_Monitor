@@ -421,10 +421,13 @@ shared-memory-monitor/
 │   └── systemd/user/shared-memory-monitor.service
 ├── docs/
 │   ├── SISTER_PROJECT.md
+│   ├── GITHUB.md        # agent publish workflow
 │   └── archive/         # superseded research (not product docs)
 ├── scripts/
 │   ├── install.sh       # uv sync + .env scaffold + check
 │   ├── install-systemd-user.sh  # user unit → ~/.config/systemd/user/
+│   ├── pre-publish-check.sh   # secret audit before git push
+│   ├── publish.sh             # audit + push origin/main
 │   ├── check-env.sh     # Framework wiring doctor
 │   ├── run-loop.sh      # Poll loop (optional --serve)
 │   └── serve.sh         # Dashboard only
@@ -467,6 +470,7 @@ shared-memory-monitor/
 |-----|----------|
 | [README.md](README.md) | Prerequisites, quick start, API, troubleshooting |
 | [docs/SISTER_PROJECT.md](docs/SISTER_PROJECT.md) | Sister-repo model vs Shared Memory Framework |
+| [docs/GITHUB.md](docs/GITHUB.md) | GitHub auth, publish script, releases (for agents) |
 | [deploy/README.md](deploy/README.md) | systemd user unit install |
 | [SECURITY.md](SECURITY.md) | Secrets policy, pre-push audit |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | PR expectations |
@@ -478,9 +482,7 @@ shared-memory-monitor/
 Before the first push:
 
 ```bash
-./scripts/pre-publish-check.sh   # fails if .env, data/, or tokens would leak
-git remote add origin https://github.com/KanenasInGreece/Shared_Memory_Monitor.git
-git push -u origin master
+./scripts/publish.sh             # audit + push (see docs/GITHUB.md)
 ```
 
 **Never committed** (see `.gitignore`): `.env`, `.grok/`, `data/*`, `graphs/*` (runtime exports), `.venv/`.
