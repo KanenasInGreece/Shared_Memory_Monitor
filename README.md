@@ -68,8 +68,8 @@ Copy **only** `tok_…` into the monitor machine's `.env` as `AGENT_TOKEN`. Neve
 ### 1. Clone and install
 
 ```bash
-git clone <your-repo-url> shared-memory-monitor
-cd shared-memory-monitor
+git clone https://github.com/KanenasInGreece/Shared_Memory_Monitor.git
+cd Shared_Memory_Monitor
 ./scripts/install.sh
 ```
 
@@ -479,16 +479,17 @@ Before the first push:
 
 ```bash
 ./scripts/pre-publish-check.sh   # fails if .env, data/, or tokens would leak
-git remote add origin <your-repo-url>
+git remote add origin https://github.com/KanenasInGreece/Shared_Memory_Monitor.git
 git push -u origin master
 ```
 
 **Never committed** (see `.gitignore`): `.env`, `.grok/`, `data/*`, `graphs/*` (runtime exports), `.venv/`.
 
-After you create the remote, update `CHANGELOG.md` release links and `pyproject.toml` `[project.urls]` if desired.
+Create a GitHub release tagged `v0.1.0` to match [CHANGELOG.md](CHANGELOG.md).
 
 ## Related projects
 
+- **[Shared Memory Monitor](https://github.com/KanenasInGreece/Shared_Memory_Monitor)** — this repository
 - **[Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory)** — gateway, REM/NREM daemons, `GET /memory/telemetry`
 - **shared-memory skill** — agent CLI (`memory_bridge.py`); monitor uses the same HTTP routes directly
 

@@ -31,4 +31,4 @@ The default bind address is loopback. If you expose `:8765` beyond localhost, tr
 
 ## Reporting
 
-Open a GitHub security advisory on the monitor repository for vulnerabilities in **this codebase**. Gateway/auth issues in the framework belong in the [Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory) repository.
+Open a GitHub security advisory on [Shared_Memory_Monitor](https://github.com/KanenasInGreece/Shared_Memory_Monitor/security/advisories/new) for vulnerabilities in **this codebase**. Gateway/auth issues in the framework belong in the [Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory) repository.

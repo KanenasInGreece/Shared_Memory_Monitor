@@ -23,12 +23,11 @@ dependencies = [
     "python-dotenv>=1.0",
 ]
 
-# Uncomment after GitHub repo is created:
-# [project.urls]
-# Homepage = "https://github.com/OWNER/shared-memory-monitor"
-# Documentation = "https://github.com/OWNER/shared-memory-monitor#readme"
-# Repository = "https://github.com/OWNER/shared-memory-monitor"
-# Issues = "https://github.com/OWNER/shared-memory-monitor/issues"
+[project.urls]
+Homepage = "https://github.com/KanenasInGreece/Shared_Memory_Monitor"
+Documentation = "https://github.com/KanenasInGreece/Shared_Memory_Monitor#readme"
+Repository = "https://github.com/KanenasInGreece/Shared_Memory_Monitor"
+Issues = "https://github.com/KanenasInGreece/Shared_Memory_Monitor/issues"
 
 [project.scripts]
 sm-telemetry = "sm_telemetry_monitor.cli:main"

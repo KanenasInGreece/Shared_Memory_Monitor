@@ -22,4 +22,4 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `.env` and `.grok/` gitignored; doctor never prints credential values
 - Error sanitization for tokens and connection strings
 
-[0.1.0]: #010---2026-06-10
+[0.1.0]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.1.0

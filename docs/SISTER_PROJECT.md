@@ -1,6 +1,6 @@
 # Sister project to Shared Memory
 
-**Shared Memory Monitor** is an optional **operations plugin** for the [Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory). It is maintained as a **separate repository** — not a subpackage inside the framework tree.
+**Shared Memory Monitor** ([`Shared_Memory_Monitor`](https://github.com/KanenasInGreece/Shared_Memory_Monitor)) is an optional **operations plugin** for the [Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory). It is maintained as a **separate repository** — not a subpackage inside the framework tree.
 
 ## Division of responsibility
 
@@ -31,7 +31,7 @@ Typical homelab layout:
 
 ```
 ~/shared-memory-GitHub/     ← framework repo (gateway runs here)
-~/shared-memory-monitor/    ← this repo (sister checkout)
+~/Shared_Memory_Monitor/    ← this repo (sister checkout)
 ```
 
 1. Provision gateway + `AGENT_ROLES=monitor:read` on the framework host.
