@@ -71,7 +71,7 @@ Backlog charts, pipeline queues, and infrastructure health from gateway telemetr
 
 Opens from **Schema breakdown** in the sidebar — a slide-over panel on the right, not a separate page. Neo4j graph from `POST /memory/graph`; Postgres inventory from `telemetry.breakdown`.
 
-![Schema breakdown — side drawer over the monitor with Neo4j and telemetry panels](docs/images/schema-breakdown.png)
+![Schema breakdown — Neo4j labels, graph paths, telemetry record types and domains](docs/images/schema-breakdown.png)
 
 ### Diagram (`/diagram`)
 

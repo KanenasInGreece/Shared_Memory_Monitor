@@ -7,7 +7,7 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 from playwright.sync_api import sync_playwright
 
@@ -20,7 +20,8 @@ class PageSpec(TypedDict):
     name: str
     path: str
     viewport: dict[str, int]
-    full_page: bool
+    full_page: NotRequired[bool]
+    element: NotRequired[str]
 
 
 PAGES: list[PageSpec] = [
@@ -34,7 +35,7 @@ PAGES: list[PageSpec] = [
         "name": "schema-breakdown.png",
         "path": "/?schema=1&capture=1",
         "viewport": {"width": 1440, "height": 900},
-        "full_page": False,
+        "element": "#schema-content",
     },
     {
         "name": "diagram.png",
@@ -49,6 +50,23 @@ PAGES: list[PageSpec] = [
         "full_page": True,
     },
 ]
+
+_SCHEMA_EXPAND_JS = """() => {
+  const drawer = document.getElementById('schema-drawer');
+  const body = document.querySelector('.schema-drawer-body');
+  const content = document.getElementById('schema-content');
+  if (drawer) {
+    drawer.style.height = 'auto';
+    drawer.style.maxHeight = 'none';
+    drawer.style.overflow = 'visible';
+  }
+  if (body) {
+    body.style.overflow = 'visible';
+    body.style.height = 'auto';
+    body.style.flex = 'none';
+  }
+  if (content) content.style.overflow = 'visible';
+}"""
 
 
 def _probe() -> None:
@@ -85,8 +103,14 @@ def main() -> None:
                 page.wait_for_selector("#schema-content:not([hidden])", timeout=60_000)
                 page.wait_for_selector("#schema-drawer.open", timeout=60_000)
                 page.wait_for_timeout(600)
+                page.evaluate(_SCHEMA_EXPAND_JS)
+                page.wait_for_timeout(200)
             target = OUT / name
-            page.screenshot(path=str(target), full_page=spec["full_page"])
+            element = spec.get("element")
+            if element:
+                page.locator(element).screenshot(path=str(target))
+            else:
+                page.screenshot(path=str(target), full_page=spec.get("full_page", False))
             print(f"wrote {target}")
         browser.close()
 
