@@ -1227,6 +1227,10 @@ async function boot() {
   tlIndex = Math.max(0, sampleCount() - 1);
   syncHealthPolling();
   applyView();
+  if (new URLSearchParams(location.search).has("capture")) {
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    document.body.dataset.diagramReady = "1";
+  }
 }
 boot();
 window.addEventListener("resize", () => applyView());

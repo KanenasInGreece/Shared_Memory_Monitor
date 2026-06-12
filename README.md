@@ -36,7 +36,7 @@ Three tabs: **Gateway daemons** (`journalctl --user`), **REM audit** (outbox rev
 
 ![Logs — gateway journal, REM audit, and agent audit with filters](docs/images/logs.png)
 
-Regenerate after UI changes: `./scripts/capture-screenshots.sh` (requires headless Chrome and a running monitor).
+Regenerate after UI changes: `./scripts/capture-screenshots.sh` (uses Playwright via `uv`, full-page capture, waits for live diagram data — monitor must be running).
 
 ## Prerequisites
 
@@ -461,7 +461,8 @@ shared-memory-monitor/
 │   ├── install-systemd-user.sh  # user unit → ~/.config/systemd/user/
 │   ├── pre-publish-check.sh   # secret audit before git push
 │   ├── publish.sh             # audit + push origin/main
-│   ├── capture-screenshots.sh # README UI captures (headless Chrome)
+│   ├── capture-screenshots.sh # README UI captures (Playwright full-page)
+│   ├── capture_screenshots.py # capture helper (invoked by shell script)
 │   ├── check-env.sh     # Framework wiring doctor
 │   ├── run-loop.sh      # Poll loop (optional --serve)
 │   └── serve.sh         # Dashboard only
