@@ -46,7 +46,7 @@ Typical homelab layout:
 ~/Shared_Memory_Monitor/    ← this repo (sister checkout)
 ```
 
-1. Provision gateway + `AGENT_ROLES=monitor:read` on the framework host.
+1. On the framework host, mint the `monitor` token (`generate_tokens.py`) and set `AGENT_ROLES=monitor:read` — see [framework SECURITY.md](https://github.com/KanenasInGreece/Shared_Memory/blob/main/SECURITY.md#agent-authentication--implemented-v035).
 2. Clone this repo, `cp .env.example .env`, set `AGENT_TOKEN` + `COORDINATOR_URL`.
 3. `./scripts/install.sh` then optional `./scripts/install-systemd-user.sh` for persistence.
 

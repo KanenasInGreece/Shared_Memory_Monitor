@@ -6,6 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-06-12
+
+### Changed
+
+- **README quick start** — explains `AGENT_TOKEN` comes from the framework's
+  `monitor:read` role; links to `generate_tokens.py` and framework SECURITY.md
+
 ## [0.4.4] - 2026-06-12
 
 ### Fixed

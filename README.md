@@ -95,10 +95,18 @@ cd Shared_Memory_Monitor
 ./scripts/install.sh
 ```
 
-Edit `.env` (wins over framework/skill copies for `AGENT_TOKEN` and `COORDINATOR_URL`):
+### Gateway token (issued by the framework)
+
+`AGENT_TOKEN` is **not** an agent skill token. The [Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory) ships a dedicated **`monitor`** identity for this dashboard: register it in gateway `AGENT_TOKENS`, assign **`monitor:read`** in `AGENT_ROLES`, and copy the minted token here. That role is read-only — `GET /health`, `GET /memory/telemetry`, and guarded `POST /memory/graph` only; `POST /memory/save` and search return **403**.
+
+**How to mint it** (on the gateway host): run the framework's [`generate_tokens.py`](https://github.com/KanenasInGreece/Shared_Memory/blob/main/shared-memory/scripts/generate_tokens.py) (or `bootstrap_tokens.sh` on a fresh install). It prints `AGENT_TOKENS=...,monitor:tok_...` and `AGENT_ROLES=monitor:read`. Add those lines to the **gateway** `.env`, restart `hive-mind-gateway.service`, then paste the `monitor` token below.
+
+Details: [Framework SECURITY.md — read-only roles (`AGENT_ROLES`)](https://github.com/KanenasInGreece/Shared_Memory/blob/main/SECURITY.md#agent-authentication--implemented-v035).
+
+Edit **this repo's** `.env` (monitor `.env` wins over framework/skill copies for `AGENT_TOKEN` and `COORDINATOR_URL`):
 
 ```bash
-AGENT_TOKEN=tok_monitor_...          # dedicated monitor:read token
+AGENT_TOKEN=tok_...                  # monitor token from framework generate_tokens.py
 COORDINATOR_URL=http://localhost:8888
 # SHARED_MEMORY_ROOT=/path/to/framework   # optional — audit log path discovery
 ```
@@ -127,17 +135,9 @@ Open **http://127.0.0.1:8765/**
 |------|-------|
 | Framework gateway running | `hive-mind-gateway.service` (user unit) |
 | `COORDINATOR_URL` reachable | Default `http://localhost:8888` |
-| **`monitor:read` token** | In gateway `AGENT_TOKENS` + `AGENT_ROLES=monitor:read`; copy token to monitor `.env` |
+| **`monitor:read` token** | Framework-issued read-only identity — see [Quick start](#gateway-token-issued-by-the-framework) |
 | `telemetry.nrem` + `telemetry.breakdown` | Phase 3 coordinator fields — upgrade gateway if `check` reports missing |
 | Python 3.11+ and [uv](https://docs.astral.sh/uv/) | `uv sync` / CLI |
-
-Mint token on gateway host:
-
-```bash
-python shared-memory/scripts/generate_tokens.py
-# gateway .env: AGENT_TOKENS=...,monitor:tok_...  and  AGENT_ROLES=monitor:read
-systemctl --user restart hive-mind-gateway.service
-```
 
 ### Local logs (required for `/logs` and diagram flows; same host as gateway in practice)
 
