@@ -34,7 +34,7 @@ Live framework topology with gateway-owned I/O: agents connect to the Hive-Mind 
 
 Three tabs: **Gateway daemons** (`journalctl --user`), **REM audit** (outbox review JSONL), and **Agent audit** (per-request agent identity, route, status, latency). Agent audit supports name filter chips, a **File** picker for logrotated `.gz` archives, and optional since/until windowing.
 
-![Logs — gateway journal, REM audit, and agent audit with filters](docs/images/logs.png)
+![Logs — Agent audit tab with per-request agent, route, status, and latency](docs/images/logs.png)
 
 Regenerate after UI changes: `./scripts/capture-screenshots.sh` (uses Playwright via `uv`, full-page capture, waits for live diagram data — monitor must be running).
 

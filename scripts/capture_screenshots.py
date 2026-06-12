@@ -17,7 +17,7 @@ BASE = os.environ.get("SM_SCREENSHOT_URL", "http://127.0.0.1:8765").rstrip("/")
 PAGES: list[tuple[str, str, dict[str, int]]] = [
     ("dashboard.png", "/", {"width": 1440, "height": 900}),
     ("diagram.png", "/diagram?capture=1", {"width": 1280, "height": 900}),
-    ("logs.png", "/logs", {"width": 1440, "height": 900}),
+    ("logs.png", "/logs?source=agent_audit&capture=1", {"width": 1440, "height": 900}),
 ]
 
 
@@ -44,6 +44,10 @@ def main() -> None:
             page.goto(f"{BASE}{path}", wait_until="networkidle", timeout=60_000)
             if "diagram" in path:
                 page.wait_for_selector("body[data-diagram-ready='1']", timeout=60_000)
+            if "logs" in path:
+                page.wait_for_selector("body[data-logs-ready='1']", timeout=60_000)
+                page.wait_for_selector("#tabs .view-tab.is-active[data-id='agent_audit']", timeout=60_000)
+                page.wait_for_selector(".log-agent-audit", timeout=60_000)
             target = OUT / name
             page.screenshot(path=str(target), full_page=True)
             print(f"wrote {target}")

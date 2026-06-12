@@ -64,11 +64,9 @@
 
 <script src="/static/bar-meta.js?v=1"></script>
 <script>
-let source = localStorage.getItem("sm-log-source") || "gateway";
-if (source === "agent_audit") {
-  source = "agent_audit";
-  localStorage.setItem("sm-log-source", source);
-}
+const pageParams = new URLSearchParams(location.search);
+const urlSource = pageParams.get("source");
+let source = urlSource || localStorage.getItem("sm-log-source") || "gateway";
 let archivePick = "live";
 let fileOffset = 0;
 let journalSince = null;
@@ -664,13 +662,21 @@ document.getElementById("archive-select").addEventListener("change", e => {
   refresh(true);
 });
 
-loadSources().then(() => loadArchives()).then(() => {
-  refresh(true);
+async function bootLogs() {
+  try {
+    await loadSources();
+    await loadArchives();
+    await refresh(true);
+  } catch (_) {
+    await refresh(true);
+  }
+  if (pageParams.has("capture")) {
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    document.body.dataset.logsReady = "1";
+  }
   setInterval(() => refresh(false), 3000);
-}).catch(() => {
-  refresh(true);
-  setInterval(() => refresh(false), 3000);
-});
+}
+bootLogs();
 </script>
 </body>
 </html>

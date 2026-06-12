@@ -596,7 +596,7 @@ wheels = [
 
 [[package]]
 name = "sm-telemetry-monitor"
-version = "0.3.7"
+version = "0.3.8"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
