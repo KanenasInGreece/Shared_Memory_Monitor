@@ -4,6 +4,16 @@ All notable changes to Shared Memory Monitor are documented here.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Gateway audit** log source (`gateway_audit`) — tails `GATEWAY_AUDIT_LOG_PATH`
+  (default `~/.shared-memory/logs/gateway-audit.jsonl`) for per-request agent,
+  route, status, and latency lines from the hive-mind gateway auth seam
+- Logs UI: structured rendering for gateway audit rows; HTTP `status >= 400`
+  severity coloring; **agent filter chips** (toggle any agent present in the feed)
+
 ## [0.1.0] - 2026-06-10
 
 ### Added

@@ -1,10 +1,15 @@
 import json
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from sm_telemetry_monitor.logs_reader import (
     journalctl_cmd,
     journal_unit,
+    list_sources,
     parse_log_entry,
+    tail_source,
     _filter_entries,
     _parse_ts,
 )
@@ -40,6 +45,50 @@ class JournalCmdTests(unittest.TestCase):
         self.assertEqual(cmd[:4], ["journalctl", "--user", "-u", journal_unit()])
         self.assertIn("-n", cmd)
         self.assertEqual(cmd[cmd.index("-n") + 1], "5")
+
+
+class GatewayAuditSourceTests(unittest.TestCase):
+    def test_list_sources_includes_gateway_audit(self):
+        ids = [s.id for s in list_sources()]
+        self.assertIn("gateway_audit", ids)
+        src = next(s for s in list_sources() if s.id == "gateway_audit")
+        self.assertEqual(src.kind, "jsonl")
+        self.assertIn("gateway-audit", src.path)
+
+    def test_gateway_audit_keeps_raw_json(self):
+        line = json.dumps({
+            "ts": "2026-06-12T18:04:11+00:00",
+            "agent": "claude",
+            "role": "full",
+            "method": "POST",
+            "path": "/memory/search",
+            "status": 200,
+            "latency_ms": 12.3,
+            "request_id": "a1b2c3d4e5f6",
+        })
+        entry = parse_log_entry(line, kind="jsonl")
+        self.assertEqual(entry["raw"], line)
+        self.assertEqual(entry["ts"], "2026-06-12T18:04:11+00:00")
+
+    @mock.patch("sm_telemetry_monitor.logs_reader.gateway_audit_path")
+    def test_tail_gateway_audit_reads_jsonl(self, mock_path):
+        line = json.dumps({
+            "ts": "2026-06-12T18:04:11+00:00",
+            "agent": "grok",
+            "role": "full",
+            "method": "GET",
+            "path": "/memory/telemetry",
+            "status": 200,
+            "latency_ms": 4.1,
+            "request_id": "req001",
+        })
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "gateway-audit.jsonl"
+            path.write_text(line + "\n", encoding="utf-8")
+            mock_path.return_value = path
+            result = tail_source("gateway_audit", lines=10)
+        self.assertEqual(result["source"], "gateway_audit")
+        self.assertEqual(result["lines"], [line])
 
 
 class FilterEntriesTests(unittest.TestCase):

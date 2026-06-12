@@ -15,7 +15,7 @@ MONITOR_ROOT = Path(__file__).resolve().parents[2]
 # Vars loaded from framework / skill .env files (never load whole files wholesale)
 _FRAMEWORK_KEYS = frozenset({
     "PG_PASSWORD", "PG_CONN", "NEO4J_PASSWORD",
-    "MEMORY_LOG_PATH", "AUDIT_LOG_PATH", "MEMORY_LOG_LEVEL",
+    "MEMORY_LOG_PATH", "AUDIT_LOG_PATH", "GATEWAY_AUDIT_LOG_PATH", "MEMORY_LOG_LEVEL",
     "COORDINATOR_URL", "AGENT_TOKEN",
     "PG_HOST", "PG_PORT", "PG_DB", "PG_USER",
     "NEO4J_BROWSER_URL",

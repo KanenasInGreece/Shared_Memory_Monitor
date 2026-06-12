@@ -60,8 +60,15 @@ def audit_path() -> Path:
     return log_dir() / "rem-audit.jsonl"
 
 
+def gateway_audit_path() -> Path:
+    p = get("GATEWAY_AUDIT_LOG_PATH")
+    if p:
+        return Path(os.path.expanduser(p))
+    return log_dir() / "gateway-audit.jsonl"
+
+
 def list_sources() -> list[LogSource]:
-    """Infrastructure log sources only — gateway journal and REM audit."""
+    """Infrastructure log sources — gateway journal, REM audit, gateway request audit."""
     return [
         LogSource(
             id="gateway",
@@ -76,6 +83,13 @@ def list_sources() -> list[LogSource]:
             kind="jsonl",
             path=str(audit_path()),
             description="Structured JSON-lines audit of REM outbox reviews",
+        ),
+        LogSource(
+            id="gateway_audit",
+            label="Gateway audit",
+            kind="jsonl",
+            path=str(gateway_audit_path()),
+            description="Per-request gateway audit — agent, route, status, latency",
         ),
     ]
 

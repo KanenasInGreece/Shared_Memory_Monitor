@@ -52,6 +52,10 @@
     <span class="log-status" id="log-status">loading…</span>
   </div>
 </div>
+<div class="logs-agent-bar" id="agent-bar" hidden>
+  <span class="logs-agent-label">Agent</span>
+  <div class="logs-agent-chips" id="agent-chips" role="group" aria-label="Filter by agent"></div>
+</div>
 <div id="log" role="log" aria-live="polite"></div>
 
 <script src="/static/bar-meta.js?v=1"></script>
@@ -84,14 +88,36 @@ function severityEmptyMessage() {
   if (severityFilters.has("warn")) parts.push("warnings");
   return `(no ${parts.join(" or ")} in view)`;
 }
-function severityStatusNote() {
-  if (!severityFilters.size) return "";
+function hasAgentFilter() {
+  return source === "gateway_audit" && agentFilters.size > 0;
+}
+function filterStatusNote() {
   const parts = [];
-  if (severityFilters.has("error")) parts.push("errors");
-  if (severityFilters.has("warn")) parts.push("warnings");
-  return ` · showing ${parts.join(" + ")} only`;
+  if (severityFilters.size) {
+    const sev = [];
+    if (severityFilters.has("error")) sev.push("errors");
+    if (severityFilters.has("warn")) sev.push("warnings");
+    parts.push(sev.join(" + "));
+  }
+  if (hasAgentFilter()) {
+    parts.push([...agentFilters].sort().join(", "));
+  }
+  if (!parts.length) return "";
+  return ` · showing ${parts.join(" · ")} only`;
 }
 let severityFilters = loadSeverityFilters();
+function loadAgentFilters() {
+  const raw = localStorage.getItem("sm-log-agents") || "";
+  return new Set(raw.split(",").filter(Boolean));
+}
+function saveAgentFilters() {
+  if (agentFilters.size) {
+    localStorage.setItem("sm-log-agents", [...agentFilters].sort().join(","));
+  } else {
+    localStorage.removeItem("sm-log-agents");
+  }
+}
+let agentFilters = loadAgentFilters();
 let filterFrom = localStorage.getItem("sm-log-from") || "";
 let filterTo = localStorage.getItem("sm-log-to") || "";
 const MAX_LOG_LINES = 2500;
@@ -100,7 +126,25 @@ function hasTimeFilter() {
   return Boolean(filterFrom || filterTo);
 }
 
+function parseGatewayAudit(raw) {
+  try { return JSON.parse(raw); } catch (_) { return null; }
+}
+
+function gatewayAuditAgent(raw) {
+  const o = parseGatewayAudit(raw);
+  return o?.agent ? String(o.agent) : null;
+}
+
 function classify(text){
+  if (source === "gateway_audit") {
+    const o = parseGatewayAudit(text);
+    if (o) {
+      const st = Number(o.status);
+      if (st >= 500) return "line-err";
+      if (st >= 400) return "line-warn";
+      if (st >= 200) return "line-info";
+    }
+  }
   const l = (text || "").toLowerCase();
   if (l.includes("error") || l.includes("failed") || l.includes("critical")) return "line-err";
   if (l.includes("warn") || l.includes("defer")) return "line-warn";
@@ -148,21 +192,91 @@ function recomputeStats() {
   totalWarn = c.warn;
 }
 
+function linePassesFilters(ln) {
+  if (hasAgentFilter()) {
+    const agent = gatewayAuditAgent(ln);
+    if (!agent || !agentFilters.has(agent)) return false;
+  }
+  if (!severityFilters.size) return true;
+  const c = classify(ln);
+  if (severityFilters.has("error") && c === "line-err") return true;
+  if (severityFilters.has("warn") && c === "line-warn") return true;
+  return false;
+}
+
 function visibleLines() {
-  if (!severityFilters.size) return lineBuffer;
-  return lineBuffer.filter(ln => {
-    const c = classify(ln);
-    if (severityFilters.has("error") && c === "line-err") return true;
-    if (severityFilters.has("warn") && c === "line-warn") return true;
-    return false;
-  });
+  if (!severityFilters.size && !hasAgentFilter()) return lineBuffer;
+  return lineBuffer.filter(linePassesFilters);
+}
+
+function agentEmptyMessage() {
+  if (!hasAgentFilter()) return severityEmptyMessage();
+  const agents = [...agentFilters].sort().join(", ");
+  if (!severityFilters.size) return `(no lines for agent${agentFilters.size > 1 ? "s" : ""}: ${agents})`;
+  return `(no matching lines for ${agents})`;
 }
 
 function updateChips() {
   const shown = visibleLines().length;
-  setChip("chip-lines", hasSeverityFilter() ? `${shown}/${totalLines}` : String(totalLines));
+  const filtered = hasSeverityFilter() || hasAgentFilter();
+  setChip("chip-lines", filtered ? `${shown}/${totalLines}` : String(totalLines));
   setChip("chip-err", totalErr, totalErr > 0 ? "bad" : "good");
   setChip("chip-warn", totalWarn, totalWarn > 0 ? "warn" : "");
+  renderAgentChips();
+}
+
+function collectAgents(lines) {
+  const counts = new Map();
+  for (const ln of lines) {
+    const agent = gatewayAuditAgent(ln);
+    if (agent) counts.set(agent, (counts.get(agent) || 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+function toggleAgentFilter(agent) {
+  if (agentFilters.has(agent)) {
+    agentFilters.delete(agent);
+  } else {
+    agentFilters.add(agent);
+  }
+  saveAgentFilters();
+  paintLog(agentEmptyMessage());
+  const el = document.getElementById("log");
+  if (document.getElementById("follow").checked) el.scrollTop = el.scrollHeight;
+}
+
+function renderAgentChips() {
+  const bar = document.getElementById("agent-bar");
+  const host = document.getElementById("agent-chips");
+  if (source !== "gateway_audit") {
+    bar.hidden = true;
+    host.innerHTML = "";
+    return;
+  }
+  const agents = collectAgents(lineBuffer);
+  const agentNames = new Set(agents.map(([a]) => a));
+  for (const a of [...agentFilters]) {
+    if (!agentNames.has(a)) agentFilters.delete(a);
+  }
+  if (agentFilters.size) saveAgentFilters();
+  bar.hidden = agents.length === 0;
+  if (!agents.length) {
+    host.innerHTML = "";
+    return;
+  }
+  host.innerHTML = agents.map(([agent, count]) => {
+    const active = agentFilters.has(agent);
+    let cls = "chip chip-agent";
+    if (active) cls += " chip-filter-active";
+    cls += " chip-clickable";
+    return `<button type="button" class="${cls}" data-agent="${escAttr(agent)}" ` +
+      `aria-pressed="${active}" title="Show ${escapeHtml(agent)} only">` +
+      `<span class="k">${escapeHtml(agent)}</span><span class="v">${count}</span></button>`;
+  }).join("");
+  host.querySelectorAll("[data-agent]").forEach(btn => {
+    btn.addEventListener("click", () => toggleAgentFilter(btn.dataset.agent));
+  });
 }
 
 function mergeLines(incoming, clear) {
@@ -198,7 +312,7 @@ function toggleSeverityFilter(kind) {
     return;
   }
   saveSeverityFilters();
-  paintLog(severityEmptyMessage());
+  paintLog(agentEmptyMessage());
   const el = document.getElementById("log");
   if (document.getElementById("follow").checked) el.scrollTop = el.scrollHeight;
 }
@@ -217,6 +331,24 @@ function bindSeverityChips() {
 }
 
 const JOURNAL_TS_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)/;
+
+function formatGatewayAuditLine(raw) {
+  const o = parseGatewayAudit(raw);
+  if (!o) return null;
+  const route = [o.method, o.path].filter(Boolean).join(" ");
+  const meta = [
+    o.agent && `agent=${o.agent}`,
+    o.role && `role=${o.role}`,
+    o.status != null && `status=${o.status}`,
+    o.latency_ms != null && `${o.latency_ms}ms`,
+    o.request_id && `req=${o.request_id}`,
+  ].filter(Boolean).join("  ·  ");
+  return {
+    ts: o.ts || "",
+    meta,
+    route: route.trim(),
+  };
+}
 
 function formatAuditLine(raw) {
   let o;
@@ -278,6 +410,19 @@ function syncFilterInputs() {
 
 function renderRawLine(raw) {
   const cls = classify(raw);
+  if (source === "gateway_audit") {
+    const audit = formatGatewayAuditLine(raw);
+    if (audit) {
+      let html = `<div class="log-line log-audit log-gateway-audit ${cls}">`;
+      html += `<div class="log-audit-row">`;
+      if (audit.ts) html += `<span class="log-ts-inline">${escapeHtml(audit.ts)}</span>`;
+      if (audit.route) html += `<span class="log-audit-route">${escapeHtml(audit.route)}</span>`;
+      html += `<span class="log-audit-meta">${escapeHtml(audit.meta)}</span>`;
+      html += `</div>`;
+      html += `</div>`;
+      return html;
+    }
+  }
   if (source === "rem_audit") {
     const audit = formatAuditLine(raw);
     if (audit) {
@@ -320,6 +465,8 @@ function bindSourceTabs(sources) {
     fileOffset = 0; journalSince = null; lastJournalLine = null;
     severityFilters = new Set();
     localStorage.removeItem("sm-log-severity");
+    agentFilters = new Set();
+    localStorage.removeItem("sm-log-agents");
     resetCounts();
     syncSourceTabs();
     refresh(true);
@@ -388,7 +535,7 @@ async function refresh(clear=false){
         return;
       }
       mergeLines(lines, clear);
-      if (hasSeverityFilter() || clear) {
+      if (hasSeverityFilter() || hasAgentFilter() || clear) {
         paintLog();
       } else {
         appendLog(lines);
@@ -410,7 +557,7 @@ async function refresh(clear=false){
     const rangeNote = filtered
       ? ` · ${filterFrom || "…"} → ${filterTo || "…"}`
       : "";
-    const severityNote = severityStatusNote();
+    const severityNote = filterStatusNote();
     document.getElementById("log-status").textContent =
       `Updated ${new Date().toLocaleTimeString()} · ${d.fetched_at || ""}${rangeNote}${severityNote}`;
   } catch(e) {

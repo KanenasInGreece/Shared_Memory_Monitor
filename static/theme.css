@@ -1053,8 +1053,54 @@ body.logs-page .bar {
   position: static;
   flex-shrink: 0;
 }
-body.logs-page .logs-source-bar {
+body.logs-page .logs-source-bar,
+body.logs-page .logs-agent-bar {
   flex-shrink: 0;
+}
+.logs-agent-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .45rem .65rem;
+  padding: .4rem 1.15rem;
+  border-bottom: 1px solid var(--border-dark);
+  background: var(--surface-2, var(--surface));
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+.logs-agent-label {
+  font-size: .62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.logs-agent-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .35rem;
+  min-width: 0;
+}
+.logs-agent-chips .chip-agent {
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--card);
+  font: inherit;
+  padding: 0;
+}
+body.logs-page .chip-agent.chip-clickable:hover {
+  border-color: var(--border-light);
+}
+body.logs-page .chip-agent.chip-filter-active {
+  border-color: var(--accent, var(--ok-dim));
+  background: color-mix(in srgb, var(--accent, var(--ok-dim)) 12%, var(--card));
+}
+.log-gateway-audit .log-audit-route {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--text);
+  margin-right: .5rem;
 }
 .logs-source-bar {
   display: grid;
