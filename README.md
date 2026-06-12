@@ -511,7 +511,7 @@ Before the first push:
 
 **Never committed** (see `.gitignore`): `.env`, `.grok/`, `data/*`, `graphs/*` (runtime exports), `.venv/`.
 
-Create a GitHub release tagged `v0.1.0` to match [CHANGELOG.md](CHANGELOG.md).
+Create a GitHub release tagged `vX.Y.Z` to match [CHANGELOG.md](CHANGELOG.md).
 
 ## Related projects
 
