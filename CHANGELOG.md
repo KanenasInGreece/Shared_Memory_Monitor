@@ -6,6 +6,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-06-12
+
+### Changed
+
+- **Diagram topology** — REM and NREM connect to the gateway only (read · write ·
+  logic side ports with bridge gaps); gateway owns all Postgres, Neo4j, and
+  inference I/O
+- **Gateway infra buses** — separate bottom **Memory** (`mem-read` / `mem-write`)
+  and **Inference** (`inf-llm` / `inf-embedder` / `inf-reranker`) connectors;
+  memory routes drop vertically to avoid crossing daemon cards
+- **Inference backends** — one blue logic line per service (no read/write split
+  at the gateway edge)
+- **Agent layer** — bottom read/write ports only; removed redundant layer notes
+  and skill footers
+- **Flow activation** — daemon↔gateway read/write lines light from replay-interval
+  evidence or daemon audit, not standing backlog alone; agent audit drives gateway
+  memory save/retrieve/outbox paths
+
+### Added
+
+- **`daemon_logic`** in agent-activity API — REM/NREM `/v1/chat/completions` and
+  `/v1/embeddings` counts for blue proxy lines
+
+### Fixed
+
+- False always-on REM/NREM read/write connectors when `rem_backlog` /
+  `facts_unconsolidated` was nonzero but the last poll window was quiet
+- Gateway memory write lines hidden behind daemon cards (left-edge routing →
+  bottom `infra-down` paths)
+- Inference lines crossing NREM (`infra-right` elbow → `infra-down`)
+
 ## [0.3.3] - 2026-06-12
 
 ### Added
@@ -75,7 +106,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `.env` and `.grok/` gitignored; doctor never prints credential values
 - Error sanitization for tokens and connection strings
 
-[Unreleased]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/compare/v0.3.2...main
+[Unreleased]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/compare/v0.3.4...main
+[0.3.4]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.3.4
+[0.3.3]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.3.3
 [0.3.2]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.3.2
 [0.3.1]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.3.1
 [0.3.0]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.3.0

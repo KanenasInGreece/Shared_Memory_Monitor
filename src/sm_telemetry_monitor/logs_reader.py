@@ -442,6 +442,30 @@ def _is_daemon_agent(agent: str | None) -> bool:
     return key.endswith("_daemon") or key.endswith("-daemon")
 
 
+def _daemon_diagram_node(agent: str | None) -> str | None:
+    """Map audit agent id to diagram node key for REM/NREM logic flows."""
+    if not agent:
+        return None
+    key = agent.strip().lower()
+    if key in ("rem_daemon", "rem"):
+        return "rem_daemon"
+    if key in ("consolidation", "nrem_daemon", "nrem"):
+        return "nrem_daemon"
+    return None
+
+
+def classify_daemon_audit_io(path: str | None) -> str | None:
+    """Classify daemon gateway proxy traffic for diagram logic flows."""
+    route = (path or "").split("?", 1)[0]
+    if route == "/v1/chat/completions":
+        return "chat"
+    if route == "/v1/embeddings":
+        return "embeddings"
+    if route.startswith("/v1/"):
+        return "proxy"
+    return None
+
+
 def classify_agent_audit_io(method: str | None, path: str | None) -> str | None:
     """Classify an agent-audit request as read or write; None when not memory I/O."""
     route = (path or "").split("?", 1)[0]
@@ -484,10 +508,11 @@ def agent_activity(
     since: str | None = None,
     until: str | None = None,
 ) -> dict:
-    """Summarize per-agent read/write counts in agent audit for a time window."""
+    """Summarize agent memory I/O and daemon /v1 proxy counts for a time window."""
     since_dt = _parse_ts(since) if since else None
     until_dt = _parse_ts(until) if until else None
     counts: dict[str, dict[str, int]] = {}
+    daemon_logic: dict[str, dict[str, int]] = {}
 
     for path in _iter_audit_files():
         for line in _read_audit_lines(path):
@@ -500,6 +525,11 @@ def agent_activity(
                 continue
             agent = row.get("agent")
             if _is_daemon_agent(agent):
+                node = _daemon_diagram_node(str(agent) if agent else None)
+                kind = classify_daemon_audit_io(row.get("path"))
+                if node and kind:
+                    bucket = daemon_logic.setdefault(node, {"chat": 0, "embeddings": 0, "proxy": 0})
+                    bucket[kind] += 1
                 continue
             io = classify_agent_audit_io(row.get("method"), row.get("path"))
             if not io:
@@ -512,5 +542,6 @@ def agent_activity(
         "since": since,
         "until": until,
         "agents": counts,
+        "daemon_logic": daemon_logic,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
     }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Shared Memory Monitor — Architecture</title>
-<link rel="stylesheet" href="/static/theme.css?v=26">
+<link rel="stylesheet" href="/static/theme.css?v=38">
 </head>
 <body class="diagram-page">
 
@@ -59,40 +59,38 @@
           <span class="arch-layer-title">Agent layer</span>
           <span class="arch-layer-badge unknown" id="layer-agents-badge">—</span>
         </div>
-        <p class="arch-layer-note">HTTP only — active agents are tagged; red/green lines run from each chip to the gateway</p>
         <div class="arch-chips" id="agent-chips">
           <span class="arch-chip" data-chip="claude" data-node="agent_claude" data-agent-ids="claude,claude-code">
-            <span class="arch-port" data-port="top" title="Responses from gateway"></span>
             <span class="arch-chip-label">Claude Code</span>
-            <span class="arch-port" data-port="bottom" title="Requests to gateway"></span>
+            <span class="arch-port" data-port="bottom-read" title="Read channel to gateway"></span>
+            <span class="arch-port" data-port="bottom-write" title="Write channel to gateway"></span>
           </span>
           <span class="arch-chip" data-chip="grok" data-node="agent_grok" data-agent-ids="grok">
-            <span class="arch-port" data-port="top" title="Responses from gateway"></span>
             <span class="arch-chip-label">Grok</span>
-            <span class="arch-port" data-port="bottom" title="Requests to gateway"></span>
+            <span class="arch-port" data-port="bottom-read" title="Read channel to gateway"></span>
+            <span class="arch-port" data-port="bottom-write" title="Write channel to gateway"></span>
           </span>
           <span class="arch-chip" data-chip="codex" data-node="agent_codex" data-agent-ids="codex,codex-cli,openai-codex">
-            <span class="arch-port" data-port="top" title="Responses from gateway"></span>
             <span class="arch-chip-label">Codex CLI</span>
-            <span class="arch-port" data-port="bottom" title="Requests to gateway"></span>
+            <span class="arch-port" data-port="bottom-read" title="Read channel to gateway"></span>
+            <span class="arch-port" data-port="bottom-write" title="Write channel to gateway"></span>
           </span>
           <span class="arch-chip" data-chip="antigravity" data-node="agent_antigravity" data-agent-ids="antigravity,gemini,antigravity-agent">
-            <span class="arch-port" data-port="top" title="Responses from gateway"></span>
             <span class="arch-chip-label">Antigravity</span>
-            <span class="arch-port" data-port="bottom" title="Requests to gateway"></span>
+            <span class="arch-port" data-port="bottom-read" title="Read channel to gateway"></span>
+            <span class="arch-port" data-port="bottom-write" title="Write channel to gateway"></span>
           </span>
           <span class="arch-chip" data-chip="lmstudio" data-node="agent_lmstudio" data-agent-ids="lmstudio,lm_studio,mcp,lm-studio">
-            <span class="arch-port" data-port="top" title="Responses from gateway"></span>
             <span class="arch-chip-label">LM Studio (MCP)</span>
-            <span class="arch-port" data-port="bottom" title="Requests to gateway"></span>
+            <span class="arch-port" data-port="bottom-read" title="Read channel to gateway"></span>
+            <span class="arch-port" data-port="bottom-write" title="Write channel to gateway"></span>
           </span>
           <span class="arch-chip" data-chip="other" data-node="agent_other" data-agent-ids="">
-            <span class="arch-port" data-port="top" title="Responses from gateway"></span>
             <span class="arch-chip-label">Any HTTP client</span>
-            <span class="arch-port" data-port="bottom" title="Requests to gateway"></span>
+            <span class="arch-port" data-port="bottom-read" title="Read channel to gateway"></span>
+            <span class="arch-port" data-port="bottom-write" title="Write channel to gateway"></span>
           </span>
         </div>
-        <div class="arch-node-detail" id="node-agents-detail">memory_bridge.py · vector-skill.py</div>
       </section>
 
       <div class="arch-link-gap arch-link-gap--conduit" data-gap="agents-gateway" aria-hidden="true"></div>
@@ -102,25 +100,12 @@
           <span class="arch-layer-title">Gateway cluster</span>
           <span class="arch-layer-badge unknown" id="layer-gateway-badge">—</span>
         </div>
-        <p class="arch-layer-note">hive_mind_proxy.py spawns coordinator + REM/NREM daemons · owns all DB I/O</p>
-        <div class="arch-cluster-grid">
-          <div class="arch-node arch-node-main unknown" id="node-gateway" data-node="gateway">
-            <span class="arch-port" data-port="top" title="HTTP from agents"></span>
-            <span class="arch-port" data-port="bottom" title="To memory / inference"></span>
-            <div class="arch-node-head">
-              <span class="arch-node-title">Hive-Mind Gateway + Coordinator</span>
-              <span class="arch-node-state" id="node-gateway-state">—</span>
-            </div>
-            <div class="arch-node-endpoint" aria-label="Hive-Mind HTTP listen address">
-              <span class="arch-node-endpoint-line">HTTP · 127.0.0.1:8888</span>
-              <span class="arch-node-endpoint-note">agent layer connects here</span>
-            </div>
-            <div class="arch-node-sub">hive_mind_proxy.py · coordinator.py</div>
-            <div class="arch-node-metrics" id="node-gateway-metrics"><span>—</span></div>
-          </div>
+        <p class="arch-layer-note">Daemons talk to the gateway only — gateway owns every store and inference hop</p>
+        <div class="arch-cluster-row">
           <div class="arch-node arch-node-daemon unknown" id="node-rem" data-node="rem_daemon">
-            <span class="arch-port" data-port="top" title="Reads Postgres"></span>
-            <span class="arch-port" data-port="bottom" title="Reads Neo4j · LLM logic"></span>
+            <span class="arch-port" data-port="read" title="Read channel → gateway"></span>
+            <span class="arch-port" data-port="write" title="Write channel → gateway"></span>
+            <span class="arch-port" data-port="logic" title="LLM proxy → gateway"></span>
             <div class="arch-node-head">
               <span class="arch-node-title">REM daemon</span>
               <span class="arch-node-state" id="node-rem-state">—</span>
@@ -128,15 +113,50 @@
             <div class="arch-node-sub">rem_loop.py · enrichment</div>
             <div class="arch-node-metrics" id="node-rem-metrics"><span>—</span></div>
           </div>
+          <div class="arch-daemon-bridge arch-daemon-bridge--rem" aria-hidden="true"></div>
+          <div class="arch-node arch-node-main unknown" id="node-gateway" data-node="gateway">
+            <span class="arch-port" data-port="top-read" title="Agent read HTTP"></span>
+            <span class="arch-port" data-port="top-write" title="Agent write HTTP"></span>
+            <span class="arch-port" data-port="rem-read" title="REM read channel"></span>
+            <span class="arch-port" data-port="rem-write" title="REM write channel"></span>
+            <span class="arch-port" data-port="rem-logic" title="REM logic proxy"></span>
+            <span class="arch-port" data-port="nrem-read" title="NREM read channel"></span>
+            <span class="arch-port" data-port="nrem-write" title="NREM write channel"></span>
+            <span class="arch-port" data-port="nrem-logic" title="NREM logic proxy"></span>
+            <span class="arch-port" data-port="mem-read" title="Memory layer read"></span>
+            <span class="arch-port" data-port="mem-write" title="Memory layer write"></span>
+            <span class="arch-port" data-port="inf-llm" title="Reasoning LLM proxy"></span>
+            <span class="arch-port" data-port="inf-embedder" title="Embedder proxy"></span>
+            <span class="arch-port" data-port="inf-reranker" title="Reranker proxy"></span>
+            <div class="arch-node-head">
+              <span class="arch-node-title">Hive-Mind Gateway + Coordinator</span>
+              <span class="arch-node-state" id="node-gateway-state">—</span>
+            </div>
+            <div class="arch-node-endpoint" aria-label="Hive-Mind HTTP listen address">
+              <span class="arch-node-endpoint-line">127.0.0.1:8888</span>
+            </div>
+            <div class="arch-node-sub">hive_mind_proxy.py · coordinator.py</div>
+            <div class="arch-node-metrics" id="node-gateway-metrics"><span>—</span></div>
+          </div>
+          <div class="arch-daemon-bridge arch-daemon-bridge--nrem" aria-hidden="true"></div>
           <div class="arch-node arch-node-daemon unknown" id="node-nrem" data-node="nrem_daemon">
-            <span class="arch-port" data-port="top" title="Reads Neo4j"></span>
-            <span class="arch-port" data-port="bottom" title="Writes summaries · LLM logic"></span>
+            <span class="arch-port" data-port="read" title="Read channel ← gateway"></span>
+            <span class="arch-port" data-port="write" title="Write channel ← gateway"></span>
+            <span class="arch-port" data-port="logic" title="LLM / embed ← gateway"></span>
             <div class="arch-node-head">
               <span class="arch-node-title">NREM daemon</span>
               <span class="arch-node-state" id="node-nrem-state">—</span>
             </div>
             <div class="arch-node-sub">consolidation_loop.py · LISTEN new_artifact</div>
             <div class="arch-node-metrics" id="node-nrem-metrics"><span>—</span></div>
+          </div>
+        </div>
+        <div class="arch-infra-bus-row" aria-hidden="true">
+          <div class="arch-infra-bus arch-infra-bus--memory">
+            <span class="arch-infra-bus-label">Memory</span>
+          </div>
+          <div class="arch-infra-bus arch-infra-bus--inference">
+            <span class="arch-infra-bus-label">Inference</span>
           </div>
         </div>
       </section>
@@ -149,12 +169,13 @@
             <span class="arch-layer-title">Memory layer</span>
             <span class="arch-layer-badge unknown" id="layer-memory-badge">—</span>
           </div>
-          <p class="arch-layer-note">Red write · green read · blue logic — three lanes between stores</p>
+          <p class="arch-layer-note">Three lanes between stores — Outbox · REM · NREM</p>
           <div class="arch-memory-grid">
             <div class="arch-node arch-node-store unknown" id="node-postgres" data-node="postgres">
-              <span class="arch-port" data-port="top" title="Gateway save (write) / retrieve (read)"></span>
+              <span class="arch-port" data-port="read" title="Gateway read"></span>
+              <span class="arch-port" data-port="write" title="Gateway write"></span>
               <span class="arch-port" data-port="outbox" title="Outbox WAL write → Neo4j"></span>
-              <span class="arch-port" data-port="rem" title="REM read → Neo4j"></span>
+              <span class="arch-port" data-port="rem" title="REM lane (gateway-mediated)"></span>
               <span class="arch-port" data-port="summaries" title="NREM write ← summaries"></span>
               <div class="arch-node-head">
                 <span class="arch-node-title">PostgreSQL + pgvector</span>
@@ -165,26 +186,24 @@
             </div>
             <div class="arch-memory-bridge" aria-hidden="true">
               <div class="arch-memory-lane arch-memory-lane--write" id="lane-outbox">
-                <span class="arch-lane-io">write</span>
                 <span class="arch-lane-label">Outbox</span>
                 <span class="arch-lane-arrow" aria-hidden="true">→</span>
               </div>
               <div class="arch-memory-lane arch-memory-lane--read" id="lane-rem">
-                <span class="arch-lane-io">read</span>
                 <span class="arch-lane-label">REM</span>
                 <span class="arch-lane-arrow" aria-hidden="true">→</span>
               </div>
               <div class="arch-memory-lane arch-memory-lane--write" id="lane-nrem">
                 <span class="arch-lane-arrow" aria-hidden="true">←</span>
                 <span class="arch-lane-label">NREM</span>
-                <span class="arch-lane-io">write</span>
               </div>
             </div>
             <div class="arch-node arch-node-store unknown" id="node-neo4j" data-node="neo4j">
-              <span class="arch-port" data-port="top" title="Gateway retrieve (read)"></span>
+              <span class="arch-port" data-port="read" title="Gateway read"></span>
+              <span class="arch-port" data-port="write" title="Gateway write"></span>
               <span class="arch-port" data-port="outbox" title="Outbox WAL write"></span>
-              <span class="arch-port" data-port="rem" title="REM read"></span>
-              <span class="arch-port" data-port="consolidate" title="NREM write source"></span>
+              <span class="arch-port" data-port="rem" title="REM lane (gateway-mediated)"></span>
+              <span class="arch-port" data-port="consolidate" title="NREM lane (gateway-mediated)"></span>
               <div class="arch-node-head">
                 <span class="arch-node-title">Neo4j</span>
                 <span class="arch-node-state" id="node-neo4j-state">—</span>
@@ -202,32 +221,34 @@
           </div>
           <p class="arch-layer-note">Proxied by gateway — Docker / external services, not gateway processes</p>
           <div class="arch-inference-grid">
-            <div class="arch-node arch-node-svc unknown" id="node-embedder" data-node="embedder">
-              <span class="arch-port" data-port="top" title="From gateway"></span>
-              <div class="arch-node-head">
-                <span class="arch-node-title">Embedder</span>
-                <span class="arch-node-state" id="node-embedder-state">—</span>
-              </div>
-              <div class="arch-node-sub">BGE-M3 · :8070</div>
-              <div class="arch-node-metrics" id="node-embedder-metrics"><span>—</span></div>
-            </div>
-            <div class="arch-node arch-node-svc unknown" id="node-reranker" data-node="reranker">
-              <span class="arch-port" data-port="top" title="From gateway"></span>
-              <div class="arch-node-head">
-                <span class="arch-node-title">Reranker</span>
-                <span class="arch-node-state" id="node-reranker-state">—</span>
-              </div>
-              <div class="arch-node-sub">BGE-Reranker · :8071</div>
-              <div class="arch-node-metrics" id="node-reranker-metrics"><span>—</span></div>
-            </div>
-            <div class="arch-node arch-node-svc unknown" id="node-llm" data-node="llm">
-              <span class="arch-port" data-port="top" title="From gateway / daemons"></span>
+            <div class="arch-node arch-node-svc arch-node-llm unknown" id="node-llm" data-node="llm">
+              <span class="arch-port" data-port="logic" title="Gateway logic proxy"></span>
               <div class="arch-node-head">
                 <span class="arch-node-title">Reasoning LLM</span>
                 <span class="arch-node-state" id="node-llm-state">—</span>
               </div>
-              <div class="arch-node-sub">OpenAI-compatible · :5000</div>
+              <div class="arch-node-sub">LM Studio · OpenAI-compatible · :5000</div>
               <div class="arch-node-metrics" id="node-llm-metrics"><span>—</span></div>
+            </div>
+            <div class="arch-inference-svc-row">
+              <div class="arch-node arch-node-svc unknown" id="node-embedder" data-node="embedder">
+                <span class="arch-port" data-port="logic" title="Gateway proxy"></span>
+                <div class="arch-node-head">
+                  <span class="arch-node-title">Embedder</span>
+                  <span class="arch-node-state" id="node-embedder-state">—</span>
+                </div>
+                <div class="arch-node-sub">BGE-M3 · :8070</div>
+                <div class="arch-node-metrics" id="node-embedder-metrics"><span>—</span></div>
+              </div>
+              <div class="arch-node arch-node-svc unknown" id="node-reranker" data-node="reranker">
+                <span class="arch-port" data-port="logic" title="Gateway proxy"></span>
+                <div class="arch-node-head">
+                  <span class="arch-node-title">Reranker</span>
+                  <span class="arch-node-state" id="node-reranker-state">—</span>
+                </div>
+                <div class="arch-node-sub">BGE-Reranker · :8071</div>
+                <div class="arch-node-metrics" id="node-reranker-metrics"><span>—</span></div>
+              </div>
             </div>
           </div>
         </section>
@@ -480,8 +501,36 @@ function rowAt(index) {
 }
 
 const SAVE_FLOW_KEYS = ["save-agents-gw", "save-gw-pg", "outbox-pg-nj"];
-const REM_FLOW_KEYS = ["rem-read-pg", "rem-read-pg-nj", "rem-logic-llm", "rem-read-nj"];
-const NREM_FLOW_KEYS = ["nrem-read-nj", "nrem-write-nj-pg", "nrem-logic-llm"];
+const REM_DAEMON_FLOW_KEYS = ["rem-gw-read", "rem-gw-write", "rem-gw-logic"];
+const REM_DATA_FLOW_KEYS = ["gw-rem-read-pg", "gw-rem-write-nj", "rem-read-pg-nj"];
+const REM_LOGIC_FLOW_KEYS = ["rem-gw-logic", "gw-logic-llm"];
+const REM_FLOW_KEYS = [...REM_DAEMON_FLOW_KEYS, ...REM_DATA_FLOW_KEYS, ...REM_LOGIC_FLOW_KEYS];
+const NREM_DAEMON_FLOW_KEYS = ["nrem-gw-read", "nrem-gw-write", "nrem-gw-logic"];
+const NREM_DATA_FLOW_KEYS = ["gw-nrem-read-nj", "gw-nrem-write-pg", "nrem-write-nj-pg"];
+const NREM_LOGIC_FLOW_KEYS = ["nrem-gw-logic", "gw-logic-llm", "gw-daemon-embed"];
+const NREM_FLOW_KEYS = [...NREM_DAEMON_FLOW_KEYS, ...NREM_DATA_FLOW_KEYS, ...NREM_LOGIC_FLOW_KEYS];
+
+const INFERENCE_FLOW_SOURCES = {
+  "gw-inf-llm": ["gw-logic-llm"],
+  "gw-inf-embedder": ["save-gw-embed", "retrieve-gw-embed", "gw-daemon-embed"],
+  "gw-inf-reranker": ["retrieve-gw-rerank"],
+};
+
+const DAEMON_LOGIC_FLOW_ACTIVE = {
+  "rem-gw-logic": s => s.hasRemLlm,
+  "nrem-gw-logic": s => s.hasNremLlm,
+  "gw-logic-llm": s => s.hasGwLlm,
+  "gw-daemon-embed": s => s.hasNremEmbed,
+};
+
+const AGENT_AUDIT_GATEWAY_FLOWS = {
+  "save-gw-pg": a => a.hasWrite,
+  "outbox-pg-nj": a => a.hasWrite,
+  "retrieve-gw-pg": a => a.hasRead || a.hasWrite,
+  "retrieve-gw-nj": a => a.hasRead,
+  "retrieve-gw-embed": a => a.hasWrite,
+  "save-gw-embed": a => a.hasWrite,
+};
 const RETRIEVE_FLOW_KEYS = [
   "retrieve-agents-gw", "retrieve-gw-embed", "retrieve-gw-rerank",
   "retrieve-gw-pg", "retrieve-gw-nj", "retrieve-gw-agents",
@@ -607,8 +656,29 @@ function renderAgentChips(summary) {
   }
 }
 
+function summarizeDaemonLogic(activity) {
+  const dl = activity?.daemon_logic || {};
+  const rem = dl.rem_daemon || {};
+  const nrem = dl.nrem_daemon || {};
+  const remChat = rem.chat || 0;
+  const nremChat = nrem.chat || 0;
+  const nremEmbed = nrem.embeddings || 0;
+  return {
+    remChat,
+    nremChat,
+    nremEmbed,
+    hasRemLlm: remChat > 0,
+    hasNremLlm: nremChat > 0,
+    hasNremEmbed: nremEmbed > 0,
+    hasGwLlm: remChat + nremChat > 0,
+  };
+}
+
 function agentAuditSummary() {
-  return summarizeAgentActivity(agentActivity);
+  return {
+    ...summarizeAgentActivity(agentActivity),
+    daemonLogic: summarizeDaemonLogic(agentActivity),
+  };
 }
 
 async function loadAgentActivityForView() {
@@ -671,20 +741,30 @@ const FLOW_LABELS = {
   "save-agents-gw": "save → gateway",
   "save-gw-pg": "save → Postgres",
   "outbox-pg-nj": "outbox write → Neo4j",
-  "rem-read-pg": "REM read Postgres",
-  "rem-read-pg-nj": "REM read → Neo4j",
-  "rem-logic-llm": "REM logic → LLM",
-  "rem-read-nj": "REM read Neo4j",
-  "nrem-read-nj": "NREM read Neo4j",
-  "nrem-write-nj-pg": "NREM write → summaries",
-  "nrem-logic-llm": "NREM logic → LLM",
+  "rem-gw-read": "REM read ← gateway",
+  "rem-gw-write": "REM write → gateway",
+  "rem-gw-logic": "REM logic → gateway",
+  "gw-rem-read-pg": "gateway read Postgres (REM)",
+  "gw-rem-write-nj": "gateway write Neo4j (REM)",
+  "rem-read-pg-nj": "REM lane Postgres → Neo4j",
+  "nrem-gw-read": "NREM read ← gateway",
+  "nrem-gw-write": "NREM write → gateway",
+  "nrem-gw-logic": "NREM logic → gateway",
+  "gw-nrem-read-nj": "gateway read Neo4j (NREM)",
+  "gw-nrem-write-pg": "gateway write Postgres (NREM)",
+  "nrem-write-nj-pg": "NREM lane Neo4j → summaries",
+  "gw-inf-llm": "gateway → LLM",
+  "gw-inf-embedder": "gateway → embedder",
+  "gw-inf-reranker": "gateway → reranker",
+  "gw-daemon-embed": "gateway → embedder (NREM)",
   "retrieve-agents-gw": "retrieve → gateway",
-  "retrieve-gw-embed": "read embedder",
-  "retrieve-gw-rerank": "read reranker",
+  "save-gw-embed": "save → embedder",
+  "retrieve-gw-embed": "retrieve → embedder",
+  "retrieve-gw-rerank": "retrieve → reranker",
   "retrieve-gw-pg": "read Postgres",
   "retrieve-gw-nj": "read Neo4j",
   "retrieve-gw-agents": "results → agent",
-  "gw-logic-llm": "gateway logic → LLM",
+  "gw-logic-llm": "gateway → LLM (daemon proxy)",
 };
 
 function updateReplayUi() {
@@ -724,12 +804,20 @@ function updateReplayUi() {
   const events = flowEventsForView();
   const audit = agentAuditSummary();
   const parts = [...events].map(k => FLOW_LABELS[k] || k);
+  const dl = audit.daemonLogic || {};
   if (audit.hasWrite || audit.hasRead) {
     const auditBits = [];
     if (audit.hasWrite) auditBits.push(`${audit.writeCount} agent write${audit.writeCount === 1 ? "" : "s"}`);
     if (audit.hasRead) auditBits.push(`${audit.readCount} agent read${audit.readCount === 1 ? "" : "s"}`);
     if (audit.activeNames.length) auditBits.push(audit.activeNames.join(", "));
     parts.push(`audit: ${auditBits.join(" · ")}`);
+  }
+  if (dl.hasRemLlm || dl.hasNremLlm || dl.hasNremEmbed) {
+    const daemonBits = [];
+    if (dl.hasRemLlm) daemonBits.push(`REM ${dl.remChat} LLM`);
+    if (dl.hasNremLlm) daemonBits.push(`NREM ${dl.nremChat} LLM`);
+    if (dl.hasNremEmbed) daemonBits.push(`NREM ${dl.nremEmbed} embed`);
+    parts.push(`daemon: ${daemonBits.join(" · ")}`);
   }
   if (!parts.length) {
     eventsEl.textContent = live ? "Quiet last interval" : "No events in range";
@@ -856,42 +944,45 @@ const ROUTE_SPREAD = 11;
 
 /* io: write/red · read/green · logic/blue — dir: solid+arrow · bi: dotted, no arrow */
 const INFRA_FLOW_DEFS = [
-  { key: "save-gw-pg", from: "gateway", fPort: "bottom", to: "postgres", tPort: "top", io: "write", dir: "dir" },
-  { key: "retrieve-gw-embed", from: "gateway", fPort: "bottom", to: "embedder", tPort: "top", io: "read", dir: "bi" },
-  { key: "retrieve-gw-rerank", from: "gateway", fPort: "bottom", to: "reranker", tPort: "top", io: "read", dir: "bi" },
-  { key: "retrieve-gw-pg", from: "gateway", fPort: "bottom", to: "postgres", tPort: "top", io: "read", dir: "dir" },
-  { key: "retrieve-gw-nj", from: "gateway", fPort: "bottom", to: "neo4j", tPort: "top", io: "read", dir: "dir" },
+  { key: "save-gw-pg", from: "gateway", fPort: "mem-write", to: "postgres", tPort: "write", io: "write", dir: "dir", route: "infra-down" },
+  { key: "gw-inf-llm", from: "gateway", fPort: "inf-llm", to: "llm", tPort: "logic", io: "logic", dir: "dir", route: "infra-down" },
+  { key: "gw-inf-embedder", from: "gateway", fPort: "inf-embedder", to: "embedder", tPort: "logic", io: "logic", dir: "dir", route: "infra-down" },
+  { key: "gw-inf-reranker", from: "gateway", fPort: "inf-reranker", to: "reranker", tPort: "logic", io: "logic", dir: "dir", route: "infra-down" },
+  { key: "retrieve-gw-pg", from: "gateway", fPort: "mem-read", to: "postgres", tPort: "read", io: "read", dir: "dir", route: "infra-down" },
+  { key: "retrieve-gw-nj", from: "gateway", fPort: "mem-read", to: "neo4j", tPort: "read", io: "read", dir: "dir", route: "infra-down" },
   { key: "outbox-pg-nj", from: "postgres", fPort: "outbox", to: "neo4j", tPort: "outbox", io: "write", dir: "dir", route: "direct" },
   { key: "rem-read-pg-nj", from: "postgres", fPort: "rem", to: "neo4j", tPort: "rem", io: "read", dir: "dir", route: "direct" },
   { key: "nrem-write-nj-pg", from: "neo4j", fPort: "consolidate", to: "postgres", tPort: "summaries", io: "write", dir: "dir", route: "direct" },
-  { key: "rem-read-pg", from: "postgres", fPort: "top", to: "rem_daemon", tPort: "top", io: "read", dir: "dir" },
-  { key: "rem-read-nj", from: "rem_daemon", fPort: "bottom", to: "neo4j", tPort: "top", io: "read", dir: "dir" },
-  { key: "rem-logic-llm", from: "rem_daemon", fPort: "bottom", to: "llm", tPort: "top", io: "logic", dir: "bi" },
-  { key: "nrem-read-nj", from: "neo4j", fPort: "top", to: "nrem_daemon", tPort: "top", io: "read", dir: "dir" },
-  { key: "nrem-logic-llm", from: "nrem_daemon", fPort: "bottom", to: "llm", tPort: "top", io: "logic", dir: "bi" },
-  { key: "gw-logic-llm", from: "gateway", fPort: "bottom", to: "llm", tPort: "top", io: "logic", dir: "bi" },
+  { key: "rem-gw-read", from: "gateway", fPort: "rem-read", to: "rem_daemon", tPort: "read", io: "read", dir: "dir", route: "direct" },
+  { key: "rem-gw-write", from: "rem_daemon", fPort: "write", to: "gateway", tPort: "rem-write", io: "write", dir: "dir", route: "direct" },
+  { key: "rem-gw-logic", from: "rem_daemon", fPort: "logic", to: "gateway", tPort: "rem-logic", io: "logic", dir: "dir", route: "direct" },
+  { key: "gw-rem-read-pg", from: "gateway", fPort: "mem-read", to: "postgres", tPort: "read", io: "read", dir: "dir", route: "infra-down" },
+  { key: "gw-rem-write-nj", from: "gateway", fPort: "mem-write", to: "neo4j", tPort: "write", io: "write", dir: "dir", route: "infra-down" },
+  { key: "nrem-gw-read", from: "gateway", fPort: "nrem-read", to: "nrem_daemon", tPort: "read", io: "read", dir: "dir", route: "direct" },
+  { key: "nrem-gw-write", from: "nrem_daemon", fPort: "write", to: "gateway", tPort: "nrem-write", io: "write", dir: "dir", route: "direct" },
+  { key: "nrem-gw-logic", from: "nrem_daemon", fPort: "logic", to: "gateway", tPort: "nrem-logic", io: "logic", dir: "dir", route: "direct" },
+  { key: "gw-nrem-read-nj", from: "gateway", fPort: "mem-read", to: "neo4j", tPort: "read", io: "read", dir: "dir", route: "infra-down" },
+  { key: "gw-nrem-write-pg", from: "gateway", fPort: "mem-write", to: "postgres", tPort: "summaries", io: "write", dir: "dir", route: "infra-down" },
 ];
 
 function buildAgentFlowDefs(ctx, eventKeys) {
   const defs = [];
   const audit = ctx.agentAudit;
-  const pollSave = eventKeys.has("save-agents-gw");
-  const pollRetrieve = eventKeys.has("retrieve-agents-gw") || eventKeys.has("retrieve-gw-agents");
   const chips = document.querySelectorAll("#agent-chips .arch-chip[data-node]");
 
   for (const chip of chips) {
     const node = chip.dataset.node;
     if (!node) continue;
     const state = audit?.chipState?.get(chip);
-    const write = (state?.write || 0) > 0 || (pollSave && !audit?.hasWrite);
-    const read = (state?.read || 0) > 0 || (pollRetrieve && !audit?.hasRead);
+    const write = (state?.write || 0) > 0;
+    const read = (state?.read || 0) > 0;
     if (write) {
       defs.push({
         key: `agent-write-${node}`,
         from: node,
-        fPort: "bottom",
+        fPort: "bottom-write",
         to: "gateway",
-        tPort: "top",
+        tPort: "top-write",
         io: "write",
         dir: "dir",
         agentFlow: true,
@@ -901,9 +992,9 @@ function buildAgentFlowDefs(ctx, eventKeys) {
       defs.push({
         key: `agent-read-req-${node}`,
         from: node,
-        fPort: "bottom",
+        fPort: "bottom-read",
         to: "gateway",
-        tPort: "top",
+        tPort: "top-read",
         io: "read",
         dir: "dir",
         agentFlow: true,
@@ -911,9 +1002,9 @@ function buildAgentFlowDefs(ctx, eventKeys) {
       defs.push({
         key: `agent-read-rsp-${node}`,
         from: "gateway",
-        fPort: "top",
+        fPort: "top-read",
         to: node,
-        tPort: "top",
+        tPort: "bottom-read",
         io: "read",
         dir: "dir",
         agentFlow: true,
@@ -965,7 +1056,13 @@ function orthoPath(a, b, midY, lane = 0) {
   return `M ${a.x} ${a.y} L ${a.x} ${y} L ${b.x} ${y} L ${b.x} ${b.y}`;
 }
 
+function infraDownPath(a, b, midY, lane = 0) {
+  const y = (midY ?? a.y + (b.y - a.y) * 0.42) + lane;
+  return `M ${a.x} ${a.y + lane} L ${a.x} ${y} L ${b.x} ${y} L ${b.x} ${b.y + lane}`;
+}
+
 function flowPath(a, b, midY, lane, route) {
+  if (route === "infra-down") return infraDownPath(a, b, midY, lane);
   if (route === "direct") {
     const dy = a.y - b.y;
     const dx = a.x - b.x;
@@ -990,15 +1087,35 @@ function retrieveLikelyActive(ctx) {
   return busy;
 }
 
+function flowKeyIsActive(key, eventKeys, ctx) {
+  const audit = ctx.agentAudit;
+  const daemon = audit?.daemonLogic;
+  if (daemon && DAEMON_LOGIC_FLOW_ACTIVE[key]?.(daemon)) return true;
+  if (audit && AGENT_AUDIT_GATEWAY_FLOWS[key]?.(audit)) return true;
+  if (eventKeys.has(key)) return true;
+  if (key === "outbox-pg-nj" && ctx.pending > 0) return true;
+  /* Daemon↔gateway read/write: interval evidence only — standing backlog is not I/O */
+  if (key === "rem-gw-read" || key === "rem-gw-write") return false;
+  if (key === "nrem-gw-read" || key === "nrem-gw-write") return false;
+  if (key === "rem-gw-logic") return false;
+  if (key === "nrem-gw-logic") return false;
+  if (REM_DATA_FLOW_KEYS.includes(key) && ctx.remQ > 0) return true;
+  if (NREM_DATA_FLOW_KEYS.includes(key) && ctx.nremQ > 0) return true;
+  if (key === "gw-logic-llm" && ctx.remQ > 0) return true;
+  if (key === "gw-logic-llm" && ctx.nremQ > 0) return true;
+  if (key === "gw-daemon-embed" && ctx.nremQ > 0) return true;
+  if (SAVE_FLOW_KEYS.includes(key) && ctx.pending > 0) return true;
+  const auditQuiet = !audit?.hasRead && !audit?.hasWrite;
+  if (key === "retrieve-gw-embed" && auditQuiet && retrieveLikelyActive(ctx)) return true;
+  if (key === "retrieve-gw-rerank" && auditQuiet && retrieveLikelyActive(ctx)) return true;
+  return false;
+}
+
 function flowIsActive(def, eventKeys, ctx) {
   if (def.agentFlow) return true;
-  if (eventKeys.has(def.key)) return true;
-  if (def.key === "outbox-pg-nj" && ctx.pending > 0) return true;
-  if (REM_FLOW_KEYS.includes(def.key) && ctx.remQ > 0) return true;
-  if (NREM_FLOW_KEYS.includes(def.key) && (ctx.nremQ > 0 || ctx.unconsolidated > 0)) return true;
-  if (SAVE_FLOW_KEYS.includes(def.key) && ctx.pending > 0) return true;
-  if (RETRIEVE_FLOW_KEYS.includes(def.key) && retrieveLikelyActive(ctx)) return true;
-  return false;
+  const sources = INFERENCE_FLOW_SOURCES[def.key];
+  if (sources) return sources.some(key => flowKeyIsActive(key, eventKeys, ctx));
+  return flowKeyIsActive(def.key, eventKeys, ctx);
 }
 
 function updateMemoryBridge(ctx, eventKeys) {
@@ -1083,6 +1200,9 @@ function drawFlows(ctx) {
     let cls = `arch-flow arch-flow--${io} arch-flow--${lineDir}`;
     if (on) cls += " is-event";
     if (on && def.agentFlow) cls += " is-agent-audit";
+    if (on && (DAEMON_LOGIC_FLOW_ACTIVE[def.key] || REM_DAEMON_FLOW_KEYS.includes(def.key) || NREM_DAEMON_FLOW_KEYS.includes(def.key) || INFERENCE_FLOW_SOURCES[def.key])) cls += " is-daemon-audit";
+    if (on && (AGENT_AUDIT_GATEWAY_FLOWS[def.key]
+      || (INFERENCE_FLOW_SOURCES[def.key] || []).some(k => AGENT_AUDIT_GATEWAY_FLOWS[k]))) cls += " is-gateway-audit";
     path.setAttribute("class", cls);
     if (lineDir === "dir" && io) {
       path.setAttribute("marker-end", `url(#arch-marker-${io})`);
