@@ -466,7 +466,7 @@ function archiveStorageKey() {
 }
 
 function isLiveTail() {
-  return source !== "gateway" && source !== "save_logs" && archivePick === "live";
+  return source !== "gateway" && archivePick === "live";
 }
 
 async function loadArchives() {
@@ -490,8 +490,7 @@ async function loadArchives() {
       return;
     }
     const saved = localStorage.getItem(archiveStorageKey());
-    const defaultId = source === "save_logs" ? opts[0].id : "live";
-    archivePick = saved && opts.some(o => o.id === saved) ? saved : defaultId;
+    archivePick = saved && opts.some(o => o.id === saved) ? saved : "live";
     sel.innerHTML = opts.map(o =>
       `<option value="${escAttr(o.id)}">${escapeHtml(o.label)}</option>`).join("");
     sel.value = archivePick;

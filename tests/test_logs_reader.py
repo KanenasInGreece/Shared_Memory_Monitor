@@ -51,10 +51,10 @@ class JournalCmdTests(unittest.TestCase):
 
 
 class AgentAuditSourceTests(unittest.TestCase):
-    def test_list_sources_includes_agent_audit_and_save_logs(self):
+    def test_list_sources_includes_agent_audit(self):
         ids = [s.id for s in list_sources()]
         self.assertIn("agent_audit", ids)
-        self.assertIn("save_logs", ids)
+        self.assertNotIn("save_logs", ids)
         self.assertNotIn("gateway_audit", ids)
         src = next(s for s in list_sources() if s.id == "agent_audit")
         self.assertEqual(src.kind, "jsonl")
@@ -111,25 +111,9 @@ class ArchiveTests(unittest.TestCase):
         self.patcher.stop()
         self.td.cleanup()
 
-    def test_list_save_log_archives(self):
-        (self.root / "shared_memory_2026-06-10.log.gz").write_bytes(b"\x1f\x8b")
-        (self.root / "shared_memory_2026-06-11.log.gz").write_bytes(b"\x1f\x8b")
-        out = list_archives("save_logs")
-        self.assertEqual(len(out["archives"]), 2)
-        self.assertEqual(out["archives"][0]["label"], "2026-06-11")
-
-    def test_tail_gz_archive(self):
-        line = json.dumps({"ts": "2026-06-10T12:00:00+00:00", "event": "save"})
-        archive = self.root / "shared_memory_2026-06-10.log.gz"
-        with gzip.open(archive, "wt", encoding="utf-8") as f:
-            f.write(line + "\n")
-        result = tail_source("save_logs", lines=10, archive=archive.name)
-        self.assertEqual(result["lines"], [line])
-        self.assertEqual(result["archive"], archive.name)
-
     def test_resolve_archive_rejects_traversal(self):
         with self.assertRaises(ValueError):
-            resolve_archive("save_logs", "../../etc/passwd")
+            resolve_archive("rem_audit", "../../etc/passwd")
 
     def test_resolve_archive_rejects_unknown(self):
         with self.assertRaises(ValueError):

@@ -44,4 +44,4 @@ See root [README.md](../README.md#running-as-a-service).
 
 Per-save logs are archived daily by the framework (`shared_memory_YYYY-MM-DD.log.gz`). REM and agent audit jsonl files are append-only — rotate them externally.
 
-Copy [logrotate/shared-memory-audit.example](logrotate/shared-memory-audit.example), set paths to your `MEMORY_LOG_PATH`, and install under `/etc/logrotate.d/`. The monitor logs UI discovers `.gz` archives next to the live files and lists them in the **File** dropdown.
+Copy [logrotate/shared-memory-audit.example](logrotate/shared-memory-audit.example), set paths to your `MEMORY_LOG_PATH`, and install under `/etc/logrotate.d/`. The monitor **REM audit** and **Agent audit** tabs discover rotated `.gz` files next to the live jsonl and list them in the **File** dropdown (read-only).

@@ -19,4 +19,5 @@
 }
 
 # Per-save logs are rotated by the framework NREM daemon (merge_logs) into
-# shared_memory_YYYY-MM-DD.log.gz — no logrotate entry needed for those.
+# shared_memory_YYYY-MM-DD.log.gz — the monitor does not expose those; this
+# example is for audit jsonl only.

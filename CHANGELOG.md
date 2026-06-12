@@ -6,6 +6,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-06-12
+
+### Removed
+
+- **`save_logs` tab** — the monitor only reads rotated audit archives on the REM
+  and Agent audit sources; per-save `shared_memory_*.log.gz` files remain
+  framework-side and are not surfaced as a separate log source
+
 ## [0.3.0] - 2026-06-12
 
 ### Added
@@ -51,7 +59,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `.env` and `.grok/` gitignored; doctor never prints credential values
 - Error sanitization for tokens and connection strings
 
-[Unreleased]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/compare/v0.3.0...main
+[Unreleased]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/compare/v0.3.1...main
+[0.3.1]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.3.1
 [0.3.0]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.3.0
 [0.2.0]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.2.0
 [0.1.0]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.1.0

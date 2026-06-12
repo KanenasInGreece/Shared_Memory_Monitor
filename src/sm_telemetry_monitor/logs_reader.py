@@ -13,9 +13,6 @@ from .env_loader import bootstrap_env, get
 
 bootstrap_env()
 
-_SAVE_ARCHIVE_RE = re.compile(r"^shared_memory_(\d{4}-\d{2}-\d{2})\.log\.gz$")
-
-
 def journal_unit() -> str:
     """User-scoped systemd unit for the hive-mind gateway (linger/user services)."""
     return get("SM_JOURNAL_UNIT", "hive-mind-gateway.service") or "hive-mind-gateway.service"
@@ -96,10 +93,6 @@ def _archive_candidates(source_id: str) -> list[Path]:
     if not root.is_dir():
         return []
 
-    if source_id == "save_logs":
-        out = [p for p in root.glob("shared_memory_*.log.gz") if p.is_file()]
-        return sorted(out, key=lambda p: p.name, reverse=True)
-
     live = _live_path(source_id)
     if live is None:
         return []
@@ -118,13 +111,6 @@ def _archive_candidates(source_id: str) -> list[Path]:
         if any(name.startswith(prefix) for prefix in names):
             archives.append(path)
     return sorted(archives, key=lambda p: p.name, reverse=True)
-
-
-def _archive_label(name: str) -> str:
-    m = _SAVE_ARCHIVE_RE.match(name)
-    if m:
-        return m.group(1)
-    return name
 
 
 def list_archives(source_id: str) -> dict:
@@ -153,7 +139,7 @@ def list_archives(source_id: str) -> dict:
         "archives": [
             {
                 "id": _basename(p),
-                "label": _archive_label(p.name),
+                "label": p.name,
                 "size": p.stat().st_size,
             }
             for p in archives
@@ -185,8 +171,7 @@ def resolve_archive(source_id: str, archive_id: str) -> Path:
 
 
 def list_sources() -> list[LogSource]:
-    """Infrastructure log sources — gateway journal, REM audit, agent audit, save archives."""
-    root = log_dir()
+    """Infrastructure log sources — gateway journal, REM audit, agent audit."""
     return [
         LogSource(
             id="gateway",
@@ -208,13 +193,6 @@ def list_sources() -> list[LogSource]:
             kind="jsonl",
             path=_basename(agent_audit_path()),
             description="Per-request agent audit — identity, route, status, latency",
-        ),
-        LogSource(
-            id="save_logs",
-            label="Save logs",
-            kind="gz_jsonl",
-            path=_basename(root),
-            description="Daily merged per-save logs (shared_memory_YYYY-MM-DD.log.gz)",
         ),
     ]
 
@@ -396,15 +374,7 @@ def tail_source(
             return {"error": "journalctl timed out", "lines": []}
 
     try:
-        if source_id == "save_logs":
-            archive_id = archive or (_basename(_archive_candidates(source_id)[0])
-                                    if _archive_candidates(source_id) else None)
-            if not archive_id:
-                return {"source": source_id, "kind": "jsonl", "lines": [],
-                        "error": "No save-log archives found", "archive": None,
-                        "fetched_at": datetime.now(timezone.utc).isoformat()}
-            path = resolve_archive(source_id, archive_id)
-        elif archive and archive != "live":
+        if archive and archive != "live":
             path = resolve_archive(source_id, archive)
         else:
             path = resolve_archive(source_id, "live")
