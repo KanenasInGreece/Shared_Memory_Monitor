@@ -7,6 +7,7 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import TypedDict
 
 from playwright.sync_api import sync_playwright
 
@@ -14,11 +15,39 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs" / "images"
 BASE = os.environ.get("SM_SCREENSHOT_URL", "http://127.0.0.1:8765").rstrip("/")
 
-PAGES: list[tuple[str, str, dict[str, int]]] = [
-    ("dashboard.png", "/", {"width": 1440, "height": 900}),
-    ("schema-breakdown.png", "/?schema=1&capture=1", {"width": 1440, "height": 900}),
-    ("diagram.png", "/diagram?capture=1", {"width": 1280, "height": 900}),
-    ("logs.png", "/logs?source=agent_audit&capture=1", {"width": 1440, "height": 900}),
+
+class PageSpec(TypedDict):
+    name: str
+    path: str
+    viewport: dict[str, int]
+    full_page: bool
+
+
+PAGES: list[PageSpec] = [
+    {
+        "name": "dashboard.png",
+        "path": "/",
+        "viewport": {"width": 1440, "height": 900},
+        "full_page": True,
+    },
+    {
+        "name": "schema-breakdown.png",
+        "path": "/?schema=1&capture=1",
+        "viewport": {"width": 1440, "height": 900},
+        "full_page": False,
+    },
+    {
+        "name": "diagram.png",
+        "path": "/diagram?capture=1",
+        "viewport": {"width": 1280, "height": 900},
+        "full_page": True,
+    },
+    {
+        "name": "logs.png",
+        "path": "/logs?source=agent_audit&capture=1",
+        "viewport": {"width": 1440, "height": 900},
+        "full_page": True,
+    },
 ]
 
 
@@ -40,8 +69,10 @@ def main() -> None:
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        for name, path, viewport in PAGES:
-            page = browser.new_page(viewport=viewport)
+        for spec in PAGES:
+            name = spec["name"]
+            path = spec["path"]
+            page = browser.new_page(viewport=spec["viewport"])
             page.goto(f"{BASE}{path}", wait_until="networkidle", timeout=60_000)
             if "diagram" in path:
                 page.wait_for_selector("body[data-diagram-ready='1']", timeout=60_000)
@@ -55,7 +86,7 @@ def main() -> None:
                 page.wait_for_selector("#schema-drawer.open", timeout=60_000)
                 page.wait_for_timeout(600)
             target = OUT / name
-            page.screenshot(path=str(target), full_page=True)
+            page.screenshot(path=str(target), full_page=spec["full_page"])
             print(f"wrote {target}")
         browser.close()
 

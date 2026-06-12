@@ -6,6 +6,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-06-12
+
+### Changed
+
+- **README** — table of contents; order is what-it-is → screenshots → quick start →
+  reference sections; schema breakdown caption clarifies side drawer
+- **Schema screenshot** — viewport capture (drawer overlay on dashboard), not full-page
+  scroll; removed capture-mode CSS that flattened the drawer into document flow
+
 ## [0.4.2] - 2026-06-12
 
 ### Added

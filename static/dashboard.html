@@ -689,7 +689,6 @@ setInterval(refresh, 60000);
 (async function bootSchemaCapture() {
   const params = new URLSearchParams(location.search);
   if (!params.has("capture") || !params.has("schema")) return;
-  document.body.dataset.schemaCapture = "1";
   try {
     await refresh();
     await loadSystemHealth();

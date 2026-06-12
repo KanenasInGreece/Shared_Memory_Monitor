@@ -1,6 +1,6 @@
 [project]
 name = "sm-telemetry-monitor"
-version = "0.4.2"
+version = "0.4.3"
 description = "Read-only view over Shared Memory gateway telemetry and framework logs — no separate data interfaces"
 readme = "README.md"
 license = "MIT"
