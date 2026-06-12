@@ -6,6 +6,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-06-12
+
+### Changed
+
+- **README** — architecture diagram section matches gateway-owned topology, audit-driven
+  flows, poll-history scrubber caption, and `GET /api/diagram/agent-activity`
+- **Screenshots** — regenerated `docs/images/dashboard.png`, `diagram.png`, `logs.png`
+  from the live monitor UI
+
 ## [0.3.5] - 2026-06-12
 
 ### Changed
@@ -114,7 +123,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `.env` and `.grok/` gitignored; doctor never prints credential values
 - Error sanitization for tokens and connection strings
 
-[Unreleased]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/compare/v0.3.5...main
+[Unreleased]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/compare/v0.3.6...main
+[0.3.6]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.3.6
 [0.3.5]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.3.5
 [0.3.4]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.3.4
 [0.3.3]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.3.3

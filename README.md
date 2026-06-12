@@ -26,15 +26,15 @@ REM/NREM backlog charts, pipeline queues, infrastructure health from `GET /healt
 
 ### Architecture diagram
 
-Live framework topology: agents → Hive-Mind Gateway (:8888) → REM/NREM daemons → Postgres + Neo4j, with inference backends.
+Live framework topology with gateway-owned I/O: agents connect to the Hive-Mind Gateway (`:8888`); REM and NREM daemons talk to the gateway only; the coordinator mediates all Postgres, Neo4j, and inference hops. Colored flow lines light from poll-interval telemetry and agent/daemon audit — not standing backlog alone. A history scrubber at the bottom replays earlier polls; the caption under it explains live vs replay and the time window.
 
-![Architecture diagram — live gateway cluster and memory layer topology](docs/images/diagram.png)
+![Architecture diagram — gateway cluster, memory lanes, inference backends, and poll-history scrubber](docs/images/diagram.png)
 
 ### Logs
 
-Gateway journal (`journalctl --user`), REM outbox audit JSONL, and **agent audit** — per-request agent identity, route, status, and latency from the framework auth seam. Filter by agent name; browse logrotated `.gz` archives via the **File** picker.
+Three tabs: **Gateway daemons** (`journalctl --user`), **REM audit** (outbox review JSONL), and **Agent audit** (per-request agent identity, route, status, latency). Agent audit supports name filter chips, a **File** picker for logrotated `.gz` archives, and optional since/until windowing.
 
-![Gateway logs — journal, REM audit, and agent audit viewer](docs/images/logs.png)
+![Logs — gateway journal, REM audit, and agent audit with filters](docs/images/logs.png)
 
 Regenerate after UI changes: `./scripts/capture-screenshots.sh` (requires headless Chrome and a running monitor).
 
@@ -160,7 +160,7 @@ Re-run `./scripts/check-env.sh`. Set `SHARED_MEMORY_ROOT` only if the REM audit 
 ## Features
 
 - **Pipeline dashboard** — dream backlog, REM/NREM split (NREM = pending **consolidation cycles**, not raw fact count), bottleneck detection, ETA projection, outbox queues
-- **Architecture diagram** — live framework topology (agent layer → gateway → daemons → memory stores) with per-node status, backlog counts, and animated flow paths
+- **Architecture diagram** — live topology (agents → gateway ↔ REM/NREM daemons → memory + inference), audit-driven flow highlighting, poll-history replay with interval caption
 - **System health** — live gateway, embedder, reranker, LLM, and daemon status (polled every 30s from `/health`)
 - **Historical charts** — selectable ranges (`1h` · `6h` · `24h` · `7d` · `all`) with auto-downsampling
 - **Schema breakdown** — Neo4j panels via `/memory/graph`; Postgres distributions via `telemetry.breakdown` (no direct DB)
@@ -181,7 +181,7 @@ flowchart LR
     Loop[Poll loop<br/>every 600s]
     Store[(SQLite + JSONL)]
     API[HTTP server :8765]
-    UI[Dashboard + Logs]
+    UI[Dashboard · Diagram · Logs]
   end
 
   subgraph optional [Optional]
@@ -332,16 +332,22 @@ System health refreshes every 30s even when the poll loop is stopped. Charts nee
 
 ### Diagram view (`/diagram`)
 
-Live rendering of the framework topology (Shared Memory README §3). Not a static image — each node reflects the latest `/api/health` and telemetry snapshot.
+Live rendering of the framework topology — not a static image. Nodes use `/api/health` and the latest telemetry snapshot; flow lines use poll-interval deltas plus agent/daemon audit for the selected time window.
 
 | Layer | Components | Live data |
 |-------|------------|-----------|
-| **Agent layer** | CLI skills, MCP clients | Gateway reachability (HTTP path) |
-| **Gateway cluster** | Coordinator + REM + NREM daemons | Process state, dream backlog, outbox |
-| **Memory layer** | Postgres, Neo4j | Docs, summaries, outbox, graph facts |
-| **Inference backends** | Embedder, Reranker, LLM (proxied) | `/health` process + workload |
+| **Agent layer** | Claude Code, Grok, Codex, Antigravity, LM Studio, HTTP clients | Agent audit highlights chips with recent read/write; red/green lines for save and retrieve |
+| **Gateway cluster** | Coordinator + REM + NREM daemons (bridge gaps, no direct daemon→store lines) | Process state, dream backlog, outbox sync, gateway version |
+| **Memory layer** | Postgres + Neo4j with Outbox · REM · NREM lanes | Docs, summaries, outbox queues, graph facts — all I/O via gateway memory buses |
+| **Inference backends** | Reasoning LLM, embedder, reranker (proxied) | `/health` process + workload; blue logic lines per backend |
 
-**States:** OK · Active (processing/backlog) · Waiting (idle, up) · Backlog (saturated) · Down/blocked. Animated connector lines highlight active paths (e.g. REM → Neo4j when REM queue &gt; 0). Refreshes every 30s.
+**Node states:** OK · Active · Waiting · Backlog · Down — see the on-page legend.
+
+**Flow lines:** Write (red) · Read (green) · Logic/proxy (blue). Daemon↔gateway read/write light only when the last poll interval or daemon audit shows activity — standing `rem_backlog` / `facts_unconsolidated` alone does not keep them lit. Agent saves light the outbox lane (Postgres → Neo4j), not a direct gateway→Neo4j write.
+
+**Poll history scrubber:** Slider at the bottom steps through stored telemetry samples (~every 10 min). Right end = **live** (flow lines for the last poll interval). Drag left for **replay** (cumulative activity from history start through that snapshot). A two-line caption under the slider states the mode and timeframe.
+
+Refreshes every 30s in live mode; health polling pauses while scrubbing replay.
 
 ## HTTP API
 
@@ -351,9 +357,10 @@ Live rendering of the framework topology (Shared Memory README §3). Not a stati
 | `GET /api/summary` | Latest snapshot + pipeline story (`nrem_backlog`, `nrem_fact_cycles`, `nrem_decision_cycles`, `facts_unconsolidated`) |
 | `GET /api/health` | Live gateway infrastructure health |
 | `GET /api/diagram` | Bundled `summary` + `health` for diagram view |
+| `GET /api/diagram/agent-activity?since=&until=` | Agent read/write counts and daemon `/v1` proxy tallies for a poll window (audit JSONL) |
 | `GET /api/history?range=6h` | Time series + stats + pipeline snapshot |
 | `GET /api/breakdown` | Neo4j graph + telemetry.breakdown schema panels (60s cache) |
-| `GET /api/logs/sources` | Log sources (`gateway`, `rem_audit`, `agent_audit`) |
+| `GET /api/logs/sources` | Log sources (`gateway` = Gateway daemons journal, `rem_audit`, `agent_audit`) |
 | `GET /api/logs/archives?source=agent_audit` | Live file + logrotated `.gz` archives (basename-only) |
 | `GET /api/logs/tail?source=agent_audit&lines=200` | Tail live or archived logs (`archive=` basename; `since=` for time window) |
 
