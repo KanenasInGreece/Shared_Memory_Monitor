@@ -6,6 +6,8 @@ from pathlib import Path
 from unittest import mock
 
 from sm_telemetry_monitor.logs_reader import (
+    agent_activity,
+    classify_agent_audit_io,
     journalctl_cmd,
     journal_unit,
     list_archives,
@@ -14,6 +16,7 @@ from sm_telemetry_monitor.logs_reader import (
     resolve_archive,
     tail_source,
     _filter_entries,
+    _is_daemon_agent,
     _parse_ts,
 )
 
@@ -131,6 +134,76 @@ class ArchiveTests(unittest.TestCase):
         self.assertEqual(len(out["archives"]), 1)
         result = tail_source("rem_audit", lines=5, archive=rotated.name)
         self.assertEqual(len(result["lines"]), 1)
+
+
+class AgentActivityTests(unittest.TestCase):
+    def test_classify_memory_io(self):
+        self.assertEqual(classify_agent_audit_io("POST", "/memory/save"), "write")
+        self.assertEqual(classify_agent_audit_io("POST", "/memory/search"), "write")
+        self.assertEqual(classify_agent_audit_io("GET", "/memory/telemetry"), "read")
+        self.assertEqual(classify_agent_audit_io("POST", "/memory/graph"), "read")
+        self.assertIsNone(classify_agent_audit_io("POST", "/v1/chat/completions"))
+
+    def test_daemon_agents_excluded(self):
+        self.assertTrue(_is_daemon_agent("monitor"))
+        self.assertTrue(_is_daemon_agent("rem_daemon"))
+        self.assertTrue(_is_daemon_agent("consolidation"))
+        self.assertFalse(_is_daemon_agent("grok"))
+
+    @mock.patch("sm_telemetry_monitor.logs_reader.agent_audit_path")
+    def test_agent_activity_window(self, mock_path):
+        lines = [
+            {
+                "ts": "2026-06-12T10:00:00+00:00",
+                "agent": "grok",
+                "method": "POST",
+                "path": "/memory/save",
+                "status": 200,
+            },
+            {
+                "ts": "2026-06-12T10:05:00+00:00",
+                "agent": "grok",
+                "method": "GET",
+                "path": "/memory/telemetry",
+                "status": 200,
+            },
+            {
+                "ts": "2026-06-12T10:10:00+00:00",
+                "agent": "monitor",
+                "method": "GET",
+                "path": "/memory/telemetry",
+                "status": 200,
+            },
+            {
+                "ts": "2026-06-12T10:15:00+00:00",
+                "agent": "consolidation",
+                "method": "POST",
+                "path": "/v1/chat/completions",
+                "status": 200,
+            },
+            {
+                "ts": "2026-06-12T11:00:00+00:00",
+                "agent": "claude",
+                "method": "POST",
+                "path": "/memory/search",
+                "status": 200,
+            },
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "agent-audit.jsonl"
+            path.write_text("\n".join(json.dumps(row) for row in lines) + "\n", encoding="utf-8")
+            mock_path.return_value = path
+            with mock.patch("sm_telemetry_monitor.logs_reader._log_root", return_value=Path(td).resolve()):
+                out = agent_activity(
+                    since="2026-06-12T10:00:00+00:00",
+                    until="2026-06-12T10:30:00+00:00",
+                )
+                out2 = agent_activity(
+                    since="2026-06-12T10:00:00+00:00",
+                    until="2026-06-12T12:00:00+00:00",
+                )
+        self.assertEqual(out["agents"], {"grok": {"read": 1, "write": 1}})
+        self.assertEqual(out2["agents"]["claude"], {"read": 0, "write": 1})
 
 
 class FilterEntriesTests(unittest.TestCase):

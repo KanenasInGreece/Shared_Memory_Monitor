@@ -24,7 +24,7 @@ from .breakdown import fetch_breakdown
 from .env_loader import bootstrap_env
 from .summary import live_summary
 from .system_health import system_health_snapshot
-from .logs_reader import list_archives, list_sources, tail_source
+from .logs_reader import agent_activity, list_archives, list_sources, tail_source
 from .store import init_db, load_history, meta, parse_range
 
 _DASHBOARD = STATIC_DIR / "dashboard.html"
@@ -124,6 +124,11 @@ class Handler(BaseHTTPRequestHandler):
 
             if path == "/api/diagram":
                 return self._json(200, diagram_payload())
+
+            if path == "/api/diagram/agent-activity":
+                since = (qs.get("since") or [None])[0]
+                until = (qs.get("until") or [None])[0]
+                return self._json(200, agent_activity(since=since, until=until))
 
             if path == "/api/breakdown":
                 force = (qs.get("force") or ["0"])[0] in ("1", "true")

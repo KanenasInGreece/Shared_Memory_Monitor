@@ -413,3 +413,104 @@ def tail_source(
         payload["offset"] = result.get("offset", 0)
         payload["size"] = result.get("size", 0)
     return payload
+
+
+_DAEMON_AGENTS = frozenset({
+    "monitor", "rem_daemon", "rem", "nrem_daemon", "nrem", "consolidation",
+    "coordinator", "gateway", "hive_mind", "embedder", "reranker", "proxy",
+})
+
+_WRITE_PATHS = frozenset({
+    "/memory/save",
+    "/memory/retrospective",
+    "/memory/search",
+})
+
+_READ_PATHS = frozenset({
+    "/memory/telemetry",
+    "/memory/graph",
+    "/health",
+})
+
+
+def _is_daemon_agent(agent: str | None) -> bool:
+    if not agent:
+        return True
+    key = agent.strip().lower()
+    if key in _DAEMON_AGENTS:
+        return True
+    return key.endswith("_daemon") or key.endswith("-daemon")
+
+
+def classify_agent_audit_io(method: str | None, path: str | None) -> str | None:
+    """Classify an agent-audit request as read or write; None when not memory I/O."""
+    route = (path or "").split("?", 1)[0]
+    if not route or route.startswith("/v1/"):
+        return None
+    if route in _WRITE_PATHS:
+        return "write"
+    if route in _READ_PATHS:
+        return "read"
+    verb = (method or "GET").upper()
+    if verb == "GET":
+        return "read"
+    if verb in ("POST", "PUT", "PATCH", "DELETE"):
+        return "write"
+    return None
+
+
+def _iter_audit_files() -> list[Path]:
+    live = agent_audit_path()
+    files: list[Path] = []
+    if live.exists():
+        files.append(live)
+    for archive in _archive_candidates("agent_audit"):
+        if archive not in files:
+            files.append(archive)
+    return files
+
+
+def _read_audit_lines(path: Path) -> list[str]:
+    if not path.is_file():
+        return []
+    if path.suffix == ".gz" or path.name.endswith(".gz"):
+        with gzip.open(path, "rt", encoding="utf-8", errors="replace") as f:
+            return [ln.strip() for ln in f if ln.strip()]
+    return path.read_text(encoding="utf-8", errors="replace").splitlines()
+
+
+def agent_activity(
+    *,
+    since: str | None = None,
+    until: str | None = None,
+) -> dict:
+    """Summarize per-agent read/write counts in agent audit for a time window."""
+    since_dt = _parse_ts(since) if since else None
+    until_dt = _parse_ts(until) if until else None
+    counts: dict[str, dict[str, int]] = {}
+
+    for path in _iter_audit_files():
+        for line in _read_audit_lines(path):
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            ts = _parse_ts(row.get("ts"))
+            if not _in_window(ts, since_dt, until_dt):
+                continue
+            agent = row.get("agent")
+            if _is_daemon_agent(agent):
+                continue
+            io = classify_agent_audit_io(row.get("method"), row.get("path"))
+            if not io:
+                continue
+            key = str(agent).strip()
+            bucket = counts.setdefault(key, {"read": 0, "write": 0})
+            bucket[io] += 1
+
+    return {
+        "since": since,
+        "until": until,
+        "agents": counts,
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+    }

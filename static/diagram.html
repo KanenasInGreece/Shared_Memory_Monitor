@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Shared Memory Monitor — Architecture</title>
-<link rel="stylesheet" href="/static/theme.css?v=20">
+<link rel="stylesheet" href="/static/theme.css?v=21">
 </head>
 <body class="diagram-page">
 
@@ -60,13 +60,13 @@
           <span class="arch-layer-badge unknown" id="layer-agents-badge">—</span>
         </div>
         <p class="arch-layer-note">HTTP only — agents never touch the databases directly</p>
-        <div class="arch-chips">
-          <span class="arch-chip">Claude Code</span>
-          <span class="arch-chip">Grok</span>
-          <span class="arch-chip">Codex CLI</span>
-          <span class="arch-chip">Antigravity</span>
-          <span class="arch-chip">LM Studio (MCP)</span>
-          <span class="arch-chip">Any HTTP client</span>
+        <div class="arch-chips" id="agent-chips">
+          <span class="arch-chip" data-chip="claude" data-agent-ids="claude,claude-code">Claude Code</span>
+          <span class="arch-chip" data-chip="grok" data-agent-ids="grok">Grok</span>
+          <span class="arch-chip" data-chip="codex" data-agent-ids="codex,codex-cli,openai-codex">Codex CLI</span>
+          <span class="arch-chip" data-chip="antigravity" data-agent-ids="antigravity,gemini,antigravity-agent">Antigravity</span>
+          <span class="arch-chip" data-chip="lmstudio" data-agent-ids="lmstudio,lm_studio,mcp,lm-studio">LM Studio (MCP)</span>
+          <span class="arch-chip" data-chip="other" data-agent-ids="">Any HTTP client</span>
         </div>
         <div class="arch-node-detail" id="node-agents-detail">memory_bridge.py · vector-skill.py</div>
         <div class="arch-egress" data-node="agents_egress">
@@ -242,6 +242,19 @@ let liveHealth = null;
 let liveStory = null;
 let liveLatest = null;
 let healthTimer = null;
+let agentActivity = null;
+let agentActivityKey = null;
+let agentActivityPending = null;
+
+const CHIP_AGENT_IDS = (() => {
+  const map = new Map();
+  document.querySelectorAll("#agent-chips .arch-chip[data-agent-ids]").forEach(chip => {
+    const ids = (chip.dataset.agentIds || "").split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+    for (const id of ids) map.set(id, chip);
+  });
+  return map;
+})();
+const OTHER_AGENT_CHIP = document.querySelector('#agent-chips .arch-chip[data-chip="other"]');
 
 const STATE_LABEL = {
   ok: "OK",
@@ -492,6 +505,104 @@ function flowEventsForView() {
   return aggregateFlowEvents(0, tlIndex);
 }
 
+function viewTimeWindow() {
+  const n = sampleCount();
+  if (n < 2) return null;
+  if (isLiveMode()) {
+    return {
+      since: historyData.timestamps?.[Math.max(0, n - 2)],
+      until: historyData.timestamps?.[n - 1],
+    };
+  }
+  if (tlIndex <= 0) return null;
+  return {
+    since: historyData.timestamps?.[0],
+    until: historyData.timestamps?.[Math.min(tlIndex, n - 1)],
+  };
+}
+
+function agentActivityCacheKey(win) {
+  if (!win?.since || !win?.until) return null;
+  return `${win.since}|${win.until}`;
+}
+
+function chipForAgentId(agentId) {
+  const key = String(agentId || "").trim().toLowerCase();
+  if (!key) return null;
+  return CHIP_AGENT_IDS.get(key) || OTHER_AGENT_CHIP;
+}
+
+function renderAgentChips(activity) {
+  const chips = document.querySelectorAll("#agent-chips .arch-chip");
+  chips.forEach(chip => {
+    chip.classList.remove("arch-chip--read", "arch-chip--write", "arch-chip--both");
+    chip.removeAttribute("title");
+  });
+  const agents = activity?.agents || {};
+  const entries = Object.entries(agents);
+  if (!entries.length) return;
+
+  const chipState = new Map();
+  for (const [agentId, counts] of entries) {
+    const chip = chipForAgentId(agentId);
+    if (!chip) continue;
+    const state = chipState.get(chip) || { read: 0, write: 0, names: [] };
+    state.read += counts.read || 0;
+    state.write += counts.write || 0;
+    state.names.push(agentId);
+    chipState.set(chip, state);
+  }
+
+  for (const [chip, state] of chipState) {
+    const hasRead = state.read > 0;
+    const hasWrite = state.write > 0;
+    if (hasRead && hasWrite) chip.classList.add("arch-chip--both");
+    else if (hasWrite) chip.classList.add("arch-chip--write");
+    else if (hasRead) chip.classList.add("arch-chip--read");
+    const bits = [];
+    if (hasWrite) bits.push(`${state.write} write`);
+    if (hasRead) bits.push(`${state.read} read`);
+    const label = chip.textContent.trim();
+    const agentsLabel = [...new Set(state.names)].sort().join(", ");
+    chip.title = `${label} (${agentsLabel}) — ${bits.join(" · ")} in selected interval`;
+  }
+}
+
+async function loadAgentActivityForView() {
+  const win = viewTimeWindow();
+  const key = agentActivityCacheKey(win);
+  if (!key) {
+    agentActivity = null;
+    agentActivityKey = null;
+    renderAgentChips(null);
+    return;
+  }
+  if (key === agentActivityKey && agentActivity) {
+    renderAgentChips(agentActivity);
+    return;
+  }
+  if (agentActivityPending === key) return;
+  agentActivityPending = key;
+  try {
+    const qs = new URLSearchParams({ since: win.since, until: win.until });
+    const r = await fetch(`/api/diagram/agent-activity?${qs}`);
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const data = await r.json();
+    if (agentActivityCacheKey(viewTimeWindow()) !== key) return;
+    agentActivity = data;
+    agentActivityKey = key;
+    renderAgentChips(agentActivity);
+  } catch (_) {
+    if (agentActivityCacheKey(viewTimeWindow()) === key) {
+      agentActivity = null;
+      agentActivityKey = null;
+      renderAgentChips(null);
+    }
+  } finally {
+    if (agentActivityPending === key) agentActivityPending = null;
+  }
+}
+
 const FLOW_LABELS = {
   "save-agents-gw": "save → gateway",
   "save-gw-pg": "save → Postgres",
@@ -599,6 +710,7 @@ function applyView() {
   drawFlows(flowCtx);
   updateMemoryBridge(flowCtx, events);
   updateReplayUi();
+  loadAgentActivityForView();
 }
 
 function onReplayInput() {

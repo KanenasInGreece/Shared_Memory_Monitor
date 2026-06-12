@@ -6,6 +6,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-06-12
+
+### Added
+
+- **Diagram agent highlighting** — agent layer chips highlight agents active in the
+  selected replay interval using agent audit data (green read, red write; daemons
+  omitted)
+- **`GET /api/diagram/agent-activity`** — per-agent read/write counts for a
+  `since`/`until` window (live jsonl + logrotated `.gz` archives)
+
 ## [0.3.2] - 2026-06-12
 
 ### Changed
