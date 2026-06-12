@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Shared Memory Monitor — Architecture</title>
-<link rel="stylesheet" href="/static/theme.css?v=38">
+<link rel="stylesheet" href="/static/theme.css?v=40">
 </head>
 <body class="diagram-page">
 
@@ -255,10 +255,12 @@
       </div>
     </div>
 
-    <div class="diagram-replay is-live" id="diagram-replay" aria-label="History replay">
-      <span class="diagram-replay-label" id="tl-label">Loading history…</span>
+    <div class="diagram-replay is-live" id="diagram-replay" aria-label="Poll history scrubber">
       <input type="range" id="tl-index" min="0" max="0" value="0" disabled aria-label="Scrub poll history">
-      <span class="diagram-replay-events" id="tl-events">—</span>
+      <p class="diagram-replay-caption" id="tl-caption">
+        <span id="tl-caption-desc">Loading poll history…</span>
+        <span class="diagram-replay-when" id="tl-caption-when"></span>
+      </p>
     </div>
   </div>
 
@@ -487,6 +489,13 @@ function fmtTs(iso) {
   try {
     const d = new Date(iso);
     return d.toLocaleString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  } catch (_) { return iso; }
+}
+
+function fmtReplayTs(iso) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
   } catch (_) { return iso; }
 }
 
@@ -737,92 +746,64 @@ function refreshAgentAuditLayers() {
   updateReplayUi();
 }
 
-const FLOW_LABELS = {
-  "save-agents-gw": "save → gateway",
-  "save-gw-pg": "save → Postgres",
-  "outbox-pg-nj": "outbox write → Neo4j",
-  "rem-gw-read": "REM read ← gateway",
-  "rem-gw-write": "REM write → gateway",
-  "rem-gw-logic": "REM logic → gateway",
-  "gw-rem-read-pg": "gateway read Postgres (REM)",
-  "gw-rem-write-nj": "gateway write Neo4j (REM)",
-  "rem-read-pg-nj": "REM lane Postgres → Neo4j",
-  "nrem-gw-read": "NREM read ← gateway",
-  "nrem-gw-write": "NREM write → gateway",
-  "nrem-gw-logic": "NREM logic → gateway",
-  "gw-nrem-read-nj": "gateway read Neo4j (NREM)",
-  "gw-nrem-write-pg": "gateway write Postgres (NREM)",
-  "nrem-write-nj-pg": "NREM lane Neo4j → summaries",
-  "gw-inf-llm": "gateway → LLM",
-  "gw-inf-embedder": "gateway → embedder",
-  "gw-inf-reranker": "gateway → reranker",
-  "gw-daemon-embed": "gateway → embedder (NREM)",
-  "retrieve-agents-gw": "retrieve → gateway",
-  "save-gw-embed": "save → embedder",
-  "retrieve-gw-embed": "retrieve → embedder",
-  "retrieve-gw-rerank": "retrieve → reranker",
-  "retrieve-gw-pg": "read Postgres",
-  "retrieve-gw-nj": "read Neo4j",
-  "retrieve-gw-agents": "results → agent",
-  "gw-logic-llm": "gateway → LLM (daemon proxy)",
-};
+function updateReplayCaption(n, live, idx) {
+  const desc = document.getElementById("tl-caption-desc");
+  const when = document.getElementById("tl-caption-when");
+  if (!desc || !when) return;
+
+  if (!n) {
+    desc.textContent = "Scrub stored telemetry polls (~every 10 min). The monitor has no history yet.";
+    when.textContent = "";
+    return;
+  }
+
+  const ts = fmtReplayTs(historyData.timestamps?.[idx]);
+  if (live && n >= 2) {
+    const win = viewTimeWindow();
+    desc.textContent = "Live — right end of the slider. Lit flow lines show activity since the previous poll.";
+    when.textContent = `${fmtReplayTs(win?.since)} → ${fmtReplayTs(win?.until)}`;
+  } else if (n < 2) {
+    desc.textContent = "One telemetry sample stored. Flow lines need at least two polls to show interval activity.";
+    when.textContent = ts;
+  } else if (idx === 0) {
+    desc.textContent = "Replay — earliest stored poll. Drag right toward live.";
+    when.textContent = `${ts} · sample 1 of ${n}`;
+  } else {
+    const win = viewTimeWindow();
+    desc.textContent = "Replay — lit flow lines show cumulative activity from the first stored poll through this snapshot.";
+    when.textContent = `${fmtReplayTs(win?.since)} → ${fmtReplayTs(win?.until)} · sample ${idx + 1} of ${n}`;
+  }
+}
 
 function updateReplayUi() {
   const n = sampleCount();
   const slider = document.getElementById("tl-index");
-  const label = document.getElementById("tl-label");
-  const eventsEl = document.getElementById("tl-events");
   const replay = document.getElementById("diagram-replay");
   const live = isLiveMode();
+  const idx = Math.min(tlIndex, Math.max(0, n - 1));
 
   replay?.classList.toggle("is-live", live);
+  updateReplayCaption(n, live, idx);
+  if (!slider) return;
 
   if (!n) {
-    label.textContent = "No poll history yet";
-    eventsEl.textContent = "—";
     slider.disabled = true;
+    slider.setAttribute("aria-label", "No poll history yet");
     return;
   }
 
   slider.disabled = n < 2;
   slider.min = "0";
   slider.max = String(Math.max(0, n - 1));
-  slider.value = String(Math.min(tlIndex, n - 1));
+  slider.value = String(idx);
 
-  const ts = fmtTs(historyData.timestamps?.[Math.min(tlIndex, n - 1)]);
-  const t0 = fmtTs(historyData.timestamps?.[0]);
-
+  const ts = fmtTs(historyData.timestamps?.[idx]);
   if (live && n >= 2) {
-    const prevTs = fmtTs(historyData.timestamps?.[n - 2]);
-    label.textContent = `Live · last interval ${prevTs} → ${ts}`;
+    slider.setAttribute("aria-label", `Live at ${ts}. Drag left to replay earlier polls.`);
   } else if (n < 2) {
-    label.textContent = `Sample ${ts}`;
+    slider.setAttribute("aria-label", `Single sample at ${ts}`);
   } else {
-    label.textContent = `Replay ${t0} → ${ts}`;
-  }
-
-  const events = flowEventsForView();
-  const audit = agentAuditSummary();
-  const parts = [...events].map(k => FLOW_LABELS[k] || k);
-  const dl = audit.daemonLogic || {};
-  if (audit.hasWrite || audit.hasRead) {
-    const auditBits = [];
-    if (audit.hasWrite) auditBits.push(`${audit.writeCount} agent write${audit.writeCount === 1 ? "" : "s"}`);
-    if (audit.hasRead) auditBits.push(`${audit.readCount} agent read${audit.readCount === 1 ? "" : "s"}`);
-    if (audit.activeNames.length) auditBits.push(audit.activeNames.join(", "));
-    parts.push(`audit: ${auditBits.join(" · ")}`);
-  }
-  if (dl.hasRemLlm || dl.hasNremLlm || dl.hasNremEmbed) {
-    const daemonBits = [];
-    if (dl.hasRemLlm) daemonBits.push(`REM ${dl.remChat} LLM`);
-    if (dl.hasNremLlm) daemonBits.push(`NREM ${dl.nremChat} LLM`);
-    if (dl.hasNremEmbed) daemonBits.push(`NREM ${dl.nremEmbed} embed`);
-    parts.push(`daemon: ${daemonBits.join(" · ")}`);
-  }
-  if (!parts.length) {
-    eventsEl.textContent = live ? "Quiet last interval" : "No events in range";
-  } else {
-    eventsEl.textContent = parts.join(" · ");
+    slider.setAttribute("aria-label", `Replay at ${ts}. Drag right for live.`);
   }
 }
 
@@ -902,7 +883,11 @@ async function loadHistory() {
     tlIndex = Math.min(tlIndex, Math.max(0, n - 1));
     applyView();
   } catch (e) {
-    document.getElementById("tl-label").textContent = "History load failed: " + e.message;
+    const desc = document.getElementById("tl-caption-desc");
+    const when = document.getElementById("tl-caption-when");
+    if (desc) desc.textContent = "Could not load poll history.";
+    if (when) when.textContent = e.message;
+    window.SmBarMeta?.set({ mode: "error", error: "History load failed: " + e.message });
   }
 }
 
@@ -912,9 +897,14 @@ function renderPayload(data) {
   liveLatest = data.summary?.latest || null;
 
   document.getElementById("footer-health-ts").textContent = "Health polled: " + fmtTs(liveHealth.fetched_at);
+  const telemTs = fmtTs(
+    isLiveMode()
+      ? (liveLatest?.collected_at || historyData.timestamps?.[sampleCount() - 1])
+      : snapshotForView().collected_at,
+  );
   document.getElementById("footer-telemetry-ts").textContent = isLiveMode()
-    ? "Live — flows from last poll interval · health refreshes every 30s"
-    : "Replay — cumulative flows through selected sample · scrub right for live";
+    ? "Telemetry: " + telemTs
+    : "Telemetry replay: " + telemTs;
   document.getElementById("footer-version").textContent = liveHealth.version
     ? `Gateway ${liveHealth.version}${liveHealth.api_version ? " · API " + liveHealth.api_version : ""}`
     : (liveHealth.reachable === false ? (liveHealth.error || "Gateway unreachable") : "");

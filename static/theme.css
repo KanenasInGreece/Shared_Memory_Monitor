@@ -1583,23 +1583,12 @@ body.diagram-page { min-height: 100vh; }
 }
 
 .diagram-replay {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(120px, 38%) minmax(0, 1fr);
-  gap: .4rem .65rem;
-  align-items: center;
-  padding: .45rem .85rem .55rem;
+  padding: .4rem .85rem .55rem;
   border-top: 1px solid var(--border);
   background: var(--surface);
-  font-size: .62rem;
-  color: var(--muted);
-}
-.diagram-replay-label {
-  font-family: var(--mono);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .diagram-replay input[type="range"] {
+  display: block;
   width: 100%;
   height: 4px;
   accent-color: var(--border-light);
@@ -1608,19 +1597,18 @@ body.diagram-page { min-height: 100vh; }
 .diagram-replay.is-live input[type="range"] {
   accent-color: var(--ok-dim);
 }
-.diagram-replay-events {
-  text-align: right;
-  font-family: var(--mono);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.diagram-replay-caption {
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+  margin: .4rem 0 0;
+  font-size: .62rem;
+  line-height: 1.35;
+  color: var(--muted);
 }
-@media (max-width: 720px) {
-  .diagram-replay {
-    grid-template-columns: 1fr;
-    gap: .3rem;
-  }
-  .diagram-replay-events { text-align: left; }
+.diagram-replay-when {
+  font-family: var(--mono);
+  color: var(--text-dim, var(--muted));
 }
 .legend-flow-write::before {
   content: "";
