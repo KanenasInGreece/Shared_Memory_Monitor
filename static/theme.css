@@ -1456,13 +1456,50 @@ body.diagram-page { min-height: 100vh; }
   position: relative;
   z-index: 2;
 }
+.arch-link-gap--conduit {
+  min-height: 3.1rem;
+  margin: .15rem 0;
+  border-left: 1px dashed var(--border);
+  border-right: 1px dashed var(--border);
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(139, 180, 217, .04) 35%,
+    rgba(139, 180, 217, .04) 65%,
+    transparent 100%
+  );
+}
+.arch-node-endpoint {
+  margin-top: .4rem;
+  padding: .32rem .5rem .36rem;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 2px;
+  background: var(--card);
+}
+.arch-node-endpoint-line {
+  display: block;
+  font-size: .66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--data-a);
+  font-family: var(--mono);
+}
+.arch-node-endpoint-note {
+  display: block;
+  margin-top: .12rem;
+  font-size: .58rem;
+  color: var(--muted);
+  font-family: var(--mono);
+}
 .arch-flows {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   pointer-events: none;
-  z-index: 3;
+  z-index: 6;
   overflow: visible;
 }
 .arch-flow {
@@ -1690,8 +1727,13 @@ body.diagram-page { min-height: 100vh; }
   display: flex;
   flex-wrap: wrap;
   gap: .35rem;
+  position: relative;
+  z-index: 2;
 }
 .arch-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
   font-size: .64rem;
   padding: .22rem .5rem;
   border-radius: 2px;
@@ -1700,44 +1742,21 @@ body.diagram-page { min-height: 100vh; }
   color: var(--chart-text);
   transition: border-color .15s ease, color .15s ease, box-shadow .15s ease;
 }
-.arch-chip--write {
-  border-color: #ff7b72;
-  color: #ff9b94;
-  box-shadow: inset 0 0 0 1px rgba(255, 123, 114, .25);
+.arch-chip-label {
+  position: relative;
+  z-index: 1;
 }
-.arch-chip--read {
-  border-color: #56d364;
-  color: #7ee787;
-  box-shadow: inset 0 0 0 1px rgba(86, 211, 100, .25);
+.arch-chip--seen {
+  border-color: var(--data-a);
+  box-shadow: inset 0 0 0 1px rgba(139, 180, 217, .28);
 }
-.arch-chip--both {
-  border-color: #ff7b72;
-  color: #d4e8d8;
-  box-shadow:
-    inset 0 -2px 0 #56d364,
-    inset 0 0 0 1px rgba(255, 123, 114, .3);
+.arch-flow.is-agent-audit.is-event {
+  stroke-width: 2.6px;
+  opacity: 1;
 }
 .arch-node-detail {
   margin-top: .45rem;
   font-size: .66rem;
-  color: var(--muted);
-  font-family: var(--mono);
-}
-
-.arch-egress {
-  position: relative;
-  margin-top: .65rem;
-  padding: .38rem .55rem .5rem;
-  text-align: center;
-  border: 1px dashed var(--border);
-  border-radius: 2px;
-  background: var(--surface);
-}
-.arch-egress-label {
-  font-size: .64rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .06em;
   color: var(--muted);
   font-family: var(--mono);
 }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Shared Memory Monitor — Architecture</title>
-<link rel="stylesheet" href="/static/theme.css?v=21">
+<link rel="stylesheet" href="/static/theme.css?v=26">
 </head>
 <body class="diagram-page">
 
@@ -59,24 +59,43 @@
           <span class="arch-layer-title">Agent layer</span>
           <span class="arch-layer-badge unknown" id="layer-agents-badge">—</span>
         </div>
-        <p class="arch-layer-note">HTTP only — agents never touch the databases directly</p>
+        <p class="arch-layer-note">HTTP only — active agents are tagged; red/green lines run from each chip to the gateway</p>
         <div class="arch-chips" id="agent-chips">
-          <span class="arch-chip" data-chip="claude" data-agent-ids="claude,claude-code">Claude Code</span>
-          <span class="arch-chip" data-chip="grok" data-agent-ids="grok">Grok</span>
-          <span class="arch-chip" data-chip="codex" data-agent-ids="codex,codex-cli,openai-codex">Codex CLI</span>
-          <span class="arch-chip" data-chip="antigravity" data-agent-ids="antigravity,gemini,antigravity-agent">Antigravity</span>
-          <span class="arch-chip" data-chip="lmstudio" data-agent-ids="lmstudio,lm_studio,mcp,lm-studio">LM Studio (MCP)</span>
-          <span class="arch-chip" data-chip="other" data-agent-ids="">Any HTTP client</span>
+          <span class="arch-chip" data-chip="claude" data-node="agent_claude" data-agent-ids="claude,claude-code">
+            <span class="arch-port" data-port="top" title="Responses from gateway"></span>
+            <span class="arch-chip-label">Claude Code</span>
+            <span class="arch-port" data-port="bottom" title="Requests to gateway"></span>
+          </span>
+          <span class="arch-chip" data-chip="grok" data-node="agent_grok" data-agent-ids="grok">
+            <span class="arch-port" data-port="top" title="Responses from gateway"></span>
+            <span class="arch-chip-label">Grok</span>
+            <span class="arch-port" data-port="bottom" title="Requests to gateway"></span>
+          </span>
+          <span class="arch-chip" data-chip="codex" data-node="agent_codex" data-agent-ids="codex,codex-cli,openai-codex">
+            <span class="arch-port" data-port="top" title="Responses from gateway"></span>
+            <span class="arch-chip-label">Codex CLI</span>
+            <span class="arch-port" data-port="bottom" title="Requests to gateway"></span>
+          </span>
+          <span class="arch-chip" data-chip="antigravity" data-node="agent_antigravity" data-agent-ids="antigravity,gemini,antigravity-agent">
+            <span class="arch-port" data-port="top" title="Responses from gateway"></span>
+            <span class="arch-chip-label">Antigravity</span>
+            <span class="arch-port" data-port="bottom" title="Requests to gateway"></span>
+          </span>
+          <span class="arch-chip" data-chip="lmstudio" data-node="agent_lmstudio" data-agent-ids="lmstudio,lm_studio,mcp,lm-studio">
+            <span class="arch-port" data-port="top" title="Responses from gateway"></span>
+            <span class="arch-chip-label">LM Studio (MCP)</span>
+            <span class="arch-port" data-port="bottom" title="Requests to gateway"></span>
+          </span>
+          <span class="arch-chip" data-chip="other" data-node="agent_other" data-agent-ids="">
+            <span class="arch-port" data-port="top" title="Responses from gateway"></span>
+            <span class="arch-chip-label">Any HTTP client</span>
+            <span class="arch-port" data-port="bottom" title="Requests to gateway"></span>
+          </span>
         </div>
         <div class="arch-node-detail" id="node-agents-detail">memory_bridge.py · vector-skill.py</div>
-        <div class="arch-egress" data-node="agents_egress">
-          <span class="arch-port" data-port="top" title="Retrieve responses"></span>
-          <span class="arch-egress-label">HTTP → :8888</span>
-          <span class="arch-port" data-port="bottom" title="Save / retrieve requests"></span>
-        </div>
       </section>
 
-      <div class="arch-link-gap" data-gap="agents-gateway" aria-hidden="true"></div>
+      <div class="arch-link-gap arch-link-gap--conduit" data-gap="agents-gateway" aria-hidden="true"></div>
 
       <section class="arch-layer arch-layer-gateway" data-layer="gateway">
         <div class="arch-layer-head">
@@ -86,13 +105,17 @@
         <p class="arch-layer-note">hive_mind_proxy.py spawns coordinator + REM/NREM daemons · owns all DB I/O</p>
         <div class="arch-cluster-grid">
           <div class="arch-node arch-node-main unknown" id="node-gateway" data-node="gateway">
-            <span class="arch-port" data-port="top" title="From agents"></span>
+            <span class="arch-port" data-port="top" title="HTTP from agents"></span>
             <span class="arch-port" data-port="bottom" title="To memory / inference"></span>
             <div class="arch-node-head">
               <span class="arch-node-title">Hive-Mind Gateway + Coordinator</span>
               <span class="arch-node-state" id="node-gateway-state">—</span>
             </div>
-            <div class="arch-node-sub">hive_mind_proxy.py · coordinator.py · 127.0.0.1:8888</div>
+            <div class="arch-node-endpoint" aria-label="Hive-Mind HTTP listen address">
+              <span class="arch-node-endpoint-line">HTTP · 127.0.0.1:8888</span>
+              <span class="arch-node-endpoint-note">agent layer connects here</span>
+            </div>
+            <div class="arch-node-sub">hive_mind_proxy.py · coordinator.py</div>
             <div class="arch-node-metrics" id="node-gateway-metrics"><span>—</span></div>
           </div>
           <div class="arch-node arch-node-daemon unknown" id="node-rem" data-node="rem_daemon">
@@ -532,40 +555,60 @@ function chipForAgentId(agentId) {
   return CHIP_AGENT_IDS.get(key) || OTHER_AGENT_CHIP;
 }
 
-function renderAgentChips(activity) {
-  const chips = document.querySelectorAll("#agent-chips .arch-chip");
-  chips.forEach(chip => {
-    chip.classList.remove("arch-chip--read", "arch-chip--write", "arch-chip--both");
-    chip.removeAttribute("title");
-  });
+function summarizeAgentActivity(activity) {
   const agents = activity?.agents || {};
-  const entries = Object.entries(agents);
-  if (!entries.length) return;
-
+  let writeCount = 0;
+  let readCount = 0;
   const chipState = new Map();
-  for (const [agentId, counts] of entries) {
+  const activeNames = [];
+
+  for (const [agentId, counts] of Object.entries(agents)) {
+    const write = counts.write || 0;
+    const read = counts.read || 0;
+    if (!write && !read) continue;
+    writeCount += write;
+    readCount += read;
+    activeNames.push(agentId);
     const chip = chipForAgentId(agentId);
     if (!chip) continue;
     const state = chipState.get(chip) || { read: 0, write: 0, names: [] };
-    state.read += counts.read || 0;
-    state.write += counts.write || 0;
+    state.read += read;
+    state.write += write;
     state.names.push(agentId);
     chipState.set(chip, state);
   }
 
-  for (const [chip, state] of chipState) {
-    const hasRead = state.read > 0;
-    const hasWrite = state.write > 0;
-    if (hasRead && hasWrite) chip.classList.add("arch-chip--both");
-    else if (hasWrite) chip.classList.add("arch-chip--write");
-    else if (hasRead) chip.classList.add("arch-chip--read");
+  return {
+    hasWrite: writeCount > 0,
+    hasRead: readCount > 0,
+    writeCount,
+    readCount,
+    activeNames: [...new Set(activeNames)].sort(),
+    chipState,
+  };
+}
+
+function renderAgentChips(summary) {
+  const chips = document.querySelectorAll("#agent-chips .arch-chip");
+  chips.forEach(chip => {
+    chip.classList.remove("arch-chip--seen");
+    chip.removeAttribute("title");
+  });
+  if (!summary?.chipState?.size) return;
+
+  for (const [chip, state] of summary.chipState) {
+    chip.classList.add("arch-chip--seen");
     const bits = [];
-    if (hasWrite) bits.push(`${state.write} write`);
-    if (hasRead) bits.push(`${state.read} read`);
-    const label = chip.textContent.trim();
+    if (state.write > 0) bits.push(`${state.write} write`);
+    if (state.read > 0) bits.push(`${state.read} read`);
+    const label = chip.querySelector(".arch-chip-label")?.textContent?.trim() || chip.textContent.trim();
     const agentsLabel = [...new Set(state.names)].sort().join(", ");
     chip.title = `${label} (${agentsLabel}) — ${bits.join(" · ")} in selected interval`;
   }
+}
+
+function agentAuditSummary() {
+  return summarizeAgentActivity(agentActivity);
 }
 
 async function loadAgentActivityForView() {
@@ -574,11 +617,11 @@ async function loadAgentActivityForView() {
   if (!key) {
     agentActivity = null;
     agentActivityKey = null;
-    renderAgentChips(null);
+    refreshAgentAuditLayers();
     return;
   }
   if (key === agentActivityKey && agentActivity) {
-    renderAgentChips(agentActivity);
+    refreshAgentAuditLayers();
     return;
   }
   if (agentActivityPending === key) return;
@@ -591,16 +634,37 @@ async function loadAgentActivityForView() {
     if (agentActivityCacheKey(viewTimeWindow()) !== key) return;
     agentActivity = data;
     agentActivityKey = key;
-    renderAgentChips(agentActivity);
+    refreshAgentAuditLayers();
   } catch (_) {
     if (agentActivityCacheKey(viewTimeWindow()) === key) {
       agentActivity = null;
       agentActivityKey = null;
-      renderAgentChips(null);
+      refreshAgentAuditLayers();
     }
   } finally {
     if (agentActivityPending === key) agentActivityPending = null;
   }
+}
+
+function refreshAgentAuditLayers() {
+  const health = liveHealth || { reachable: false };
+  const snapshot = snapshotForView();
+  const events = flowEventsForView();
+  const audit = agentAuditSummary();
+  renderAgentChips(audit);
+  const flowCtx = {
+    reachable: health.reachable !== false,
+    events,
+    health,
+    remQ: snapshot.rem_backlog || 0,
+    nremQ: snapshot.nrem_backlog || 0,
+    pending: snapshot.outbox_pending || 0,
+    unconsolidated: snapshot.facts_unconsolidated || 0,
+    dream: snapshot.dream_backlog || 0,
+    agentAudit: audit,
+  };
+  drawFlows(flowCtx);
+  updateReplayUi();
 }
 
 const FLOW_LABELS = {
@@ -658,10 +722,19 @@ function updateReplayUi() {
   }
 
   const events = flowEventsForView();
-  if (!events.size) {
+  const audit = agentAuditSummary();
+  const parts = [...events].map(k => FLOW_LABELS[k] || k);
+  if (audit.hasWrite || audit.hasRead) {
+    const auditBits = [];
+    if (audit.hasWrite) auditBits.push(`${audit.writeCount} agent write${audit.writeCount === 1 ? "" : "s"}`);
+    if (audit.hasRead) auditBits.push(`${audit.readCount} agent read${audit.readCount === 1 ? "" : "s"}`);
+    if (audit.activeNames.length) auditBits.push(audit.activeNames.join(", "));
+    parts.push(`audit: ${auditBits.join(" · ")}`);
+  }
+  if (!parts.length) {
     eventsEl.textContent = live ? "Quiet last interval" : "No events in range";
   } else {
-    eventsEl.textContent = [...events].map(k => FLOW_LABELS[k] || k).join(" · ");
+    eventsEl.textContent = parts.join(" · ");
   }
 }
 
@@ -706,6 +779,7 @@ function applyView() {
     pending: snapshot.outbox_pending || 0,
     unconsolidated: snapshot.facts_unconsolidated || 0,
     dream: snapshot.dream_backlog || 0,
+    agentAudit: agentAuditSummary(),
   };
   drawFlows(flowCtx);
   updateMemoryBridge(flowCtx, events);
@@ -781,11 +855,8 @@ const PORT_SPREAD = 10;
 const ROUTE_SPREAD = 11;
 
 /* io: write/red · read/green · logic/blue — dir: solid+arrow · bi: dotted, no arrow */
-const FLOW_DEFS = [
-  { key: "save-agents-gw", from: "agents_egress", fPort: "bottom", to: "gateway", tPort: "top", io: "write", dir: "dir" },
+const INFRA_FLOW_DEFS = [
   { key: "save-gw-pg", from: "gateway", fPort: "bottom", to: "postgres", tPort: "top", io: "write", dir: "dir" },
-  { key: "retrieve-agents-gw", from: "agents_egress", fPort: "bottom", to: "gateway", tPort: "top", io: "logic", dir: "dir" },
-  { key: "retrieve-gw-agents", from: "gateway", fPort: "top", to: "agents_egress", tPort: "top", io: "read", dir: "dir" },
   { key: "retrieve-gw-embed", from: "gateway", fPort: "bottom", to: "embedder", tPort: "top", io: "read", dir: "bi" },
   { key: "retrieve-gw-rerank", from: "gateway", fPort: "bottom", to: "reranker", tPort: "top", io: "read", dir: "bi" },
   { key: "retrieve-gw-pg", from: "gateway", fPort: "bottom", to: "postgres", tPort: "top", io: "read", dir: "dir" },
@@ -800,6 +871,61 @@ const FLOW_DEFS = [
   { key: "nrem-logic-llm", from: "nrem_daemon", fPort: "bottom", to: "llm", tPort: "top", io: "logic", dir: "bi" },
   { key: "gw-logic-llm", from: "gateway", fPort: "bottom", to: "llm", tPort: "top", io: "logic", dir: "bi" },
 ];
+
+function buildAgentFlowDefs(ctx, eventKeys) {
+  const defs = [];
+  const audit = ctx.agentAudit;
+  const pollSave = eventKeys.has("save-agents-gw");
+  const pollRetrieve = eventKeys.has("retrieve-agents-gw") || eventKeys.has("retrieve-gw-agents");
+  const chips = document.querySelectorAll("#agent-chips .arch-chip[data-node]");
+
+  for (const chip of chips) {
+    const node = chip.dataset.node;
+    if (!node) continue;
+    const state = audit?.chipState?.get(chip);
+    const write = (state?.write || 0) > 0 || (pollSave && !audit?.hasWrite);
+    const read = (state?.read || 0) > 0 || (pollRetrieve && !audit?.hasRead);
+    if (write) {
+      defs.push({
+        key: `agent-write-${node}`,
+        from: node,
+        fPort: "bottom",
+        to: "gateway",
+        tPort: "top",
+        io: "write",
+        dir: "dir",
+        agentFlow: true,
+      });
+    }
+    if (read) {
+      defs.push({
+        key: `agent-read-req-${node}`,
+        from: node,
+        fPort: "bottom",
+        to: "gateway",
+        tPort: "top",
+        io: "read",
+        dir: "dir",
+        agentFlow: true,
+      });
+      defs.push({
+        key: `agent-read-rsp-${node}`,
+        from: "gateway",
+        fPort: "top",
+        to: node,
+        tPort: "top",
+        io: "read",
+        dir: "dir",
+        agentFlow: true,
+      });
+    }
+  }
+  return defs;
+}
+
+function allFlowDefs(ctx, eventKeys) {
+  return [...INFRA_FLOW_DEFS, ...buildAgentFlowDefs(ctx, eventKeys)];
+}
 
 function routeKey(def) {
   return `${def.from}:${def.fPort}>${def.to}:${def.tPort}:${def.route || "ortho"}`;
@@ -865,6 +991,7 @@ function retrieveLikelyActive(ctx) {
 }
 
 function flowIsActive(def, eventKeys, ctx) {
+  if (def.agentFlow) return true;
   if (eventKeys.has(def.key)) return true;
   if (def.key === "outbox-pg-nj" && ctx.pending > 0) return true;
   if (REM_FLOW_KEYS.includes(def.key) && ctx.remQ > 0) return true;
@@ -881,6 +1008,10 @@ function updateMemoryBridge(ctx, eventKeys) {
     "is-hot", REM_FLOW_KEYS.some(k => flowIsActive({ key: k }, eventKeys, ctx)));
   document.getElementById("lane-nrem")?.classList.toggle(
     "is-hot", flowIsActive({ key: "nrem-write-nj-pg" }, eventKeys, ctx));
+}
+
+function flowIo(def, ctx, on) {
+  return def.io || "logic";
 }
 
 function ensureFlowMarkers(svg) {
@@ -915,9 +1046,11 @@ function drawFlows(ctx) {
 
   const eventKeys = ctx.events instanceof Set ? ctx.events : new Set();
 
+  const flowDefs = allFlowDefs(ctx, eventKeys);
+
   const routeTotals = {};
   const portTotals = {};
-  for (const def of FLOW_DEFS) {
+  for (const def of flowDefs) {
     const rk = routeKey(def);
     routeTotals[rk] = (routeTotals[rk] || 0) + 1;
     const pk = portKey(def);
@@ -927,7 +1060,7 @@ function drawFlows(ctx) {
   const routeCursor = {};
   const portCursor = {};
 
-  for (const def of FLOW_DEFS) {
+  for (const def of flowDefs) {
     const a = portPoint(canvas, def.from, def.fPort);
     const b = portPoint(canvas, def.to, def.tPort);
     if (!a || !b) continue;
@@ -945,12 +1078,14 @@ function drawFlows(ctx) {
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("d", flowPath(a, b, midY, lane, def.route));
     const on = flowIsActive(def, eventKeys, ctx);
+    const io = flowIo(def, ctx, on);
     const lineDir = def.dir || "dir";
-    let cls = `arch-flow arch-flow--${def.io || "logic"} arch-flow--${lineDir}`;
+    let cls = `arch-flow arch-flow--${io} arch-flow--${lineDir}`;
     if (on) cls += " is-event";
+    if (on && def.agentFlow) cls += " is-agent-audit";
     path.setAttribute("class", cls);
-    if (lineDir === "dir" && def.io) {
-      path.setAttribute("marker-end", `url(#arch-marker-${def.io})`);
+    if (lineDir === "dir" && io) {
+      path.setAttribute("marker-end", `url(#arch-marker-${io})`);
     }
     svg.appendChild(path);
 
@@ -958,7 +1093,7 @@ function drawFlows(ctx) {
       for (const pt of [a, b]) {
         if (!pt.el) continue;
         pt.el.classList.add("is-linked", "is-active");
-        pt.el.dataset.io = def.io;
+        pt.el.dataset.io = io;
       }
     }
   }
