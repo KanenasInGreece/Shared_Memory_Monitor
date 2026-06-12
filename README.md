@@ -445,9 +445,7 @@ shared-memory-monitor/
 │   └── systemd/user/shared-memory-monitor.service
 ├── docs/
 │   ├── images/          # README screenshots (regenerate with capture-screenshots.sh)
-│   ├── SISTER_PROJECT.md
-│   ├── GITHUB.md        # agent publish workflow
-│   └── archive/         # superseded research (not product docs)
+│   └── SISTER_PROJECT.md
 ├── scripts/
 │   ├── install.sh       # uv sync + .env scaffold + check
 │   ├── install-systemd-user.sh  # user unit → ~/.config/systemd/user/
@@ -496,7 +494,6 @@ shared-memory-monitor/
 |-----|----------|
 | [README.md](README.md) | Prerequisites, quick start, API, troubleshooting |
 | [docs/SISTER_PROJECT.md](docs/SISTER_PROJECT.md) | Sister-repo model vs Shared Memory Framework |
-| [docs/GITHUB.md](docs/GITHUB.md) | GitHub auth, publish script, releases (for agents) |
 | [deploy/README.md](deploy/README.md) | systemd user unit install |
 | [SECURITY.md](SECURITY.md) | Secrets policy, pre-push audit |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | PR expectations |
@@ -508,7 +505,8 @@ shared-memory-monitor/
 Before the first push:
 
 ```bash
-./scripts/publish.sh             # audit + push (see docs/GITHUB.md)
+./scripts/pre-publish-check.sh   # secret audit
+./scripts/publish.sh             # audit + push origin main
 ```
 
 **Never committed** (see `.gitignore`): `.env`, `.grok/`, `data/*`, `graphs/*` (runtime exports), `.venv/`.

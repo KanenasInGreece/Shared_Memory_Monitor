@@ -33,3 +33,8 @@ graphs/*
 # Local systemd install (generated from deploy/ template with your checkout path)
 # Keep deploy/systemd/ in git; ignore only if you copy a patched unit here:
 # config/systemd/
+
+# Internal maintainer docs (workstation paths, handoffs, pre-ship research)
+docs/GITHUB.md
+docs/GATEWAY_AUDIT_HANDOFF.md
+docs/archive/

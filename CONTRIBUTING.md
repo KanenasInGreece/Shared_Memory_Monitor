@@ -23,6 +23,21 @@ Gateway API or telemetry shape changes belong in the [Shared Memory Framework](h
 - Relationship to the framework → `docs/SISTER_PROJECT.md`
 - Deploy artifacts → `deploy/README.md`
 
+Workstation-specific maintainer notes (`docs/GITHUB.md`, handoffs, `docs/archive/`) stay local and are gitignored.
+
+## Publishing
+
+```bash
+./scripts/pre-publish-check.sh
+./scripts/publish.sh
+```
+
+Tag releases to match [CHANGELOG.md](CHANGELOG.md):
+
+```bash
+gh release create vX.Y.Z --title "vX.Y.Z" --notes-file CHANGELOG.md
+```
+
 ## License
 
 Contributions are accepted under the same [MIT License](LICENSE) as the project.
