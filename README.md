@@ -4,13 +4,20 @@
 
 | Framework (memory layer) | Monitor (this repo) |
 |------------------------|---------------------|
-| Gateway, daemons, Postgres, Neo4j, consolidation | Backlog charts, health grid, logs, local history |
-| Agent skill: `memory_bridge.py` | Thin HTTP client — no framework code imported |
-| Runs on the gateway host | Runs anywhere with network access to `:8888` |
+| Gateway, daemons, Postgres, Neo4j, consolidation | Read-only observer: gateway HTTP + local log/journal tail |
+| Agent skill: `memory_bridge.py` | Standalone `httpx` client — no framework code imported |
+| Owns stores and audit log writers | Polls `GET /memory/telemetry`, tails audit JSONL + journal |
 
-Live operations UI: REM/NREM backlog, outbox health, gateway infrastructure, schema breakdown, and log tailing. Polls `GET /memory/telemetry` and `GET /health` over HTTP, stores history in SQLite, serves **http://127.0.0.1:8765/**.
+Live operations UI: REM/NREM backlog, outbox health, gateway infrastructure, schema breakdown, and log tailing. Serves **http://127.0.0.1:8765/**.
 
-**Integration surface:** only public gateway routes (`/health`, `/memory/telemetry`, `/memory/graph`). No Postgres credentials required when the coordinator exposes `telemetry.nrem` and `telemetry.breakdown`.
+**Two read-only data planes** — the monitor never writes to the framework and never opens Postgres or Neo4j directly:
+
+| Plane | How | Used for |
+|-------|-----|----------|
+| **Gateway HTTP** | `httpx` + dedicated `monitor:read` bearer token to `COORDINATOR_URL` | Pipeline metrics (`GET /memory/telemetry`), infrastructure (`GET /health`), schema graph (`POST /memory/graph` read-only Cypher) |
+| **Local logs** | `journalctl --user` and JSONL files on disk (`rem-audit.jsonl`, `agent-audit.jsonl`) | `/logs` tabs; diagram agent/daemon flow highlighting via `/api/diagram/agent-activity` |
+
+Historical charts and the pipeline sidebar use **stored poll snapshots** (SQLite/JSONL). Live health, breakdown, and diagram node status hit the gateway on demand. Log views always read from the **monitor host filesystem or user journal**, not from a gateway log API.
 
 See [docs/SISTER_PROJECT.md](docs/SISTER_PROJECT.md) for the full relationship model.
 
@@ -46,12 +53,19 @@ Install and run the monitor only after the items below are in place.
 
 | Prerequisite | Why |
 |--------------|-----|
-| **[Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory) gateway running** | The monitor has no data of its own — it reads the gateway APIs. |
+| **[Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory) gateway running** | Pipeline metrics and health come from the coordinator — the monitor does not compute backlog itself. |
 | **Gateway reachable at `COORDINATOR_URL`** | Default `http://localhost:8888`. Confirm with `curl -s http://localhost:8888/health`. |
-| **User-scoped `hive-mind-gateway.service`** | Gateway runs as a *user* systemd unit. Logs use `journalctl --user -u hive-mind-gateway.service`. |
 | **Dedicated read-only monitor token** | Mint a token for the monitor identity (not an agent skill token). On the gateway host, `AGENT_ROLES` must include `monitor:read` so the token can call `/memory/telemetry` and `/memory/graph` but **not** `/memory/save`. |
-| **Coordinator with `telemetry.nrem` + `telemetry.breakdown`** | Framework Phase 3 enrichment — schema breakdown and NREM cycle counts come from the telemetry payload. Upgrade/restart the gateway if `check` reports these missing. |
+| **Coordinator with `telemetry.nrem` + `telemetry.breakdown`** | NREM cycle counts and Postgres breakdown panels come from the telemetry payload (server-side). Upgrade/restart the gateway if `check` reports these missing. |
 | **Python 3.11+** and **[uv](https://docs.astral.sh/uv/)** | Dependency install and CLI entry point. |
+
+### Required for log tabs (same host as gateway in typical installs)
+
+| Prerequisite | Why |
+|--------------|-----|
+| **User-scoped `hive-mind-gateway.service`** | **Gateway daemons** tab tails `journalctl --user -u hive-mind-gateway.service` — not an HTTP route. |
+| **REM audit JSONL on disk** | Default `~/.shared-memory/logs/rem-audit.jsonl` (`AUDIT_LOG_PATH`). Written by the framework REM path. |
+| **Agent audit JSONL on disk** | Framework `GATEWAY_AUDIT_LOG_PATH` (default `agent-audit.jsonl` beside REM audit). Powers **Agent audit** tab and diagram flow lines. |
 
 ### Not required
 
@@ -62,14 +76,14 @@ Install and run the monitor only after the items below are in place.
 | Framework repo checkout on the monitor machine | Only `COORDINATOR_URL` + `AGENT_TOKEN` in the monitor `.env`. |
 | Neo4j Browser or direct DB access | Graph breakdown goes through `/memory/graph` with the read token. |
 
-### Optional (extra log sources)
+### Optional
 
 | Optional | Enables |
 |----------|---------|
-| `SHARED_MEMORY_ROOT` or `SM_GATEWAY_ENV` | Audit log paths (`AUDIT_LOG_PATH`, `GATEWAY_AUDIT_LOG_PATH`) when not at the default `~/.shared-memory/logs`. |
-| Framework `GATEWAY_AUDIT_LOG_PATH` enabled | **Agent audit** tab — requires coordinator v0.4.11+ on the gateway host. |
+| `SHARED_MEMORY_ROOT` or `SM_GATEWAY_ENV` | Discover audit log paths when not at default `~/.shared-memory/logs`. |
 | User systemd **linger** (`loginctl enable-linger $USER`) | Gateway (and monitor) user units keep running after logout. |
 | `SM_IGNORED_OUTBOX_IDS` | Exclude known stale outbox failure rows from alerts (baseline estimate). |
+| Remote monitor machine | Gateway HTTP works over the network; log tabs need the audit files and journal on the machine where you run the monitor (usually co-located with the gateway). |
 
 ### Gateway-side token setup (one-time, on the framework host)
 
@@ -159,52 +173,75 @@ Re-run `./scripts/check-env.sh`. Set `SHARED_MEMORY_ROOT` only if the REM audit 
 
 ## Features
 
-- **Pipeline dashboard** — dream backlog, REM/NREM split (NREM = pending **consolidation cycles**, not raw fact count), bottleneck detection, ETA projection, outbox queues
-- **Architecture diagram** — live topology (agents → gateway ↔ REM/NREM daemons → memory + inference), audit-driven flow highlighting, poll-history replay with interval caption
-- **System health** — live gateway, embedder, reranker, LLM, and daemon status (polled every 30s from `/health`)
-- **Historical charts** — selectable ranges (`1h` · `6h` · `24h` · `7d` · `all`) with auto-downsampling
-- **Schema breakdown** — Neo4j panels via `/memory/graph`; Postgres distributions via `telemetry.breakdown` (no direct DB)
-- **Live logs** — gateway journal, REM outbox audit JSONL, **agent audit** JSONL (per-request agent/route/status/latency), agent-name filter chips, logrotated archive picker
+- **Pipeline dashboard** — dream backlog from stored `GET /memory/telemetry` polls; REM/NREM split (NREM = pending **consolidation cycles**, not raw fact count); infrastructure from live `GET /health`
+- **Framework topology diagram** (`/diagram`) — gateway-owned I/O map; flow lines from poll-interval telemetry **plus** agent/daemon audit JSONL; poll-history replay with interval caption
+- **System health** — embedder, reranker, LLM, REM/NREM daemon status via live `GET /health` (30s refresh in UI)
+- **Historical charts** — selectable ranges (`1h` · `6h` · `24h` · `7d` · `all`) from SQLite; auto-downsampling
+- **Schema breakdown** — Neo4j via `POST /memory/graph`; Postgres via `telemetry.breakdown` on the telemetry route (no direct DB)
+- **Live logs** — **not** gateway HTTP: `journalctl --user`, REM audit JSONL, agent audit JSONL; agent filter chips; logrotated `.gz` archive picker
 - **Stale outbox filtering** — ignore known prerelease failures; alert only on new ones
 - **PNG exports** — static chart snapshots written to `graphs/` on each poll
 
 ## Architecture
 
+The monitor is a **read-only observer**: one plane polls the gateway over HTTP with a `monitor:read` token; a second plane tails **local** journal and audit files. It does not import framework code, hold Postgres/Neo4j credentials, or call agent save routes.
+
 ```mermaid
-flowchart LR
-  subgraph gateway [Hive-Mind Gateway :8888]
-    T["/memory/telemetry"]
-    H["/health"]
+flowchart TB
+  subgraph fw [Shared Memory Framework — gateway host]
+    GW[Hive-Mind Gateway :8888]
+    TEL["GET /memory/telemetry"]
+    HLTH["GET /health"]
+    GRP["POST /memory/graph"]
+    JRN["journalctl --user<br/>hive-mind-gateway.service"]
+    REMF["rem-audit.jsonl"]
+    AGF["agent-audit.jsonl"]
+    GW --- TEL
+    GW --- HLTH
+    GW --- GRP
   end
 
-  subgraph monitor [Shared Memory Monitor]
-    Loop[Poll loop<br/>every 600s]
-    Store[(SQLite + JSONL)]
-    API[HTTP server :8765]
-    UI[Dashboard · Diagram · Logs]
+  subgraph mon [Shared Memory Monitor :8765]
+    LOOP["Poll loop · ~600s"]
+    DB[(SQLite + JSONL history)]
+    SRV[HTTP server + static UI]
+    LOOP -->|"Bearer monitor:read"| TEL
+    LOOP --> HLTH
+    LOOP --> DB
+    DB --> SRV
+    SRV -->|"on demand · 30s health"| HLTH
+    SRV -->|"breakdown cache 60s"| TEL
+    SRV -->|"on demand"| GRP
+    SRV -->|"subprocess tail"| JRN
+    SRV -->|"file tail"| REMF
+    SRV -->|"file tail + diagram flows"| AGF
   end
 
-  subgraph optional [Optional]
-    NJ[Neo4j via /memory/graph]
-    J["journalctl --user -u<br/>hive-mind-gateway.service"]
-  end
-
-  T --> Loop
-  H --> Loop
-  Loop --> Store
-  Store --> API
-  H --> API
-  API --> UI
-  API --> NJ
-  API --> J
+  SRV --> UI[Dashboard · Diagram · Logs]
 ```
+
+### What each view reads
+
+| View / API | Gateway HTTP (`monitor:read`) | Stored history | Local logs |
+|------------|------------------------------|----------------|------------|
+| **Dashboard charts**, sidebar backlog | — (uses last poll) | ✓ `data/telemetry.db` | — |
+| **Dashboard** infrastructure grid | ✓ `/health` live | latest snapshot for backlog counts | — |
+| **Schema breakdown** | ✓ `/memory/telemetry` + `/memory/graph` | — | — |
+| **Diagram** node metrics | ✓ `/health` + stored telemetry | ✓ poll window / replay | ✓ agent + daemon audit for flow lines |
+| **Logs** tabs | — | — | ✓ journal + REM + agent JSONL |
+
+### Processes
 
 | Process | Command | Responsibility |
 |---------|---------|----------------|
-| **Poll loop** | `run-loop.sh` | Fetch telemetry, append history, render PNGs |
-| **Web server** | `serve.sh` | Serve UI, live `/api/health`, schema breakdown, read stored history |
+| **Poll loop** | `run-loop.sh` | `GET /memory/telemetry` + `GET /health` → append SQLite/JSONL, render PNGs |
+| **Web server** | `serve.sh` | Serve UI; live `/api/health` and `/api/breakdown` to gateway; `/api/logs/*` to journal/files; charts from stored history |
 
-The web server does not poll telemetry on its own. Use `--serve` to run both in one process.
+Use `--serve` to run poll loop and web server in one process. **Charts do not call the gateway on every page load** — they need the poll loop (or existing `data/`). Health, breakdown, and diagram flows additionally hit the gateway and/or audit logs live.
+
+### Framework topology diagram (`/diagram`)
+
+The **Diagram** page is a live rendering of the **framework** layout (agents → gateway ↔ REM/NREM → memory + inference), not the monitor's own process diagram above. See [Diagram view](#diagram-view-diagram) for layer and flow-line rules.
 
 ## Configuration
 
@@ -236,11 +273,11 @@ Copy `.env.example` to `.env`. `sm_telemetry_monitor check` never prints secret 
 
 ### Portability — moving the monitor folder
 
-| Works with local `data/` only | Needs gateway + monitor `AGENT_TOKEN` | Optional `SHARED_MEMORY_ROOT` |
-|------------------------------|---------------------------------------|-------------------------------|
-| Charts & raw samples from past polls | Live hero, health, breakdown, telemetry poll | Framework log file paths |
+| Works with local `data/` only | Needs gateway HTTP + `AGENT_TOKEN` | Needs local journal + audit files |
+|------------------------------|-----------------------------------|-----------------------------------|
+| Charts & table from past telemetry polls | Live health, breakdown, new polls | `/logs` tabs, diagram agent/daemon flows |
 
-`data/telemetry.db` travels with the repo; live panels need a reachable coordinator.
+`data/telemetry.db` travels with the repo. Live gateway panels need `COORDINATOR_URL` + read token. Log tabs need the monitor process on a host that can run `journalctl --user` and read the audit JSONL paths (typically the gateway machine).
 
 ### Environment check
 
@@ -325,14 +362,14 @@ Equivalent entry point: `sm-telemetry` (after install).
 
 ### Pipeline vs system health
 
-- **Pipeline** — dream-cycle metrics from stored telemetry (backlog, outbox failures)
-- **System** — live gateway `/health` (embedder, reranker, LLM, daemons)
+- **Pipeline** — dream-cycle metrics from the **poll loop** (`GET /memory/telemetry` snapshots in SQLite): backlog, outbox, NREM cycles
+- **System** — live **`GET /health`** on each refresh (embedder, reranker, LLM, daemons)
 
-System health refreshes every 30s even when the poll loop is stopped. Charts need the poll loop (or existing history).
+System health refreshes every 30s even when the poll loop is stopped. Charts need the poll loop (or existing `data/` history).
 
 ### Diagram view (`/diagram`)
 
-Live rendering of the framework topology — not a static image. Nodes use `/api/health` and the latest telemetry snapshot; flow lines use poll-interval deltas plus agent/daemon audit for the selected time window.
+Live rendering of the **Shared Memory framework** topology — not a static image and not a picture of the monitor process. Node badges combine live `GET /health` with the latest stored telemetry snapshot. Flow lines use poll-interval telemetry deltas **and** lines parsed from **agent-audit.jsonl** (plus daemon `/v1` proxy counts) for the selected time window — no extra gateway routes for those flows.
 
 | Layer | Components | Live data |
 |-------|------------|-----------|
@@ -354,15 +391,15 @@ Refreshes every 30s in live mode; health polling pauses while scrubbing replay.
 | Endpoint | Description |
 |----------|-------------|
 | `GET /api/meta` | Sample count, poll config, ignored outbox IDs |
-| `GET /api/summary` | Latest snapshot + pipeline story (`nrem_backlog`, `nrem_fact_cycles`, `nrem_decision_cycles`, `facts_unconsolidated`) |
-| `GET /api/health` | Live gateway infrastructure health |
+| `GET /api/summary` | Latest **stored** poll snapshot + pipeline story (SQLite — not a live gateway round-trip) |
+| `GET /api/health` | Live `GET /health` rollup from gateway |
 | `GET /api/diagram` | Bundled `summary` + `health` for diagram view |
-| `GET /api/diagram/agent-activity?since=&until=` | Agent read/write counts and daemon `/v1` proxy tallies for a poll window (audit JSONL) |
-| `GET /api/history?range=6h` | Time series + stats + pipeline snapshot |
-| `GET /api/breakdown` | Neo4j graph + telemetry.breakdown schema panels (60s cache) |
-| `GET /api/logs/sources` | Log sources (`gateway` = Gateway daemons journal, `rem_audit`, `agent_audit`) |
-| `GET /api/logs/archives?source=agent_audit` | Live file + logrotated `.gz` archives (basename-only) |
-| `GET /api/logs/tail?source=agent_audit&lines=200` | Tail live or archived logs (`archive=` basename; `since=` for time window) |
+| `GET /api/diagram/agent-activity?since=&until=` | Parse **agent-audit.jsonl** on disk — read/write counts and daemon `/v1` proxy tallies for a poll window |
+| `GET /api/history?range=6h` | Time series from **stored** polls (SQLite) |
+| `GET /api/breakdown` | Live `GET /memory/telemetry` + `POST /memory/graph` (60s cache) |
+| `GET /api/logs/sources` | Local sources: `gateway` = journalctl, `rem_audit` / `agent_audit` = JSONL paths |
+| `GET /api/logs/archives?source=agent_audit` | List live + logrotated `.gz` next to the audit file |
+| `GET /api/logs/tail?source=agent_audit&lines=200` | Tail journal or JSONL (`archive=` basename; `since=` / `until=` window) — **no gateway HTTP** |
 
 History `range`: `1h` | `6h` | `24h` | `7d` | `all` — `bucket`: `auto` (default) | `raw` | `<minutes>`
 
@@ -530,8 +567,8 @@ Create a GitHub release tagged `vX.Y.Z` to match [CHANGELOG.md](CHANGELOG.md).
 
 - **[Shared Memory Monitor](https://github.com/KanenasInGreece/Shared_Memory_Monitor)** — this repository
 - **[Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory)** — gateway, REM/NREM daemons, `GET /memory/telemetry`
-- **shared-memory skill** — agent CLI (`memory_bridge.py`); monitor uses the same HTTP routes directly
+- **shared-memory skill** — agent CLI (`memory_bridge.py`); monitor uses the same **read** gateway routes via `httpx`, plus local log/journal reads the skill does not surface
 
 ## License
 
-**MIT License** — see [LICENSE](LICENSE). This repository is independent of the framework's license; runtime integration is HTTP-only. Dependency notices: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+**MIT License** — see [LICENSE](LICENSE). This repository is independent of the framework's license; runtime integration is read-only gateway HTTP plus local log/journal access. Dependency notices: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

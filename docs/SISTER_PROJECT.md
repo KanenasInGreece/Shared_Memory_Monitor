@@ -13,17 +13,27 @@
 | **Data ownership** | Authoritative stores + `GET /memory/telemetry` | Local SQLite/JSONL history for charts |
 | **Coupling** | Framework does not depend on the monitor | Monitor depends only on public HTTP routes |
 
-## HTTP contract (the only integration surface)
+## Integration surfaces (read-only)
 
-The monitor never imports framework Python code. It calls:
+The monitor never imports framework Python code. Two planes:
 
-| Route | Auth | Purpose |
-|-------|------|---------|
-| `GET /health` | Optional | Infrastructure grid (embedder, LLM, daemons) |
-| `GET /memory/telemetry` | Bearer read token | Pipeline metrics, `telemetry.nrem`, `telemetry.breakdown` |
-| `POST /memory/graph` | Bearer read token | Neo4j schema panels (read-only Cypher, server-side guard) |
+**Gateway HTTP** (`COORDINATOR_URL` + `monitor:read` token):
 
-Framework **Phase 3 telemetry** (`nrem` + `breakdown` on `/memory/telemetry`) means the monitor needs **no direct Postgres** access.
+| Route | Purpose |
+|-------|---------|
+| `GET /health` | Infrastructure grid (embedder, LLM, daemons) |
+| `GET /memory/telemetry` | Pipeline metrics, `telemetry.nrem`, `telemetry.breakdown` |
+| `POST /memory/graph` | Neo4j schema panels (read-only Cypher, server-side guard) |
+
+**Local logs** (filesystem + `journalctl --user` on the monitor host):
+
+| Source | Purpose |
+|--------|---------|
+| `hive-mind-gateway.service` journal | Gateway daemon stdout |
+| `rem-audit.jsonl` | REM outbox audit |
+| `agent-audit.jsonl` | Per-request agent audit; diagram flow highlighting |
+
+Framework **Phase 3 telemetry** (`nrem` + `breakdown` on `/memory/telemetry`) means the monitor needs **no direct Postgres** access for metrics or breakdown.
 
 ## Deployment pattern
 
