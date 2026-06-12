@@ -1,3 +1,5 @@
+"""Telemetry poll cache (SQLite + JSONL) — copies of GET /memory/telemetry responses."""
+
 from __future__ import annotations
 
 import json

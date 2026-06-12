@@ -1,33 +1,35 @@
 # Shared Memory Monitor
 
-> **Sister project** to the [Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory) — a standalone, read-only operations UI for the REM/NREM dream cycle.
+> **Sister project** to the [Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory) — a read-only **view** over gateway telemetry and framework logs. **No separate data interfaces in this code.**
 
 | | Framework | Monitor (this repo) |
 |---|-----------|---------------------|
-| **Role** | Memory layer — gateway, daemons, Postgres, Neo4j | Observer — charts, health, logs, local history |
-| **Agent surface** | `memory_bridge.py` skill / MCP | None — standalone `httpx` in `bridge.py` |
+| **Role** | Memory layer — gateway, daemons, Postgres, Neo4j | Presents telemetry + logs — no own metrics API |
+| **Agent surface** | `memory_bridge.py` skill / MCP | Two clients only: `bridge.py`, `logs_reader.py` |
 | **Credentials** | Full gateway + DB secrets on gateway host | `monitor:read` token in monitor `.env` only |
-| **Telemetry source** | Computes and serves `GET /memory/telemetry` | Polls that route; stores snapshots locally |
-| **Logs** | Writes journal + audit JSONL on gateway host | Tails those files + `journalctl --user` |
+| **Upstream data** | Serves telemetry; writes journal + audit JSONL | Reads those directly — never Postgres/Neo4j |
 
-Serves **http://127.0.0.1:8765/** — three pages: **Monitor** (dashboard), **Diagram** (framework topology), **Logs**.
+Serves **http://127.0.0.1:8765/** — three views (**Monitor**, **Diagram**, **Logs**) over the **same two upstream sources**.
 
-### Read-only data planes
+### Only two upstream sources
 
-The monitor never writes to the framework and never connects to Postgres or Neo4j directly.
+Everything on screen comes from **gateway telemetry** or **framework logs**. This repo does not define parallel data APIs, shadow stores, or framework imports.
 
-| Plane | Mechanism | Powers |
-|-------|-----------|--------|
-| **Gateway HTTP** | Bearer `monitor:read` token → `COORDINATOR_URL` | `GET /memory/telemetry`, `GET /health`, `POST /memory/graph` |
-| **Local logs** | `journalctl --user` + JSONL on disk | `/logs` tabs; diagram agent/daemon flows via `agent-audit.jsonl` |
+| Upstream | Code | Framework already exposes |
+|----------|------|---------------------------|
+| **Gateway telemetry** | `bridge.py` | `GET /memory/telemetry`, `GET /health`, `POST /memory/graph` |
+| **Framework logs** | `logs_reader.py` | `journalctl --user` + `rem-audit.jsonl` + `agent-audit.jsonl` |
 
-| Data | Source |
-|------|--------|
-| **Charts, sidebar backlog, raw samples table** | Stored poll snapshots in `data/telemetry.db` |
-| **Infrastructure grid, schema breakdown** | Live gateway HTTP on demand |
-| **Diagram node badges** | Live `GET /health` + latest stored telemetry |
-| **Diagram flow lines** | Poll-interval telemetry deltas + parsed audit JSONL |
-| **Log panes** | Local journal / files only — no gateway log API |
+| On screen | Traces to |
+|-----------|-----------|
+| Backlog, outbox, NREM, charts, hero | `GET /memory/telemetry` fields (cached in `data/telemetry.db` between polls) |
+| Infrastructure, diagram node health | `GET /health` |
+| Schema Neo4j panels | `POST /memory/graph` |
+| Schema Postgres panels | `telemetry.breakdown` in the telemetry payload |
+| Log panes | Journal + audit files the framework writes |
+| Diagram agent/daemon flows | Same `agent-audit.jsonl` as the **Agent audit** log tab |
+
+`data/telemetry.db` is **not** a third source — it caches past telemetry responses. `:8765` `/api/*` routes are **UI transport** to the browser, not alternate backends. `analytics.py` / `system_health.py` only format telemetry or health JSON for display.
 
 See [docs/SISTER_PROJECT.md](docs/SISTER_PROJECT.md) for the sister-repo contract.
 
@@ -39,13 +41,13 @@ Captured from a running monitor (`./scripts/capture-screenshots.sh`).
 
 ### Monitor (`/`)
 
-Hero headline and backlog charts from **stored** telemetry polls; sidebar **Status** and **Infrastructure** from live `GET /health`. Range selector (`1h`–`all`) filters SQLite history.
+All metrics are gateway telemetry fields (cached polls + live `GET /health` for infrastructure). Range selector (`1h`–`all`) filters the local telemetry cache — not a separate dataset.
 
 ![Monitor — backlog charts, pipeline queues, infrastructure health](docs/images/dashboard.png)
 
 ### Diagram (`/diagram`)
 
-Live **framework** layout (not the monitor process diagram below). Gateway-owned I/O: agents → coordinator; REM/NREM daemons ↔ gateway only; memory and inference hops via gateway buses. Flow lines from poll deltas + audit logs. Poll-history scrubber with caption under the slider.
+Live **framework** layout (not the monitor process diagram below). Gateway-owned I/O: agents → coordinator; REM/NREM daemons ↔ gateway only; memory and inference hops via gateway buses. Node counts from telemetry; health badges from `GET /health`; flow lines from telemetry interval deltas + the same agent-audit JSONL as `/logs`. No diagram-specific data API.
 
 ![Diagram — agent layer, gateway cluster, memory lanes, inference backends](docs/images/diagram.png)
 
@@ -127,9 +129,9 @@ Postgres/Neo4j credentials, `memory_bridge.py`, or a framework checkout on the m
 
 ---
 
-## Monitor architecture
+## Code architecture
 
-How **this repo** observes the framework:
+Two read clients, one web server, one poll cache. **No other I/O paths.**
 
 ```mermaid
 flowchart TB
@@ -144,40 +146,44 @@ flowchart TB
     GW --- TEL & HLTH & GRP
   end
 
-  subgraph mon [Monitor :8765]
+  subgraph mon [Monitor :8765 — presentation only]
+    BR[bridge.py]
+    LR[logs_reader.py]
     LOOP[Poll loop ~600s]
-    DB[(SQLite + JSONL)]
-    SRV[HTTP server + static UI]
-    LOOP -->|monitor:read| TEL
-    LOOP --> HLTH
+    DB[(telemetry poll cache)]
+    SRV[server.py + static UI]
+    BR --> TEL & HLTH & GRP
+    LR --> JRN & REMF & AGF
+    LOOP --> BR
     LOOP --> DB
     DB --> SRV
-    SRV -->|30s refresh| HLTH
-    SRV -->|60s cache| TEL
-    SRV --> GRP
-    SRV --> JRN & REMF & AGF
+    BR --> SRV
+    LR --> SRV
   end
 
   SRV --> UI[Monitor · Diagram · Logs]
 ```
 
-| Process | Command | Role |
-|---------|---------|------|
-| Poll loop | `run-loop.sh` | Telemetry + health → SQLite/JSONL; PNG exports to `graphs/` |
-| Web server | `serve.sh` or `--serve` | UI + APIs; live health/breakdown; log tail; charts from SQLite |
+| Module | Upstream | Role |
+|--------|----------|------|
+| `bridge.py` | Gateway `:8888` | Sole telemetry client — `get_telemetry()`, `get_health()`, `query_graph()` |
+| `logs_reader.py` | Journal + JSONL | Sole log client — `tail_source()`, `agent_activity()` |
+| `collector.py` + `store.py` | Via `bridge.py` | Append telemetry JSON to poll cache |
+| `server.py` + `static/` | Via bridge + logs_reader | Serve cached/live telemetry and log bytes to the browser |
+| `analytics.py`, `system_health.py` | Telemetry JSON only | Display formatting — no extra fetches |
 
-Charts do **not** hit the gateway on every page load — run the poll loop (or ship existing `data/`). Health, breakdown, and diagram flows add live gateway and/or log reads.
+Charts read the **poll cache** (past `GET /memory/telemetry` responses). Live panels call `bridge.py` or `logs_reader.py` directly — never a monitor-owned metrics service.
 
-### What each page reads
+### What each page shows (upstream only)
 
-| Page | Gateway HTTP | SQLite history | Local logs |
-|------|-------------|----------------|------------|
-| **Monitor** charts / hero | — | ✓ | — |
-| **Monitor** infrastructure | ✓ `/health` | latest snapshot for counts | — |
-| **Monitor** schema drawer | ✓ telemetry + graph | — | — |
-| **Diagram** nodes | ✓ `/health` | ✓ snapshot / replay window | — |
-| **Diagram** flows | — | ✓ interval deltas | ✓ agent + daemon audit |
-| **Logs** | — | — | ✓ journal + JSONL |
+| Page | Gateway telemetry | Framework logs |
+|------|-------------------|----------------|
+| **Monitor** charts, hero, backlog | ✓ `GET /memory/telemetry` (cached polls) | — |
+| **Monitor** infrastructure | ✓ `GET /health` | — |
+| **Monitor** schema drawer | ✓ telemetry + `POST /memory/graph` | — |
+| **Diagram** node metrics | ✓ telemetry + `GET /health` | — |
+| **Diagram** flow lines | ✓ telemetry interval deltas | ✓ agent-audit JSONL |
+| **Logs** | — | ✓ journal + REM + agent JSONL |
 
 ---
 
@@ -197,12 +203,12 @@ Visual map of the **Shared Memory framework** — live SVG, not a static README 
   Poll-history scrubber + caption (live vs replay time window)
 ```
 
-| Layer | Contents | Data |
-|-------|----------|------|
-| **Agents** | Six client chips | Agent audit → chip highlight; save/retrieve flow lines |
-| **Gateway** | REM · coordinator · NREM; `127.0.0.1:8888` inset | `/health` process state, dream backlog, outbox |
-| **Memory** | Postgres ↔ lanes (Outbox, REM, NREM) ↔ Neo4j | Telemetry counts; gateway-mediated I/O only |
-| **Inference** | LLM, BGE-M3 embedder, BGE-Reranker | `/health` workload; blue logic lines per backend |
+| Layer | Contents | Shown from |
+|-------|----------|------------|
+| **Agents** | Six client chips | `agent-audit.jsonl` (same file as Logs tab) |
+| **Gateway** | REM · coordinator · NREM; `127.0.0.1:8888` inset | `GET /health` + telemetry backlog fields |
+| **Memory** | Postgres ↔ lanes (Outbox, REM, NREM) ↔ Neo4j | Telemetry postgres/neo4j counts |
+| **Inference** | LLM, BGE-M3 embedder, BGE-Reranker | `GET /health` embedder/reranker/llm blocks |
 
 **Legend:** node states OK · Active · Waiting · Backlog · Down — flows Write (red) · Read (green) · Logic (blue).
 
@@ -222,7 +228,7 @@ Visual map of the **Shared Memory framework** — live SVG, not a static README 
 
 Controls: **Follow** / **Pause**, since/until filters, **File** picker (live + `.gz` archives), agent filter chips (agent audit). Deep link: `/logs?source=agent_audit`.
 
-Diagram `GET /api/diagram/agent-activity` parses the same agent-audit files for flow highlighting — not a gateway route.
+`/api/diagram/agent-activity` is UI transport only — it runs `logs_reader.agent_activity()` on `agent-audit.jsonl`, the same bytes the Logs tab displays.
 
 ---
 
@@ -238,15 +244,15 @@ Diagram `GET /api/diagram/agent-activity` parses the same agent-audit files for 
 
 ### Main + sidebar
 
-| Block | Source |
-|-------|--------|
-| **Hero** headline | Pipeline story from stored telemetry |
-| **Sidebar Status** pill | Live `/api/health` rollup |
-| **Dream backlog** | `rem_backlog + nrem_backlog` from latest poll |
-| **Bottleneck** | REM vs NREM saturation + ETA hint |
-| **Pipeline queues** | Outbox, REM/NREM pending, **NREM cycles** vs **NREM facts (raw)** |
-| **Infrastructure** | Gateway, embedder, reranker, LLM, REM, NREM from `/health` |
-| **Schema breakdown** drawer | `GET /api/breakdown` — Neo4j graph + `telemetry.breakdown` |
+| Block | Upstream |
+|-------|----------|
+| **Hero** headline | Derived labels from cached telemetry JSON |
+| **Sidebar Status** pill | `GET /health` |
+| **Dream backlog** | `rem_backlog + nrem_backlog` telemetry fields |
+| **Bottleneck** | Telemetry backlog fields (display math only) |
+| **Pipeline queues** | Telemetry postgres/neo4j/outbox fields |
+| **Infrastructure** | `GET /health` component blocks |
+| **Schema breakdown** drawer | `telemetry.breakdown` + `POST /memory/graph` |
 
 Main charts: backlog over time, throughput, cumulative cleared, tier-3 growth & errors, raw samples table.
 
@@ -295,39 +301,40 @@ Entry point alias: `sm-telemetry`
 
 ## HTTP API (`:8765`)
 
-| Endpoint | Source |
-|----------|--------|
-| `GET /api/meta` | Local config + sample count |
-| `GET /api/summary` | Latest SQLite snapshot + story |
-| `GET /api/history?range=&bucket=` | SQLite time series (`1h`/`6h`/`24h`/`7d`/`all`) |
-| `GET /api/health` | Live gateway `GET /health` |
-| `GET /api/breakdown` | Live telemetry + graph (60s cache) |
-| `GET /api/diagram` | Summary + health bundle |
-| `GET /api/diagram/agent-activity?since=&until=` | Agent-audit JSONL parse |
-| `GET /api/logs/sources` | Journal + JSONL source metadata |
-| `GET /api/logs/archives?source=` | Live + `.gz` archives |
-| `GET /api/logs/tail?source=&lines=&archive=&since=&until=` | Tail journal or JSONL |
+**UI transport only** — every data endpoint proxies `bridge.py` or `logs_reader.py`. There is no monitor metrics backend.
+
+| Endpoint | Upstream |
+|----------|----------|
+| `GET /api/meta` | Poll config (not framework data) |
+| `GET /api/summary` | Latest cached telemetry poll + display story |
+| `GET /api/history?range=&bucket=` | Cached telemetry polls |
+| `GET /api/health` | `bridge.get_health()` → gateway `GET /health` |
+| `GET /api/breakdown` | `bridge.get_telemetry()` + `bridge.query_graph()` |
+| `GET /api/diagram` | Cached telemetry + `bridge.get_health()` |
+| `GET /api/diagram/agent-activity?since=&until=` | `logs_reader.agent_activity()` → `agent-audit.jsonl` |
+| `GET /api/logs/tail` etc. | `logs_reader.tail_source()` → journal or JSONL |
 
 ---
 
 ## Data on disk
 
-| Path | Purpose |
-|------|---------|
-| `data/telemetry.db` | Primary time-series |
-| `data/telemetry.jsonl` | Append export; synced into SQLite |
-| `graphs/*.png` | Chart snapshots each poll |
-| `graphs/dashboard.html` | Offline dashboard copy |
+| Path | What it is |
+|------|------------|
+| `data/telemetry.db` | **Poll cache** — copies of `GET /memory/telemetry` (+ health per poll) |
+| `data/telemetry.jsonl` | Same cache, JSONL export |
+| `graphs/*.png` | Renders from cached telemetry |
 
-Duplicate polls within 60s with identical metrics are skipped.
+Not a separate metrics store. Duplicate polls within 60s with identical telemetry are skipped.
 
 ---
 
 ## Metrics
 
+All fields below are **telemetry JSON keys** from `GET /memory/telemetry` (display-derived where noted).
+
 | Field | Meaning |
 |-------|---------|
-| `rem_backlog` | `facts_rem_pending + decisions_rem_pending` |
+| `rem_backlog` | `facts_rem_pending + decisions_rem_pending` (derived from telemetry) |
 | `nrem_backlog` | Pending NREM **consolidation cycles** (not raw fact count) |
 | `dream_backlog` | `rem_backlog + nrem_backlog` |
 | `facts_unconsolidated` | Diagnostic raw count — **not** queue depth |
@@ -335,7 +342,7 @@ Duplicate polls within 60s with identical metrics are skipped.
 
 ### NREM cycle counting
 
-NREM runs consolidation **cycles** when density thresholds are met (facts ≥5 per `(entity, domain)`; decisions ≥2 per `domain`). The coordinator exposes counts as `telemetry.nrem`; the monitor stores them — it does not recompute. Fallback: `nrem_backlog ≈ facts_unconsolidated // 5` when `telemetry.nrem` is absent.
+NREM runs consolidation **cycles** when density thresholds are met (facts ≥5 per `(entity, domain)`; decisions ≥2 per `domain`). Counts come from `telemetry.nrem` on the gateway — the monitor only displays and caches them. Fallback estimate (`facts_unconsolidated // 5`) uses other telemetry fields when `telemetry.nrem` is absent; still no local recomputation of framework state.
 
 | UI label | Field |
 |----------|-------|
@@ -358,18 +365,18 @@ Requires user linger for persistence after logout. Put `AGENT_TOKEN` + `COORDINA
 
 ```
 shared-memory-monitor/
-├── static/                 # dashboard.html, diagram.html, logs.html, theme.css
+├── static/                 # browser UI (no data fetching except :8765 /api/*)
 ├── src/sm_telemetry_monitor/
-│   ├── bridge.py           # httpx → gateway (telemetry, health, graph)
-│   ├── collector.py        # poll loop flatten + append
-│   ├── store.py            # SQLite + JSONL
-│   ├── analytics.py        # backlog story, API payloads
-│   ├── system_health.py    # /health rollup for UI
-│   ├── breakdown.py        # schema drawer
-│   ├── logs_reader.py      # journalctl + audit tail + agent_activity
-│   ├── server.py           # :8765 HTTP API
-│   ├── doctor.py           # check-env / feature matrix
-│   └── cli.py              # loop | serve | check
+│   ├── bridge.py           # ONLY gateway client → telemetry / health / graph
+│   ├── logs_reader.py      # ONLY log client → journal + audit JSONL
+│   ├── collector.py        # poll loop: bridge → cache
+│   ├── store.py            # telemetry poll cache (SQLite/JSONL)
+│   ├── analytics.py        # display formatting of telemetry fields
+│   ├── system_health.py    # display formatting of GET /health
+│   ├── breakdown.py        # bridge telemetry + graph for schema drawer
+│   ├── server.py           # UI transport (:8765)
+│   ├── doctor.py           # wiring check
+│   └── cli.py
 ├── scripts/                # install, run-loop, capture-screenshots, publish
 ├── docs/images/            # README screenshots
 └── data/                   # runtime (gitignored)
@@ -412,4 +419,4 @@ Regenerate screenshots: `./scripts/capture-screenshots.sh` (Playwright; monitor 
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Integration is read-only gateway HTTP plus local log/journal access.
+MIT — see [LICENSE](LICENSE). All framework data is read via gateway telemetry (`bridge.py`) or logs (`logs_reader.py`) — no separate monitor interfaces.

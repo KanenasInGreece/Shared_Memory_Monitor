@@ -1,7 +1,7 @@
-"""Standalone HTTP client for the hive-mind gateway (:8888).
+"""Sole gateway client — all telemetry on screen comes through here.
 
-Sister-repo plugin — no dependency on shared-memory skill or memory_bridge.py.
-Requires only COORDINATOR_URL + AGENT_TOKEN (read role).
+Reads GET /memory/telemetry, GET /health, POST /memory/graph only.
+No parallel monitor metrics API; no framework imports; no Postgres/Neo4j.
 """
 
 from __future__ import annotations

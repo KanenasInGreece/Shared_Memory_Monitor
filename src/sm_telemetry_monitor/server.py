@@ -1,3 +1,9 @@
+"""UI transport on :8765 — proxies bridge.py and logs_reader.py only.
+
+No monitor-owned metrics backend; /api/* routes serve cached telemetry polls
+or live gateway/log bytes to the browser.
+"""
+
 from __future__ import annotations
 
 import json

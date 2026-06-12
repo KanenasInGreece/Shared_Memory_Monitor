@@ -6,18 +6,18 @@
 
 | | Shared Memory Framework | Shared Memory Monitor |
 |---|------------------------|----------------------|
-| **Role** | Memory layer — gateway, REM/NREM daemons, Postgres, Neo4j, consolidation | Operations UI — backlog, health, logs, history |
-| **Install** | Gateway host (`hive-mind-gateway.service`) | Any machine that can reach `:8888` |
-| **Agent surface** | `memory_bridge.py` skill / MCP (save, search, graph) | None — thin HTTP client only |
+| **Role** | Memory layer — gateway, daemons, Postgres, Neo4j | Read-only **view** — no separate data interfaces |
+| **Install** | Gateway host (`hive-mind-gateway.service`) | Any machine that can reach `:8888` (+ logs on same host in practice) |
+| **Agent surface** | `memory_bridge.py` skill / MCP | None — `bridge.py` + `logs_reader.py` only |
 | **Credentials** | Full gateway tokens, DB passwords on gateway host | **Read-only** `monitor:read` token in monitor `.env` |
-| **Data ownership** | Authoritative stores + `GET /memory/telemetry` | Local SQLite/JSONL history for charts |
-| **Coupling** | Framework does not depend on the monitor | Monitor depends only on public HTTP routes |
+| **Authoritative data** | Telemetry API + log writers | Poll cache of telemetry; live re-read of telemetry + logs |
+| **Coupling** | Framework does not depend on the monitor | Monitor depends only on telemetry routes + log files |
 
-## Integration surfaces (read-only)
+## Integration — two upstream sources only
 
-The monitor never imports framework Python code. Two planes:
+The monitor never imports framework Python code. **No third data path** in monitor code.
 
-**Gateway HTTP** (`COORDINATOR_URL` + `monitor:read` token):
+**Gateway telemetry** (`bridge.py` → `COORDINATOR_URL` + `monitor:read`):
 
 | Route | Purpose |
 |-------|---------|
@@ -25,7 +25,7 @@ The monitor never imports framework Python code. Two planes:
 | `GET /memory/telemetry` | Pipeline metrics, `telemetry.nrem`, `telemetry.breakdown` |
 | `POST /memory/graph` | Neo4j schema panels (read-only Cypher, server-side guard) |
 
-**Local logs** (filesystem + `journalctl --user` on the monitor host):
+**Framework logs** (`logs_reader.py` → journal + JSONL on monitor host):
 
 | Source | Purpose |
 |--------|---------|
@@ -33,7 +33,9 @@ The monitor never imports framework Python code. Two planes:
 | `rem-audit.jsonl` | REM outbox audit |
 | `agent-audit.jsonl` | Per-request agent audit; diagram flow highlighting |
 
-Framework **Phase 3 telemetry** (`nrem` + `breakdown` on `/memory/telemetry`) means the monitor needs **no direct Postgres** access for metrics or breakdown.
+`data/telemetry.db` caches past `GET /memory/telemetry` responses for charts — it is not a monitor-owned metrics store. `:8765` `/api/*` routes are UI transport over `bridge.py` and `logs_reader.py`.
+
+Framework **Phase 3 telemetry** (`nrem` + `breakdown` on `/memory/telemetry`) means the monitor needs **no direct Postgres** access.
 
 ## Deployment pattern
 
@@ -51,6 +53,7 @@ Typical homelab layout:
 ## What this repo is not
 
 - Not a fork or vendor copy of `memory_bridge.py`
+- Not a metrics service with its own API or database schema
 - Not required to use Shared Memory (agents can use `memory_bridge.py status` / CLI instead)
 - Not a secrets store — `.env` stays local and gitignored
 

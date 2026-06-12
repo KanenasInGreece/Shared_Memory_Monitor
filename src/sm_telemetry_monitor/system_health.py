@@ -1,3 +1,5 @@
+"""Display formatting of GET /health JSON — sole source is bridge.get_health()."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

@@ -1,3 +1,5 @@
+"""Display formatting of gateway telemetry fields — no extra data fetches."""
+
 from __future__ import annotations
 
 from datetime import datetime

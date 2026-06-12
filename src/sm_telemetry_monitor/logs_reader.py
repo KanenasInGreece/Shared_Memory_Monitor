@@ -1,3 +1,9 @@
+"""Sole log client — all log lines on screen come through here.
+
+Tails journalctl (gateway unit) and framework audit JSONL on disk.
+Diagram agent-activity uses the same agent-audit bytes. No gateway log HTTP API.
+"""
+
 from __future__ import annotations
 
 import gzip

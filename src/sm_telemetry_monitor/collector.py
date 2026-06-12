@@ -1,3 +1,5 @@
+"""Poll loop — fetches gateway telemetry via bridge.py and appends to the poll cache."""
+
 from __future__ import annotations
 
 import json

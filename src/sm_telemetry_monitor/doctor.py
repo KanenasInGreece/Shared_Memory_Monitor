@@ -25,7 +25,7 @@ from .logs_reader import journal_unit, journalctl_cmd
 from .store import init_db, meta
 
 FEATURE_MATRIX = (
-    ("dashboard_history", "local", "Charts & samples table from data/telemetry.db"),
+    ("dashboard_history", "telemetry_cache", "Charts from cached GET /memory/telemetry polls"),
     ("dashboard_live", "coordinator", "Hero, sidebar backlog, pipeline (telemetry poll)"),
     ("api_health", "coordinator", "Infrastructure grid (/api/health)"),
     ("api_breakdown_neo4j", "neo4j", "Schema drawer — graph panels"),

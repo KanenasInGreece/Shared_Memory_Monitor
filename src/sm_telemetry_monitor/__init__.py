@@ -1,3 +1,3 @@
-"""Shared-memory telemetry monitor — poll gateway stats and chart progress."""
+"""Read-only view over gateway telemetry and framework logs — no separate data interfaces."""
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"

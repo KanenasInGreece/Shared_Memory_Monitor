@@ -33,7 +33,7 @@ IGNORED_OUTBOX_IDS = tuple(
     int(x.strip()) for x in _ignored.split(",") if x.strip().isdigit()
 )
 
-# Metrics exposed as time-series in the API / dashboard.
+# Telemetry JSON keys charted from cached GET /memory/telemetry polls.
 SERIES_KEYS = (
     "dream_backlog",
     "rem_backlog",

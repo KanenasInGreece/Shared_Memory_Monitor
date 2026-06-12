@@ -6,6 +6,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-06-12
+
+### Changed
+
+- **Architecture emphasis** — README, `SISTER_PROJECT.md`, module docstrings, and UI
+  subtitle state clearly: all on-screen data is gateway telemetry or framework logs;
+  `bridge.py` + `logs_reader.py` are the only upstream clients; poll cache and
+  `/api/*` are UI transport, not separate monitor backends
+
 ## [0.4.0] - 2026-06-12
 
 ### Changed

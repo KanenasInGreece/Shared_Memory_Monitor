@@ -1,3 +1,5 @@
+"""Schema drawer — gateway telemetry.breakdown + POST /memory/graph via bridge.py."""
+
 from __future__ import annotations
 
 import threading
