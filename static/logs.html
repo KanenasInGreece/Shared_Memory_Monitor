@@ -52,6 +52,10 @@
     <span class="log-status" id="log-status">loading…</span>
   </div>
 </div>
+<div class="logs-archive-bar" id="archive-bar" hidden>
+  <span class="logs-archive-label">File</span>
+  <select id="archive-select" class="logs-archive-select" aria-label="Log file or archive"></select>
+</div>
 <div class="logs-agent-bar" id="agent-bar" hidden>
   <span class="logs-agent-label">Agent</span>
   <div class="logs-agent-chips" id="agent-chips" role="group" aria-label="Filter by agent"></div>
@@ -61,6 +65,11 @@
 <script src="/static/bar-meta.js?v=1"></script>
 <script>
 let source = localStorage.getItem("sm-log-source") || "gateway";
+if (source === "agent_audit") {
+  source = "agent_audit";
+  localStorage.setItem("sm-log-source", source);
+}
+let archivePick = "live";
 let fileOffset = 0;
 let journalSince = null;
 let lastJournalLine = null;
@@ -89,7 +98,7 @@ function severityEmptyMessage() {
   return `(no ${parts.join(" or ")} in view)`;
 }
 function hasAgentFilter() {
-  return source === "gateway_audit" && agentFilters.size > 0;
+  return source === "agent_audit" && agentFilters.size > 0;
 }
 function filterStatusNote() {
   const parts = [];
@@ -126,18 +135,18 @@ function hasTimeFilter() {
   return Boolean(filterFrom || filterTo);
 }
 
-function parseGatewayAudit(raw) {
+function parseAgentAudit(raw) {
   try { return JSON.parse(raw); } catch (_) { return null; }
 }
 
 function gatewayAuditAgent(raw) {
-  const o = parseGatewayAudit(raw);
+  const o = parseAgentAudit(raw);
   return o?.agent ? String(o.agent) : null;
 }
 
 function classify(text){
-  if (source === "gateway_audit") {
-    const o = parseGatewayAudit(text);
+  if (source === "agent_audit") {
+    const o = parseAgentAudit(text);
     if (o) {
       const st = Number(o.status);
       if (st >= 500) return "line-err";
@@ -249,7 +258,7 @@ function toggleAgentFilter(agent) {
 function renderAgentChips() {
   const bar = document.getElementById("agent-bar");
   const host = document.getElementById("agent-chips");
-  if (source !== "gateway_audit") {
+  if (source !== "agent_audit") {
     bar.hidden = true;
     host.innerHTML = "";
     return;
@@ -332,8 +341,8 @@ function bindSeverityChips() {
 
 const JOURNAL_TS_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)/;
 
-function formatGatewayAuditLine(raw) {
-  const o = parseGatewayAudit(raw);
+function formatAgentAuditLine(raw) {
+  const o = parseAgentAudit(raw);
   if (!o) return null;
   const route = [o.method, o.path].filter(Boolean).join(" ");
   const meta = [
@@ -410,10 +419,10 @@ function syncFilterInputs() {
 
 function renderRawLine(raw) {
   const cls = classify(raw);
-  if (source === "gateway_audit") {
-    const audit = formatGatewayAuditLine(raw);
+  if (source === "agent_audit") {
+    const audit = formatAgentAuditLine(raw);
     if (audit) {
-      let html = `<div class="log-line log-audit log-gateway-audit ${cls}">`;
+      let html = `<div class="log-line log-audit log-agent-audit ${cls}">`;
       html += `<div class="log-audit-row">`;
       if (audit.ts) html += `<span class="log-ts-inline">${escapeHtml(audit.ts)}</span>`;
       if (audit.route) html += `<span class="log-audit-route">${escapeHtml(audit.route)}</span>`;
@@ -452,6 +461,46 @@ function syncSourceTabs() {
   });
 }
 
+function archiveStorageKey() {
+  return `sm-log-archive-${source}`;
+}
+
+function isLiveTail() {
+  return source !== "gateway" && source !== "save_logs" && archivePick === "live";
+}
+
+async function loadArchives() {
+  const bar = document.getElementById("archive-bar");
+  const sel = document.getElementById("archive-select");
+  if (source === "gateway") {
+    bar.hidden = true;
+    archivePick = "live";
+    return;
+  }
+  try {
+    const r = await fetch("/api/logs/archives?source=" + encodeURIComponent(source));
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    const opts = [];
+    if (d.live) opts.push({ id: "live", label: d.live.available ? "Live" : "Live (missing)" });
+    for (const a of d.archives || []) opts.push({ id: a.id, label: a.label });
+    bar.hidden = opts.length === 0;
+    if (!opts.length) {
+      archivePick = "live";
+      return;
+    }
+    const saved = localStorage.getItem(archiveStorageKey());
+    const defaultId = source === "save_logs" ? opts[0].id : "live";
+    archivePick = saved && opts.some(o => o.id === saved) ? saved : defaultId;
+    sel.innerHTML = opts.map(o =>
+      `<option value="${escAttr(o.id)}">${escapeHtml(o.label)}</option>`).join("");
+    sel.value = archivePick;
+  } catch (_) {
+    bar.hidden = true;
+    archivePick = "live";
+  }
+}
+
 function bindSourceTabs(sources) {
   document.getElementById("tabs").innerHTML = sources.map(s =>
     `<button type="button" data-id="${s.id}" class="view-tab${s.id === source ? " is-active" : ""}" ` +
@@ -469,7 +518,7 @@ function bindSourceTabs(sources) {
     localStorage.removeItem("sm-log-agents");
     resetCounts();
     syncSourceTabs();
-    refresh(true);
+    loadArchives().then(() => refresh(true));
   };
 }
 
@@ -484,7 +533,7 @@ async function loadSources(){
     const d = await r.json();
     const ids = new Set(d.sources.map(s => s.id));
     if (!ids.has(source)) {
-      source = "gateway";
+      source = ids.has("gateway") ? "gateway" : d.sources[0]?.id || "gateway";
       localStorage.setItem("sm-log-source", source);
     }
     sourceLabels = Object.fromEntries(d.sources.map(s => [s.id, s.label]));
@@ -501,7 +550,9 @@ async function refresh(clear=false){
   const filtered = hasTimeFilter();
   const params = new URLSearchParams({source, lines: filtered ? "1000" : "200"});
   const isJournal = source === "gateway";
+  const liveTail = isLiveTail();
 
+  if (source !== "gateway") params.set("archive", archivePick);
   if (filtered) {
     const since = toApiTs(filterFrom);
     const until = toApiTs(filterTo);
@@ -510,8 +561,10 @@ async function refresh(clear=false){
     clear = true;
   } else if (isJournal && journalSince && !clear) {
     params.set("since", journalSince);
-  } else if (!isJournal && fileOffset && !clear) {
+  } else if (liveTail && fileOffset && !clear) {
     params.set("offset", String(fileOffset));
+  } else if (!liveTail) {
+    clear = clear || !filtered;
   }
 
   try{
@@ -547,7 +600,7 @@ async function refresh(clear=false){
       paintLog(d.error || "(no log lines in range)");
     }
 
-    if (d.offset != null && !isJournal && !filtered) fileOffset = d.offset;
+    if (d.offset != null && liveTail && !filtered) fileOffset = d.offset;
     if (isJournal && d.lines?.length && !filtered) {
       const last = d.lines[d.lines.length - 1];
       const m = last.match(/^(\d{4}-\d{2}-\d{2}T[\d:+. -]+)/);
@@ -605,7 +658,14 @@ fetch("/api/meta").then(r=>r.json()).then(m=>{
 }).catch(()=>{});
 syncFilterInputs();
 bindSeverityChips();
-loadSources().then(() => {
+document.getElementById("archive-select").addEventListener("change", e => {
+  archivePick = e.target.value;
+  localStorage.setItem(archiveStorageKey(), archivePick);
+  fileOffset = 0;
+  refresh(true);
+});
+
+loadSources().then(() => loadArchives()).then(() => {
   refresh(true);
   setInterval(() => refresh(false), 3000);
 }).catch(() => {

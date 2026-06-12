@@ -1,0 +1,22 @@
+# Example logrotate rules for Shared Memory audit jsonl files.
+# Install on Linux hosts that run the hive-mind gateway (adjust paths to your
+# MEMORY_LOG_PATH, commonly ~/.shared-memory/logs).
+#
+# copytruncate: gateway/rem daemons keep writing without a restart.
+# compress: store rotated files as .gz (readable by the monitor logs UI).
+
+/var/log/shared-memory/rem-audit.jsonl
+/var/log/shared-memory/agent-audit.jsonl
+/var/log/shared-memory/gateway-audit.jsonl {
+    daily
+    rotate 30
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    su YOUR_USER YOUR_GROUP
+}
+
+# Per-save logs are rotated by the framework NREM daemon (merge_logs) into
+# shared_memory_YYYY-MM-DD.log.gz — no logrotate entry needed for those.

@@ -24,7 +24,7 @@ from .breakdown import fetch_breakdown
 from .env_loader import bootstrap_env
 from .summary import live_summary
 from .system_health import system_health_snapshot
-from .logs_reader import list_sources, tail_source
+from .logs_reader import list_archives, list_sources, tail_source
 from .store import init_db, load_history, meta, parse_range
 
 _DASHBOARD = STATIC_DIR / "dashboard.html"
@@ -140,6 +140,13 @@ class Handler(BaseHTTPRequestHandler):
                 ],
             })
 
+        if path == "/api/logs/archives":
+            allowed = {s.id for s in list_sources()}
+            source = (qs.get("source") or [""])[0]
+            if source not in allowed:
+                return self._json(400, {"error": f"Unknown source: {source}"})
+            return self._json(200, list_archives(source))
+
         if path == "/api/logs/tail":
             allowed = {s.id for s in list_sources()}
             source = (qs.get("source") or ["gateway"])[0]
@@ -155,8 +162,10 @@ class Handler(BaseHTTPRequestHandler):
                 offset = 0
             since = (qs.get("since") or [None])[0]
             until = (qs.get("until") or [None])[0]
+            archive = (qs.get("archive") or [None])[0]
             return self._json(200, tail_source(
                 source, lines=lines, offset=offset, since=since, until=until,
+                archive=archive,
             ))
 
         if path == "/api/meta":

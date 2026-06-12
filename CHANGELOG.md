@@ -6,6 +6,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-12
+
+### Added
+
+- **Agent audit** log source (`agent_audit`, renamed from `gateway_audit`) — tails
+  `GATEWAY_AUDIT_LOG_PATH` (framework env); defaults to `agent-audit.jsonl` with
+  legacy `gateway-audit.jsonl` fallback
+- **Historical log archives** — `/api/logs/archives` and UI **File** picker for
+  rotated `.gz` next to live audit files plus `shared_memory_YYYY-MM-DD.log.gz`
+  save-log archives (`save_logs` source)
+- Portable logrotate example: `deploy/logrotate/shared-memory-audit.example`
+
+### Security
+
+- Archive reads are basename-only and must match discovered files under
+  `MEMORY_LOG_PATH` (no path traversal)
+
 ## [0.2.0] - 2026-06-12
 
 ### Added
@@ -34,6 +51,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `.env` and `.grok/` gitignored; doctor never prints credential values
 - Error sanitization for tokens and connection strings
 
-[Unreleased]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/compare/v0.2.0...main
+[Unreleased]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/compare/v0.3.0...main
+[0.3.0]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.3.0
 [0.2.0]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.2.0
 [0.1.0]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.1.0

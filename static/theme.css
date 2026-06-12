@@ -1054,8 +1054,36 @@ body.logs-page .bar {
   flex-shrink: 0;
 }
 body.logs-page .logs-source-bar,
+body.logs-page .logs-archive-bar,
 body.logs-page .logs-agent-bar {
   flex-shrink: 0;
+}
+.logs-archive-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .45rem .65rem;
+  padding: .35rem 1.15rem;
+  border-bottom: 1px solid var(--border-dark);
+  background: var(--surface);
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+.logs-archive-label {
+  font-size: .62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--muted);
+}
+.logs-archive-select {
+  font-family: var(--mono);
+  font-size: .68rem;
+  padding: .22rem .35rem;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--card);
+  color: var(--text);
+  max-width: 20rem;
 }
 .logs-agent-bar {
   display: flex;
@@ -1096,7 +1124,7 @@ body.logs-page .chip-agent.chip-filter-active {
   border-color: var(--accent, var(--ok-dim));
   background: color-mix(in srgb, var(--accent, var(--ok-dim)) 12%, var(--card));
 }
-.log-gateway-audit .log-audit-route {
+.log-agent-audit .log-audit-route {
   font-family: var(--mono);
   font-weight: 600;
   color: var(--text);

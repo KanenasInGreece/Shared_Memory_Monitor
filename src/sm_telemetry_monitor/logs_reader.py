@@ -13,6 +13,8 @@ from .env_loader import bootstrap_env, get
 
 bootstrap_env()
 
+_SAVE_ARCHIVE_RE = re.compile(r"^shared_memory_(\d{4}-\d{2}-\d{2})\.log\.gz$")
+
 
 def journal_unit() -> str:
     """User-scoped systemd unit for the hive-mind gateway (linger/user services)."""
@@ -42,7 +44,7 @@ _INNER_LOG_TS_RE = re.compile(
 class LogSource:
     id: str
     label: str
-    kind: str  # journal | file | jsonl
+    kind: str  # journal | jsonl | gz_jsonl
     path: str
     description: str
 
@@ -53,6 +55,14 @@ def log_dir() -> Path:
     ))
 
 
+def _log_root() -> Path:
+    return log_dir().resolve()
+
+
+def _basename(path: Path) -> str:
+    return path.name
+
+
 def audit_path() -> Path:
     p = get("AUDIT_LOG_PATH")
     if p:
@@ -60,15 +70,123 @@ def audit_path() -> Path:
     return log_dir() / "rem-audit.jsonl"
 
 
-def gateway_audit_path() -> Path:
+def agent_audit_path() -> Path:
+    """Live agent-audit jsonl. Reads GATEWAY_AUDIT_LOG_PATH (framework env name)."""
     p = get("GATEWAY_AUDIT_LOG_PATH")
     if p:
         return Path(os.path.expanduser(p))
-    return log_dir() / "gateway-audit.jsonl"
+    root = log_dir()
+    agent = root / "agent-audit.jsonl"
+    legacy = root / "gateway-audit.jsonl"
+    if legacy.exists() and not agent.exists():
+        return legacy
+    return agent
+
+
+def _live_path(source_id: str) -> Path | None:
+    if source_id == "rem_audit":
+        return audit_path()
+    if source_id == "agent_audit":
+        return agent_audit_path()
+    return None
+
+
+def _archive_candidates(source_id: str) -> list[Path]:
+    root = _log_root()
+    if not root.is_dir():
+        return []
+
+    if source_id == "save_logs":
+        out = [p for p in root.glob("shared_memory_*.log.gz") if p.is_file()]
+        return sorted(out, key=lambda p: p.name, reverse=True)
+
+    live = _live_path(source_id)
+    if live is None:
+        return []
+
+    names: set[str] = set()
+    live_name = live.name
+    names.add(live_name)
+    if live_name.endswith(".jsonl"):
+        names.add(live_name[:-6])  # stem without .jsonl
+
+    archives: list[Path] = []
+    for path in root.glob("*.gz"):
+        if not path.is_file():
+            continue
+        name = path.name
+        if any(name.startswith(prefix) for prefix in names):
+            archives.append(path)
+    return sorted(archives, key=lambda p: p.name, reverse=True)
+
+
+def _archive_label(name: str) -> str:
+    m = _SAVE_ARCHIVE_RE.match(name)
+    if m:
+        return m.group(1)
+    return name
+
+
+def list_archives(source_id: str) -> dict:
+    """List live tail + rotated gzip archives for a file-based log source."""
+    allowed = {s.id for s in list_sources()}
+    if source_id not in allowed:
+        return {"error": f"Unknown source: {source_id}"}
+
+    if source_id == "gateway":
+        return {"source": source_id, "live": None, "archives": []}
+
+    live = _live_path(source_id)
+    archives = _archive_candidates(source_id)
+    live_info = None
+    if live is not None:
+        live_info = {
+            "id": "live",
+            "label": "Live",
+            "available": live.exists(),
+            "size": live.stat().st_size if live.exists() else 0,
+        }
+
+    return {
+        "source": source_id,
+        "live": live_info,
+        "archives": [
+            {
+                "id": _basename(p),
+                "label": _archive_label(p.name),
+                "size": p.stat().st_size,
+            }
+            for p in archives
+        ],
+    }
+
+
+def resolve_archive(source_id: str, archive_id: str) -> Path:
+    """Map a client-supplied archive basename to a path under the log root."""
+    if not archive_id or archive_id == "live":
+        live = _live_path(source_id)
+        if live is None:
+            raise ValueError(f"Source {source_id} has no live file")
+        return live
+
+    if "/" in archive_id or "\\" in archive_id or archive_id in (".", ".."):
+        raise ValueError("Invalid archive id")
+
+    allowed = {_basename(p) for p in _archive_candidates(source_id)}
+    if archive_id not in allowed:
+        raise ValueError(f"Unknown archive: {archive_id}")
+
+    resolved = (_log_root() / archive_id).resolve()
+    if not resolved.is_relative_to(_log_root()):
+        raise ValueError("Archive path escapes log directory")
+    if not resolved.is_file():
+        raise ValueError(f"Archive not found: {archive_id}")
+    return resolved
 
 
 def list_sources() -> list[LogSource]:
-    """Infrastructure log sources — gateway journal, REM audit, gateway request audit."""
+    """Infrastructure log sources — gateway journal, REM audit, agent audit, save archives."""
+    root = log_dir()
     return [
         LogSource(
             id="gateway",
@@ -81,15 +199,22 @@ def list_sources() -> list[LogSource]:
             id="rem_audit",
             label="REM audit",
             kind="jsonl",
-            path=str(audit_path()),
+            path=_basename(audit_path()),
             description="Structured JSON-lines audit of REM outbox reviews",
         ),
         LogSource(
-            id="gateway_audit",
-            label="Gateway audit",
+            id="agent_audit",
+            label="Agent audit",
             kind="jsonl",
-            path=str(gateway_audit_path()),
-            description="Per-request gateway audit — agent, route, status, latency",
+            path=_basename(agent_audit_path()),
+            description="Per-request agent audit — identity, route, status, latency",
+        ),
+        LogSource(
+            id="save_logs",
+            label="Save logs",
+            kind="gz_jsonl",
+            path=_basename(root),
+            description="Daily merged per-save logs (shared_memory_YYYY-MM-DD.log.gz)",
         ),
     ]
 
@@ -189,7 +314,7 @@ def _filter_entries(
 
 def _tail_lines_text(path: Path, lines: int, offset: int = 0) -> dict:
     if not path.exists():
-        return {"lines": [], "offset": 0, "size": 0, "error": f"File not found: {path}"}
+        return {"lines": [], "offset": 0, "size": 0, "error": f"File not found: {_basename(path)}"}
     size = path.stat().st_size
     if offset > size:
         offset = size
@@ -216,7 +341,7 @@ def _tail_lines_text(path: Path, lines: int, offset: int = 0) -> dict:
 
 def _tail_gz_jsonl(path: Path, lines: int) -> dict:
     if not path.exists():
-        return {"lines": [], "offset": 0, "size": 0, "error": f"Archive not found: {path}"}
+        return {"lines": [], "offset": 0, "size": 0, "error": f"Archive not found: {_basename(path)}"}
     out: list[str] = []
     with gzip.open(path, "rt", encoding="utf-8", errors="replace") as f:
         for line in f:
@@ -233,6 +358,7 @@ def tail_source(
     offset: int = 0,
     since: str | None = None,
     until: str | None = None,
+    archive: str | None = None,
 ) -> dict:
     sources = {s.id: s for s in list_sources()}
     src = sources.get(source_id)
@@ -269,23 +395,43 @@ def tail_source(
         except subprocess.TimeoutExpired:
             return {"error": "journalctl timed out", "lines": []}
 
-    path = Path(src.path)
-    if src.kind == "gz_jsonl":
+    try:
+        if source_id == "save_logs":
+            archive_id = archive or (_basename(_archive_candidates(source_id)[0])
+                                    if _archive_candidates(source_id) else None)
+            if not archive_id:
+                return {"source": source_id, "kind": "jsonl", "lines": [],
+                        "error": "No save-log archives found", "archive": None,
+                        "fetched_at": datetime.now(timezone.utc).isoformat()}
+            path = resolve_archive(source_id, archive_id)
+        elif archive and archive != "live":
+            path = resolve_archive(source_id, archive)
+        else:
+            path = resolve_archive(source_id, "live")
+    except ValueError as exc:
+        return {"source": source_id, "error": str(exc), "lines": []}
+
+    use_gz = path.suffix == ".gz" or path.name.endswith(".gz")
+    if use_gz:
         result = _tail_gz_jsonl(path, fetch_lines)
         kind = "jsonl"
+        incremental = False
     else:
         result = _tail_lines_text(path, fetch_lines, offset if not windowed else 0)
         kind = src.kind
+        incremental = True
 
     raw_lines = result.get("lines") or []
     entries = _filter_entries(_entries_from_lines(raw_lines, kind=kind), since=since_dt, until=until_dt)
     if windowed:
         entries = entries[-lines:]
 
+    live = _live_path(source_id)
+    archive_id = "live" if live and path.resolve() == live.resolve() else _basename(path)
     payload = {
         "source": source_id,
         "kind": kind,
-        "path": str(path),
+        "archive": archive_id,
         "lines": [e["raw"] for e in entries],
         "since": since,
         "until": until,
@@ -293,7 +439,7 @@ def tail_source(
     }
     if result.get("error"):
         payload["error"] = result["error"]
-    if not windowed:
+    if incremental and not windowed:
         payload["offset"] = result.get("offset", 0)
         payload["size"] = result.get("size", 0)
     return payload

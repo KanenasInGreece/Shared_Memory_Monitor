@@ -1,3 +1,4 @@
+import gzip
 import json
 import tempfile
 import unittest
@@ -7,8 +8,10 @@ from unittest import mock
 from sm_telemetry_monitor.logs_reader import (
     journalctl_cmd,
     journal_unit,
+    list_archives,
     list_sources,
     parse_log_entry,
+    resolve_archive,
     tail_source,
     _filter_entries,
     _parse_ts,
@@ -47,15 +50,17 @@ class JournalCmdTests(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("-n") + 1], "5")
 
 
-class GatewayAuditSourceTests(unittest.TestCase):
-    def test_list_sources_includes_gateway_audit(self):
+class AgentAuditSourceTests(unittest.TestCase):
+    def test_list_sources_includes_agent_audit_and_save_logs(self):
         ids = [s.id for s in list_sources()]
-        self.assertIn("gateway_audit", ids)
-        src = next(s for s in list_sources() if s.id == "gateway_audit")
+        self.assertIn("agent_audit", ids)
+        self.assertIn("save_logs", ids)
+        self.assertNotIn("gateway_audit", ids)
+        src = next(s for s in list_sources() if s.id == "agent_audit")
         self.assertEqual(src.kind, "jsonl")
-        self.assertIn("gateway-audit", src.path)
+        self.assertIn("audit", src.path)
 
-    def test_gateway_audit_keeps_raw_json(self):
+    def test_agent_audit_keeps_raw_json(self):
         line = json.dumps({
             "ts": "2026-06-12T18:04:11+00:00",
             "agent": "claude",
@@ -70,8 +75,8 @@ class GatewayAuditSourceTests(unittest.TestCase):
         self.assertEqual(entry["raw"], line)
         self.assertEqual(entry["ts"], "2026-06-12T18:04:11+00:00")
 
-    @mock.patch("sm_telemetry_monitor.logs_reader.gateway_audit_path")
-    def test_tail_gateway_audit_reads_jsonl(self, mock_path):
+    @mock.patch("sm_telemetry_monitor.logs_reader.agent_audit_path")
+    def test_tail_agent_audit_reads_jsonl(self, mock_path):
         line = json.dumps({
             "ts": "2026-06-12T18:04:11+00:00",
             "agent": "grok",
@@ -83,12 +88,65 @@ class GatewayAuditSourceTests(unittest.TestCase):
             "request_id": "req001",
         })
         with tempfile.TemporaryDirectory() as td:
-            path = Path(td) / "gateway-audit.jsonl"
+            path = Path(td) / "agent-audit.jsonl"
             path.write_text(line + "\n", encoding="utf-8")
             mock_path.return_value = path
-            result = tail_source("gateway_audit", lines=10)
-        self.assertEqual(result["source"], "gateway_audit")
+            with mock.patch("sm_telemetry_monitor.logs_reader._log_root", return_value=Path(td).resolve()):
+                result = tail_source("agent_audit", lines=10)
+        self.assertEqual(result["source"], "agent_audit")
+        self.assertEqual(result["archive"], "live")
         self.assertEqual(result["lines"], [line])
+
+
+class ArchiveTests(unittest.TestCase):
+    def setUp(self):
+        self.td = tempfile.TemporaryDirectory()
+        self.root = Path(self.td.name).resolve()
+        self.patcher = mock.patch(
+            "sm_telemetry_monitor.logs_reader._log_root", return_value=self.root,
+        )
+        self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+        self.td.cleanup()
+
+    def test_list_save_log_archives(self):
+        (self.root / "shared_memory_2026-06-10.log.gz").write_bytes(b"\x1f\x8b")
+        (self.root / "shared_memory_2026-06-11.log.gz").write_bytes(b"\x1f\x8b")
+        out = list_archives("save_logs")
+        self.assertEqual(len(out["archives"]), 2)
+        self.assertEqual(out["archives"][0]["label"], "2026-06-11")
+
+    def test_tail_gz_archive(self):
+        line = json.dumps({"ts": "2026-06-10T12:00:00+00:00", "event": "save"})
+        archive = self.root / "shared_memory_2026-06-10.log.gz"
+        with gzip.open(archive, "wt", encoding="utf-8") as f:
+            f.write(line + "\n")
+        result = tail_source("save_logs", lines=10, archive=archive.name)
+        self.assertEqual(result["lines"], [line])
+        self.assertEqual(result["archive"], archive.name)
+
+    def test_resolve_archive_rejects_traversal(self):
+        with self.assertRaises(ValueError):
+            resolve_archive("save_logs", "../../etc/passwd")
+
+    def test_resolve_archive_rejects_unknown(self):
+        with self.assertRaises(ValueError):
+            resolve_archive("rem_audit", "not-a-real-archive.gz")
+
+    @mock.patch("sm_telemetry_monitor.logs_reader.audit_path")
+    def test_lists_rotated_audit_archives(self, mock_audit):
+        live = self.root / "rem-audit.jsonl"
+        live.write_text("{}\n", encoding="utf-8")
+        mock_audit.return_value = live
+        rotated = self.root / "rem-audit.jsonl-20260612.gz"
+        with gzip.open(rotated, "wt", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": "2026-06-12T10:00:00+00:00"}) + "\n")
+        out = list_archives("rem_audit")
+        self.assertEqual(len(out["archives"]), 1)
+        result = tail_source("rem_audit", lines=5, archive=rotated.name)
+        self.assertEqual(len(result["lines"]), 1)
 
 
 class FilterEntriesTests(unittest.TestCase):
