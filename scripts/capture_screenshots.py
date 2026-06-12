@@ -16,6 +16,7 @@ BASE = os.environ.get("SM_SCREENSHOT_URL", "http://127.0.0.1:8765").rstrip("/")
 
 PAGES: list[tuple[str, str, dict[str, int]]] = [
     ("dashboard.png", "/", {"width": 1440, "height": 900}),
+    ("schema-breakdown.png", "/?schema=1&capture=1", {"width": 1440, "height": 900}),
     ("diagram.png", "/diagram?capture=1", {"width": 1280, "height": 900}),
     ("logs.png", "/logs?source=agent_audit&capture=1", {"width": 1440, "height": 900}),
 ]
@@ -48,6 +49,11 @@ def main() -> None:
                 page.wait_for_selector("body[data-logs-ready='1']", timeout=60_000)
                 page.wait_for_selector("#tabs .view-tab.is-active[data-id='agent_audit']", timeout=60_000)
                 page.wait_for_selector(".log-agent-audit", timeout=60_000)
+            if "schema=1" in path:
+                page.wait_for_selector("body[data-schema-ready='1']", timeout=60_000)
+                page.wait_for_selector("#schema-content:not([hidden])", timeout=60_000)
+                page.wait_for_selector("#schema-drawer.open", timeout=60_000)
+                page.wait_for_timeout(600)
             target = OUT / name
             page.screenshot(path=str(target), full_page=True)
             print(f"wrote {target}")

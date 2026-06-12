@@ -45,6 +45,12 @@ All metrics are gateway telemetry fields (cached polls + live `GET /health` for 
 
 ![Monitor — backlog charts, pipeline queues, infrastructure health](docs/images/dashboard.png)
 
+### Schema breakdown (drawer on `/`)
+
+Neo4j graph panels from `POST /memory/graph`; Postgres inventory from `telemetry.breakdown` on `GET /memory/telemetry`. Open via **Schema breakdown** in the sidebar — no separate schema API.
+
+![Schema breakdown — Neo4j labels, graph paths, telemetry record types and domains](docs/images/schema-breakdown.png)
+
 ### Diagram (`/diagram`)
 
 Live **framework** layout (not the monitor process diagram below). Gateway-owned I/O: agents → coordinator; REM/NREM daemons ↔ gateway only; memory and inference hops via gateway buses. Node counts from telemetry; health badges from `GET /health`; flow lines from telemetry interval deltas + the same agent-audit JSONL as `/logs`. No diagram-specific data API.
@@ -252,7 +258,7 @@ Controls: **Follow** / **Pause**, since/until filters, **File** picker (live + `
 | **Bottleneck** | Telemetry backlog fields (display math only) |
 | **Pipeline queues** | Telemetry postgres/neo4j/outbox fields |
 | **Infrastructure** | `GET /health` component blocks |
-| **Schema breakdown** drawer | `telemetry.breakdown` + `POST /memory/graph` |
+| **Schema breakdown** drawer | `telemetry.breakdown` + `POST /memory/graph` — see screenshot above |
 
 Main charts: backlog over time, throughput, cumulative cleared, tier-3 growth & errors, raw samples table.
 

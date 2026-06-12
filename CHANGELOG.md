@@ -6,6 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-06-12
+
+### Added
+
+- **README schema breakdown screenshot** — `docs/images/schema-breakdown.png`;
+  capture opens the schema drawer (`/?schema=1&capture=1`) after breakdown data loads
+
 ## [0.4.1] - 2026-06-12
 
 ### Changed

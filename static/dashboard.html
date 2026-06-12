@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Shared Memory Monitor</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<link rel="stylesheet" href="/static/theme.css?v=13">
+<link rel="stylesheet" href="/static/theme.css?v=30">
 </head>
 <body data-bar-meta="dashboard">
 
@@ -487,6 +487,7 @@ async function loadBreakdown({ force = true, waitPaint = false } = {}) {
     if (loading) loading.hidden = true;
     if (content) content.hidden = false;
     resizeBreakdownCharts();
+    markSchemaCaptureReady();
   } catch (err) {
     if (err.name === "AbortError") return;
     if (gen !== schemaDrawerGen) return;
@@ -498,6 +499,7 @@ async function loadBreakdown({ force = true, waitPaint = false } = {}) {
       const msg = err.message || "Could not reach /api/breakdown";
       box.innerHTML = `<div class="schema-error"><strong>Monitor</strong><span>${esc(msg)}</span></div>`;
     }
+    markSchemaCaptureReady();
   } finally {
     if (refreshBtn) refreshBtn.disabled = false;
   }
@@ -666,6 +668,14 @@ async function loadSummary() {
   } catch (_) {}
 }
 
+function markSchemaCaptureReady() {
+  const params = new URLSearchParams(location.search);
+  if (!params.has("capture") || !params.has("schema")) return;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    document.body.dataset.schemaReady = "1";
+  }));
+}
+
 fetch("/api/meta").then(r=>r.json()).then(m=>{
   if (m.neo4j_browser_url) document.getElementById("neo4j-link").href = m.neo4j_browser_url;
 }).catch(()=>{});
@@ -675,6 +685,19 @@ refresh();
 setInterval(loadSummary, 30000);
 setInterval(loadSystemHealth, 30000);
 setInterval(refresh, 60000);
+
+(async function bootSchemaCapture() {
+  const params = new URLSearchParams(location.search);
+  if (!params.has("capture") || !params.has("schema")) return;
+  document.body.dataset.schemaCapture = "1";
+  try {
+    await refresh();
+    await loadSystemHealth();
+    openSchemaDrawer();
+  } catch (_) {
+    markSchemaCaptureReady();
+  }
+})();
 </script>
 </body>
 </html>
