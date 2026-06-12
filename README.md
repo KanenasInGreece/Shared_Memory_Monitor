@@ -30,11 +30,11 @@ Live framework topology: agents → Hive-Mind Gateway (:8888) → REM/NREM daemo
 
 ![Architecture diagram — live gateway cluster and memory layer topology](docs/images/diagram.png)
 
-### Gateway logs
+### Logs
 
-User journal tail for `hive-mind-gateway.service` (`journalctl --user`) plus REM audit JSONL — filterable, follow mode, error/warning counts.
+Gateway journal (`journalctl --user`), REM outbox audit JSONL, and **agent audit** — per-request agent identity, route, status, and latency from the framework auth seam. Filter by agent name; browse logrotated `.gz` archives via the **File** picker.
 
-![Gateway logs — journal tail and REM audit viewer](docs/images/logs.png)
+![Gateway logs — journal, REM audit, and agent audit viewer](docs/images/logs.png)
 
 Regenerate after UI changes: `./scripts/capture-screenshots.sh` (requires headless Chrome and a running monitor).
 
@@ -66,7 +66,8 @@ Install and run the monitor only after the items below are in place.
 
 | Optional | Enables |
 |----------|---------|
-| `SHARED_MEMORY_ROOT` or `SM_GATEWAY_ENV` | REM audit JSONL path (`AUDIT_LOG_PATH`) when not at the default `~/.shared-memory/logs`. |
+| `SHARED_MEMORY_ROOT` or `SM_GATEWAY_ENV` | Audit log paths (`AUDIT_LOG_PATH`, `GATEWAY_AUDIT_LOG_PATH`) when not at the default `~/.shared-memory/logs`. |
+| Framework `GATEWAY_AUDIT_LOG_PATH` enabled | **Agent audit** tab — requires coordinator v0.4.11+ on the gateway host. |
 | User systemd **linger** (`loginctl enable-linger $USER`) | Gateway (and monitor) user units keep running after logout. |
 | `SM_IGNORED_OUTBOX_IDS` | Exclude known stale outbox failure rows from alerts (baseline estimate). |
 
@@ -148,7 +149,7 @@ Open **http://127.0.0.1:8765/**
 |-----|------|
 | `/` | Pipeline dashboard (default) |
 | `/diagram` | Live architecture topology |
-| `/logs` | Gateway journal + REM audit (3s refresh) |
+| `/logs` | Gateway journal, REM audit, agent audit (3s refresh) |
 
 ### After moving the repo
 
@@ -163,7 +164,7 @@ Re-run `./scripts/check-env.sh`. Set `SHARED_MEMORY_ROOT` only if the REM audit 
 - **System health** — live gateway, embedder, reranker, LLM, and daemon status (polled every 30s from `/health`)
 - **Historical charts** — selectable ranges (`1h` · `6h` · `24h` · `7d` · `all`) with auto-downsampling
 - **Schema breakdown** — Neo4j panels via `/memory/graph`; Postgres distributions via `telemetry.breakdown` (no direct DB)
-- **Live logs** — gateway user journal (`journalctl --user -u hive-mind-gateway.service`), REM audit JSONL
+- **Live logs** — gateway journal, REM outbox audit JSONL, **agent audit** JSONL (per-request agent/route/status/latency), agent-name filter chips, logrotated archive picker
 - **Stale outbox filtering** — ignore known prerelease failures; alert only on new ones
 - **PNG exports** — static chart snapshots written to `graphs/` on each poll
 
@@ -220,13 +221,14 @@ Monitor `.env` **overrides** framework or skill copies for `AGENT_TOKEN` and `CO
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `SHARED_MEMORY_ROOT` | — | Framework repo path — discovers `MEMORY_LOG_PATH` / `AUDIT_LOG_PATH` |
+| `SHARED_MEMORY_ROOT` | — | Framework repo path — discovers `MEMORY_LOG_PATH`, `AUDIT_LOG_PATH`, `GATEWAY_AUDIT_LOG_PATH` |
 | `SM_GATEWAY_ENV` | — | Explicit path to gateway `.env` (log paths) |
 | `SM_JOURNAL_UNIT` | `hive-mind-gateway.service` | User unit for gateway log tab |
 | `SM_IGNORED_OUTBOX_IDS` | `4` | Stale outbox IDs excluded from failure alerts |
 | `NEO4J_BROWSER_URL` | `http://127.0.0.1:7474` | Neo4j Browser link in UI |
 | `MEMORY_LOG_PATH` | `~/.shared-memory/logs` | Client log directory (if not using `SHARED_MEMORY_ROOT`) |
 | `AUDIT_LOG_PATH` | `<log_dir>/rem-audit.jsonl` | REM audit JSONL for `/logs` tab |
+| `GATEWAY_AUDIT_LOG_PATH` | `<log_dir>/agent-audit.jsonl` | Agent audit JSONL (framework env; legacy `gateway-audit.jsonl` supported) |
 
 Copy `.env.example` to `.env`. `sm_telemetry_monitor check` never prints secret values.
 
@@ -351,8 +353,9 @@ Live rendering of the framework topology (Shared Memory README §3). Not a stati
 | `GET /api/diagram` | Bundled `summary` + `health` for diagram view |
 | `GET /api/history?range=6h` | Time series + stats + pipeline snapshot |
 | `GET /api/breakdown` | Neo4j graph + telemetry.breakdown schema panels (60s cache) |
-| `GET /api/logs/sources` | Available log sources |
-| `GET /api/logs/tail?source=gateway&lines=200` | Tail logs (`since=` for journal incremental) |
+| `GET /api/logs/sources` | Log sources (`gateway`, `rem_audit`, `agent_audit`) |
+| `GET /api/logs/archives?source=agent_audit` | Live file + logrotated `.gz` archives (basename-only) |
+| `GET /api/logs/tail?source=agent_audit&lines=200` | Tail live or archived logs (`archive=` basename; `since=` for time window) |
 
 History `range`: `1h` | `6h` | `24h` | `7d` | `all` — `bucket`: `auto` (default) | `raw` | `<minutes>`
 
@@ -485,6 +488,8 @@ shared-memory-monitor/
 | Telemetry poll fails / 401 | Check `AGENT_TOKEN` in monitor `.env`; confirm token is in gateway `AGENT_TOKENS` |
 | Schema breakdown empty | Gateway must expose `telemetry.breakdown` — upgrade/restart coordinator |
 | Gateway log tab empty | Confirm user unit: `journalctl --user -u hive-mind-gateway.service -n 5`; check linger |
+| Agent audit tab empty | Enable `GATEWAY_AUDIT_LOG_PATH` on gateway host (framework `.env`); restart `hive-mind-gateway.service`; generate authenticated traffic |
+| Agent audit archives missing | Install logrotate for audit jsonl — see `deploy/logrotate/shared-memory-audit.example` |
 | After moving monitor folder | Re-run `check-env.sh`; set `SHARED_MEMORY_ROOT` only for audit log paths |
 | Port 8765 in use | `fuser -k 8765/tcp` |
 
