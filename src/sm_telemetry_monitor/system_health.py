@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from .backup_reader import latest_backup_manifest
 from .bridge import get_health
 from .sanitize import sanitize_error
 from .summary import live_summary
@@ -168,7 +169,9 @@ def _build_component(key: str, field: str, label: str, kind: str, raw: dict, t: 
     }
 
 
-def _status_summary(components: list[dict], status: str) -> str:
+def _status_summary(components: list[dict], status: str, *, backup: dict | None = None) -> str:
+    if backup and backup.get("in_progress"):
+        return "backup underway"
     if status == "ok":
         return "all processes up"
     bits: list[str] = []
@@ -185,6 +188,106 @@ def _status_summary(components: list[dict], status: str) -> str:
             m = val.split()[0] if val.endswith("backlog") else val
             bits.append(f"{label} {m}")
     return " · ".join(bits[:3]) if bits else status
+
+
+def _backup_in_progress(raw: dict) -> bool | None:
+    value = raw.get("backup_in_progress")
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    token = str(value).lower()
+    if token in {"true", "1", "yes", "running", "in_progress", "active"}:
+        return True
+    if token in {"false", "0", "no", "idle", "none"}:
+        return False
+    return None
+
+
+def _backup_timestamp_from_health(raw: dict) -> str | None:
+    for key in ("last_backup_at", "last_backup", "backup_last_at"):
+        value = raw.get(key)
+        if value is None or value == "":
+            continue
+        if isinstance(value, (int, float)):
+            try:
+                return datetime.fromtimestamp(value, tz=timezone.utc).isoformat()
+            except (OSError, OverflowError, ValueError):
+                continue
+        text = str(value).strip()
+        try:
+            if text.endswith("Z"):
+                dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            else:
+                dt = datetime.fromisoformat(text)
+        except ValueError:
+            continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat()
+    return None
+
+
+def _resolve_last_backup(raw: dict, *, reachable: bool) -> dict:
+    manifest = latest_backup_manifest()
+    health_at = _backup_timestamp_from_health(raw) if reachable else None
+    if health_at:
+        return {"last_at": health_at, "last_name": None, "last_source": "health"}
+    if manifest:
+        return {
+            "last_at": manifest["at"],
+            "last_name": manifest.get("name"),
+            "last_source": "manifest",
+        }
+    return {"last_at": None, "last_name": None, "last_source": None}
+
+
+def _backup_part(raw: dict, *, reachable: bool, last: dict | None = None) -> dict:
+    last = last or _resolve_last_backup(raw, reachable=reachable)
+    last_at = last.get("last_at")
+    last_name = last.get("last_name")
+    last_source = last.get("last_source")
+
+    def _with_last(base: dict) -> dict:
+        base.update({
+            "last_at": last_at,
+            "last_name": last_name,
+            "last_source": last_source,
+        })
+        return base
+
+    if not reachable:
+        return _with_last({
+            "in_progress": None,
+            "state": "unknown",
+            "value": "unknown",
+            "caption": "gateway unreachable",
+        })
+
+    active = _backup_in_progress(raw)
+    if active is True:
+        return _with_last({
+            "in_progress": True,
+            "state": "active",
+            "value": "underway",
+            "caption": "framework backup running",
+        })
+    if active is False:
+        caption = "no backup running"
+        if last_at:
+            caption = f"last backup {last_at}"
+        return _with_last({
+            "in_progress": False,
+            "state": "idle",
+            "value": "idle",
+            "caption": caption,
+        })
+    return _with_last({
+        "in_progress": None,
+        "state": "unknown",
+        "value": "unknown",
+        "caption": "backup status unclear",
+    })
 
 
 def _overall_state(components: list[dict], *, reachable: bool) -> str:
@@ -205,6 +308,8 @@ def system_health_snapshot() -> dict:
     telemetry = _telemetry_latest()
     telemetry_at = telemetry.get("collected_at")
 
+    last_backup = _resolve_last_backup(raw, reachable=raw.get("status") != "unreachable")
+
     if raw.get("status") == "unreachable":
         return {
             "status": "critical",
@@ -213,6 +318,7 @@ def system_health_snapshot() -> dict:
             "telemetry_at": telemetry_at,
             "version": None,
             "components": [],
+            "backup": _backup_part(raw, reachable=False, last=last_backup),
             "error": sanitize_error(raw.get("error")) or "gateway unreachable",
         }
 
@@ -220,16 +326,18 @@ def system_health_snapshot() -> dict:
         _build_component(key, field, label, kind, raw, telemetry)
         for key, field, label, kind in _INFRA_COMPONENTS
     ]
+    backup = _backup_part(raw, reachable=True, last=last_backup)
     status = _overall_state(components, reachable=True)
 
     return {
         "status": status,
-        "summary": _status_summary(components, status),
+        "summary": _status_summary(components, status, backup=backup),
         "reachable": True,
         "fetched_at": fetched_at,
         "telemetry_at": telemetry_at,
         "version": raw.get("version"),
         "api_version": raw.get("api_version"),
         "components": components,
+        "backup": backup,
         "error": sanitize_error(raw.get("error")) or None,
     }

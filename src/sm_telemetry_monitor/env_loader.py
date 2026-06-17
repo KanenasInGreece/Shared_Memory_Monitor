@@ -18,13 +18,13 @@ _FRAMEWORK_KEYS = frozenset({
     "MEMORY_LOG_PATH", "AUDIT_LOG_PATH", "GATEWAY_AUDIT_LOG_PATH", "MEMORY_LOG_LEVEL",
     "COORDINATOR_URL", "AGENT_TOKEN",
     "PG_HOST", "PG_PORT", "PG_DB", "PG_USER",
-    "NEO4J_BROWSER_URL",
+    "NEO4J_BROWSER_URL", "BACKUP_DIR",
 })
 
 # Extra keys allowed only from the monitor repo's own .env
 _MONITOR_EXTRA_KEYS = frozenset({
     "SHARED_MEMORY_ROOT", "SM_GATEWAY_ENV", "SM_MEMORY_BRIDGE", "SM_SKILL_ROOT",
-    "SM_IGNORED_OUTBOX_IDS", "SM_JOURNAL_UNIT",
+    "SM_IGNORED_OUTBOX_IDS", "SM_JOURNAL_UNIT", "BACKUP_DIR",
 })
 
 # Monitor .env overrides these even if set by framework/skill copies
@@ -35,6 +35,7 @@ _DEFAULTS = {
     "COORDINATOR_URL": "http://localhost:8888",
     "MEMORY_LOG_PATH": "~/.shared-memory/logs",
     "NEO4J_BROWSER_URL": "http://127.0.0.1:7474",
+    "BACKUP_DIR": "~/.shared-memory/backups",
     "PG_HOST": "localhost",
     "PG_PORT": "5432",
     "PG_DB": "agent_data",

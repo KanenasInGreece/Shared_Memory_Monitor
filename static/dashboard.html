@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Shared Memory Monitor</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<link rel="stylesheet" href="/static/theme.css?v=30">
+<link rel="stylesheet" href="/static/theme.css?v=32">
 </head>
 <body data-bar-meta="dashboard">
 
@@ -74,6 +74,15 @@
       <div class="sidebar-head">
         <span class="sidebar-title">Status</span>
         <span class="pill ok" id="sidebar-system-pill" title="">—</span>
+      </div>
+
+      <div class="backup-card idle" id="backup-card" aria-live="polite" title="">
+        <span class="backup-led" aria-hidden="true"></span>
+        <div class="backup-text">
+          <span class="label">Backup</span>
+          <span class="value" id="v-backup">Idle</span>
+          <span class="backup-last" id="backup-last">Last —</span>
+        </div>
       </div>
 
       <div class="sidebar-metric featured">
@@ -290,9 +299,47 @@ function healthLine(c) {
   return { text: p, state: healthUiState(proc.state), title };
 }
 
+function renderBackup(H) {
+  const card = document.getElementById("backup-card");
+  const val = document.getElementById("v-backup");
+  const lastEl = document.getElementById("backup-last");
+  if (!card || !val) return;
+
+  const b = H?.backup;
+  const setLast = (text) => { if (lastEl) lastEl.textContent = text; };
+
+  if (!b) {
+    card.className = "backup-card unknown";
+    val.textContent = "—";
+    setLast("Last —");
+    card.title = "";
+    return;
+  }
+
+  if (b.last_at) {
+    setLast(`Last ${formatSampleTime(b.last_at)}`);
+  } else {
+    setLast("Last never");
+  }
+
+  if (H?.reachable === false) {
+    card.className = "backup-card unknown";
+    val.textContent = "—";
+    card.title = H?.error || "gateway unreachable";
+    return;
+  }
+
+  const active = b.in_progress === true;
+  card.className = "backup-card " + (active ? "active" : b.state === "unknown" ? "unknown" : "idle");
+  val.textContent = active ? "Underway" : b.state === "unknown" ? "—" : "Idle";
+  const titleBits = [b.caption, b.last_name && `set ${b.last_name}`].filter(Boolean);
+  card.title = titleBits.join(" · ");
+}
+
 function renderSystemHealth(H) {
   const status = H?.status || "unknown";
   updateSystemPill(status, H?.summary || "");
+  renderBackup(H);
 
   const byKey = Object.fromEntries((H?.components || []).map(c => [c.key, c]));
   document.querySelectorAll("#system-health-row .health-item").forEach(el => {

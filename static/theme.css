@@ -407,6 +407,69 @@ body.logs-page #chip-warn.chip-filter-active {
   border-color: var(--border-light);
   background: var(--card-inset);
 }
+
+.backup-card {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .5rem .65rem;
+  margin-bottom: .65rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  transition: border-color .2s, background .2s;
+}
+.backup-led {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+  transition: background .2s, box-shadow .2s;
+}
+.backup-text {
+  display: flex;
+  flex-direction: column;
+  gap: .1rem;
+  min-width: 0;
+}
+.backup-text .label {
+  font-size: .66rem;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--muted);
+}
+.backup-text .value {
+  font-size: .92rem;
+  font-weight: 700;
+  color: var(--text);
+  text-transform: capitalize;
+}
+.backup-last {
+  font-size: .68rem;
+  color: var(--muted);
+  margin-top: .12rem;
+}
+.backup-card.active .backup-last { color: var(--warn); }
+.backup-card.idle .backup-led { background: var(--border-light); }
+.backup-card.idle .value { color: var(--muted); }
+.backup-card.unknown .backup-led { background: var(--muted); }
+.backup-card.unknown .value { color: var(--muted); }
+.backup-card.active {
+  border-color: var(--warn);
+  background: linear-gradient(90deg, var(--warn-tint), var(--card) 70%);
+  animation: backup-pulse 1.8s ease-in-out infinite;
+}
+.backup-card.active .backup-led {
+  background: var(--warn-bright);
+  box-shadow: 0 0 8px var(--warn-bright);
+}
+.backup-card.active .value { color: var(--warn-bright); }
+
+@keyframes backup-pulse {
+  0%, 100% { box-shadow: var(--shadow-panel); }
+  50% { box-shadow: 0 0 0 1px var(--warn-dim), 0 0 12px var(--warn-tint); }
+}
 .sidebar-metric .label {
   font-size: .66rem;
   text-transform: uppercase;

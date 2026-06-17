@@ -147,13 +147,22 @@ Open **http://127.0.0.1:8765/**
 | REM audit | `~/.shared-memory/logs/rem-audit.jsonl` (`AUDIT_LOG_PATH`) |
 | Agent audit | `~/.shared-memory/logs/agent-audit.jsonl` (`GATEWAY_AUDIT_LOG_PATH` on framework) |
 
+### Local backups (optional — Status sidebar “Last” date)
+
+| Item | Default / notes |
+|------|-----------------|
+| Backup manifests | `~/.shared-memory/backups/sm-backup-*.manifest.json` (`BACKUP_DIR` on framework host) |
+| Monitor override | Set `BACKUP_DIR` in monitor `.env` when manifests live outside the default path |
+
+The **Backup** card lights when `backup_in_progress` is true on `GET /health`. The **Last** line is the `created` timestamp from the newest manifest — not yet on `/health`. If the directory is missing or empty, the UI shows **Last never**.
+
 ### Not required
 
 Postgres/Neo4j credentials, `memory_bridge.py`, or a framework checkout on the monitor machine (only URL + token required for HTTP plane).
 
 ### Optional
 
-`SHARED_MEMORY_ROOT` / `SM_GATEWAY_ENV` (non-default log paths), `loginctl enable-linger`, `SM_IGNORED_OUTBOX_IDS`, remote monitor (HTTP works over network; logs need local journal/files).
+`SHARED_MEMORY_ROOT` / `SM_GATEWAY_ENV` (non-default log paths), `BACKUP_DIR` (non-default backup manifest path), `loginctl enable-linger`, `SM_IGNORED_OUTBOX_IDS`, remote monitor (HTTP works over network; logs and backup manifests need local paths).
 
 ---
 
@@ -222,6 +231,7 @@ Charts read the **poll cache** (past `GET /memory/telemetry` responses). Live pa
 | **Range** (`1h`–`all`) | Filters cached telemetry polls |
 | **Hero** headline | Derived labels from cached telemetry JSON |
 | **Sidebar Status** pill | `GET /health` |
+| **Backup** card | `GET /health` (`backup_in_progress`) + latest `sm-backup-*.manifest.json` in `BACKUP_DIR` |
 | **Dream backlog** | `rem_backlog + nrem_backlog` telemetry fields |
 | **Pipeline queues** | Telemetry postgres/neo4j/outbox fields |
 | **Infrastructure** grid | `GET /health` component blocks |
@@ -274,6 +284,7 @@ Controls: **Follow** / **Pause**, since/until filters, **File** picker (live + `
 | `SM_JOURNAL_UNIT` | | Journal unit (default `hive-mind-gateway.service`) |
 | `AUDIT_LOG_PATH` | | REM audit JSONL |
 | `GATEWAY_AUDIT_LOG_PATH` | | Agent audit JSONL |
+| `BACKUP_DIR` | | Directory of `sm-backup-*.manifest.json` for sidebar **Last** backup date (default `~/.shared-memory/backups`; auto-discovered from framework `.env` via `SHARED_MEMORY_ROOT`) |
 | `NEO4J_BROWSER_URL` | | Neo4j Browser tab link |
 | `SM_IGNORED_OUTBOX_IDS` | | Stale outbox IDs excluded from alerts (default `4`) |
 

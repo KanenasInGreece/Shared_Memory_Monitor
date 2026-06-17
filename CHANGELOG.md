@@ -6,6 +6,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-06-17
+
+### Added
+
+- **Backup reporting (Status sidebar)** — lights when gateway `GET /health` reports
+  `backup_in_progress`; shows **Last** completed backup from the newest
+  `sm-backup-*.manifest.json` in `BACKUP_DIR` (configurable; default
+  `~/.shared-memory/backups`). Ready for a future `last_backup_at` health field.
+
+### Changed
+
+- **README / `.env.example`** — document `BACKUP_DIR` for non-default manifest paths
+
 ## [0.4.5] - 2026-06-12
 
 ### Changed
