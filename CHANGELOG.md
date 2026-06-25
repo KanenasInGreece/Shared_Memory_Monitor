@@ -6,6 +6,45 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Sidebar drill-downs** — Consolidation and Schema breakdown share a
+  **Drill-down** section with unified `drawer-trigger` styling (dashed border,
+  **Open** pill, live status accent on Consolidation). Drill-down sits at the
+  top of the sidebar; Backup and Infrastructure follow the metrics blocks.
+- **Status deck layout** — status blocks form a full-width deck above the charts
+  in three labelled rows: **Drill-down**, **Backlog & queues** (Dream backlog,
+  REM / NREM split, Pipeline queues), and Backup / Infrastructure. The metrics
+  row fills the width (no empty right strip); Backup and Infrastructure each have
+  an aligned heading.
+- **Consolidation drill-down** — added a **Coverage** summary computed from the
+  neo4j fact census (REM-processed facts, consolidated count + %, awaiting-fold
+  count + %) so the panel reports real progress, not just per-cycle liveness. The
+  per-cycle table column **Coverage** is renamed **Eligible** (it reports
+  `eligible_clusters`, the strict-gate clusters awaiting a fold — not a ratio);
+  deferred cycles with no eligible work now read **idle** instead of **deferred**,
+  and a benign deferral is no longer styled as a warning. Drawer subtitle no
+  longer cites an internal ADR.
+- **Pipeline sidebar grid** — odd cell count no longer leaves an empty column
+  on the right (last row spans full width).
+
+### Fixed
+
+- **Redundant bottleneck label** — the REM/NREM saturation verdict appeared in
+  both the hero banner and a sidebar card; the card is now **REM / NREM split**
+  (split bar, counts, ETA) and the banner is the single source of the verdict.
+- **Logs deep link** — `/logs?consolidation=1` no longer throws before init
+  (`consolidationFilter` temporal dead zone); forces gateway source when needed.
+- **Consolidation drawer** — removed redundant “Correlate in logs” section;
+  header **Logs** link opens gateway journal with the Consolidation filter
+  (patterns documented on the filter chip tooltip).
+- **Phantom right column / scrollbar** — closed schema/consolidation drawers used
+  `display: flex`, which overrode the HTML `hidden` attribute; off-screen drawers
+  still expanded page width. `[hidden]` and `overflow-x: clip` now suppress it.
+- **Dashboard layout** — removed the fixed 340px right sidebar column (empty grid
+  strip + nested scrollbar); status blocks are a full-width **status deck**
+  above the charts.
+
 ## [0.4.7] - 2026-06-25
 
 ### Added

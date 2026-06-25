@@ -233,11 +233,11 @@ Charts read the **poll cache** (past `GET /memory/telemetry` responses). Live pa
 | **Hero** headline | Derived labels from cached telemetry JSON |
 | **Sidebar Status** pill | `GET /health` |
 | **Backup** card | `GET /health` (`backup_in_progress`) + latest `sm-backup-*.manifest.json` in `BACKUP_DIR` |
-| **Consolidation** card | `GET /health` → `consolidation` (cached liveness); click opens drill-down from `telemetry.consolidation` |
 | **Dream backlog** | `rem_backlog + nrem_backlog` telemetry fields |
 | **Pipeline queues** | Telemetry postgres/neo4j/outbox fields |
 | **Infrastructure** grid | `GET /health` component blocks |
-| **Schema breakdown** drawer | `telemetry.breakdown` + `POST /memory/graph` |
+| **Drill-down → Consolidation** | `GET /health` → `consolidation` (cached liveness); opens drawer from `telemetry.consolidation` |
+| **Drill-down → Schema breakdown** | `telemetry.breakdown` + `POST /memory/graph` |
 
 Main charts: backlog over time, throughput, cumulative cleared, tier-3 growth & errors, raw samples table.
 

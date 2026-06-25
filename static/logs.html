@@ -47,7 +47,7 @@
     <label class="source-ctl"><input type="checkbox" id="follow" checked> Follow</label>
     <label class="source-ctl"><input type="checkbox" id="pause"> Pause</label>
     <div class="chip" id="chip-lines"><span class="k">Lines</span><span class="v">0</span></div>
-    <div class="chip" id="chip-consolidation" role="button" tabindex="0" aria-pressed="false" title="Show consolidation-related lines only" hidden><span class="k">Consolidation</span><span class="v">0</span></div>
+    <div class="chip" id="chip-consolidation" role="button" tabindex="0" aria-pressed="false" title="Consolidation runs, CRASHED, deferring, health refresh failed" hidden><span class="k">Consolidation</span><span class="v">0</span></div>
     <div class="chip" id="chip-err" role="button" tabindex="0" aria-pressed="false" title="Show errors only"><span class="k">Errors</span><span class="v">0</span></div>
     <div class="chip" id="chip-warn" role="button" tabindex="0" aria-pressed="false" title="Show warnings only"><span class="k">Warnings</span><span class="v">0</span></div>
     <span class="log-status" id="log-status">loading…</span>
@@ -67,18 +67,19 @@
 <script>
 const pageParams = new URLSearchParams(location.search);
 const urlSource = pageParams.get("source");
-if (pageParams.get("consolidation") === "1") {
+const urlConsolidation = pageParams.get("consolidation") === "1";
+let consolidationFilter = localStorage.getItem("sm-log-consolidation") === "1";
+if (urlConsolidation) {
   consolidationFilter = true;
   localStorage.setItem("sm-log-consolidation", "1");
 }
-let source = urlSource || localStorage.getItem("sm-log-source") || "gateway";
+let source = urlSource || (urlConsolidation ? "gateway" : null) || localStorage.getItem("sm-log-source") || "gateway";
 let archivePick = "live";
 let fileOffset = 0;
 let journalSince = null;
 let lastJournalLine = null;
 let sourceLabels = {};
 let totalLines = 0, totalErr = 0, totalWarn = 0, totalConsolidation = 0;
-let consolidationFilter = localStorage.getItem("sm-log-consolidation") === "1";
 let lineBuffer = [];
 function loadSeverityFilters() {
   const raw = localStorage.getItem("sm-log-severity") || "";
@@ -135,6 +136,10 @@ let agentFilters = loadAgentFilters();
 let filterFrom = localStorage.getItem("sm-log-from") || "";
 let filterTo = localStorage.getItem("sm-log-to") || "";
 const MAX_LOG_LINES = 2500;
+
+if (urlConsolidation && source === "gateway") {
+  localStorage.setItem("sm-log-source", "gateway");
+}
 
 function hasTimeFilter() {
   return Boolean(filterFrom || filterTo);

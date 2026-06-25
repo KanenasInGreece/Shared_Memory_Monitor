@@ -38,6 +38,40 @@ def humanize_age(seconds: int | float | None) -> str:
     return f"{d}d {rem // 3600}h ago" if rem else f"{d}d ago"
 
 
+def _pct(num: int | None, den: int | None) -> int | None:
+    if num is None or not den:
+        return None
+    return round(100 * num / den)
+
+
+def _fact_coverage(neo4j: dict) -> dict:
+    """Fact-level consolidation coverage derived from the neo4j fact census.
+
+    REM-processed facts = total − awaiting REM. Of those, the ones not yet folded
+    into a community summary are 'awaiting' (eligible); the rest are consolidated.
+    """
+    total = neo4j.get("facts_total")
+    rem_pending = neo4j.get("facts_rem_pending")
+    awaiting = neo4j.get("facts_unconsolidated")
+
+    rem_processed = None
+    if isinstance(total, int) and isinstance(rem_pending, int):
+        rem_processed = max(total - rem_pending, 0)
+    consolidated = None
+    if rem_processed is not None and isinstance(awaiting, int):
+        consolidated = max(rem_processed - awaiting, 0)
+
+    return {
+        "facts_total": total,
+        "facts_rem_pending": rem_pending,
+        "rem_processed": rem_processed,
+        "consolidated": consolidated,
+        "awaiting": awaiting,
+        "coverage_pct": _pct(consolidated, rem_processed),
+        "awaiting_pct": _pct(awaiting, rem_processed),
+    }
+
+
 def _cycle_state(cycle: dict) -> str:
     if cycle.get("stalled"):
         return "bad"
@@ -47,8 +81,8 @@ def _cycle_state(cycle: dict) -> str:
         return "ok"
     if cycle.get("last_outcome") == "crashed":
         return "bad"
-    if cycle.get("last_outcome") == "deferred":
-        return "warn"
+    # deferred is a benign skip (GPU busy / backup drain); per ADR-018 the
+    # actionable signal is `stalled` (handled above), not a single deferral.
     return "ok"
 
 
@@ -68,10 +102,17 @@ def _normalize_cycle(key: str, raw: dict | None) -> dict:
     if backlog is None:
         backlog = raw.get("eligible_clusters")
 
+    outcome = raw.get("last_outcome")
+    # A "deferred" cycle with nothing eligible isn't postponing work — there are
+    # no clusters/facts to fold, so present it as idle rather than deferred.
+    no_work = not raw.get("eligible_clusters") and not backlog
+    outcome_display = "idle" if outcome == "deferred" and no_work else outcome
+
     cycle = {
         "key": key,
         "label": _CYCLE_LABELS.get(key, key.replace("_", " ").title()),
-        "last_outcome": raw.get("last_outcome"),
+        "last_outcome": outcome,
+        "last_outcome_display": outcome_display,
         "last_success_age_seconds": age,
         "last_success_age_human": humanize_age(age) if age is not None else "never",
         "in_flight": bool(raw.get("in_flight")),
@@ -153,6 +194,7 @@ def consolidation_from_payload(
     telemetry_at = None
     nrem_density = {}
     rollup = {}
+    neo4j_census = {}
 
     if isinstance(telemetry_payload, dict) and telemetry_payload.get("status") == "success":
         t = telemetry_payload.get("telemetry") or {}
@@ -161,6 +203,8 @@ def consolidation_from_payload(
             rollup = t["consolidation"]
         if isinstance(t.get("nrem"), dict):
             nrem_density = t["nrem"]
+        if isinstance(t.get("neo4j"), dict):
+            neo4j_census = t["neo4j"]
 
     cycles = [
         _normalize_cycle("insight", rollup.get("insight")),
@@ -217,6 +261,7 @@ def consolidation_from_payload(
             "stall_threshold_seconds": rollup.get("stall_threshold_seconds"),
         },
         "cycles": cycles,
+        "coverage": _fact_coverage(neo4j_census),
         "nrem_density": {
             **nrem_density,
             "note": _NREM_DENSITY_NOTE,

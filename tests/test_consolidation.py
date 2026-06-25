@@ -63,6 +63,78 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         self.assertEqual(len(snap["cycles"]), 2)
         self.assertEqual(snap["cycles"][0]["label"], "Insight")
 
+    def test_deferred_with_no_work_reads_idle(self):
+        # A deferred cycle with nothing eligible is idle, not a postponed job,
+        # and must not be flagged as a warning.
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "fact_consolidation": {
+                        "last_outcome": "deferred",
+                        "in_flight": False,
+                        "consecutive_failures": 0,
+                        "backlog": 0,
+                        "eligible_clusters": None,
+                        "stalled": False,
+                    },
+                },
+            },
+        }
+        snap = consolidation_from_payload(health, telemetry)
+        fact = next(c for c in snap["cycles"] if c["key"] == "fact_consolidation")
+        self.assertEqual(fact["last_outcome"], "deferred")
+        self.assertEqual(fact["last_outcome_display"], "idle")
+        self.assertEqual(fact["state"], "ok")
+
+    def test_deferred_with_backlog_stays_deferred(self):
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "fact_consolidation": {
+                        "last_outcome": "deferred",
+                        "in_flight": False,
+                        "consecutive_failures": 0,
+                        "eligible_clusters": 3,
+                        "stalled": False,
+                    },
+                },
+            },
+        }
+        snap = consolidation_from_payload(health, telemetry)
+        fact = next(c for c in snap["cycles"] if c["key"] == "fact_consolidation")
+        self.assertEqual(fact["last_outcome_display"], "deferred")
+
+    def test_fact_coverage_computed(self):
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "neo4j": {
+                    "facts_total": 175,
+                    "facts_rem_pending": 0,
+                    "facts_unconsolidated": 22,
+                },
+            },
+        }
+        snap = consolidation_from_payload(health, telemetry)
+        cov = snap["coverage"]
+        self.assertEqual(cov["rem_processed"], 175)
+        self.assertEqual(cov["consolidated"], 153)
+        self.assertEqual(cov["awaiting"], 22)
+        self.assertEqual(cov["coverage_pct"], 87)
+        self.assertEqual(cov["awaiting_pct"], 13)
+
+    def test_fact_coverage_missing_census(self):
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        snap = consolidation_from_payload(health, {"status": "success", "telemetry": {}})
+        cov = snap["coverage"]
+        self.assertIsNone(cov["rem_processed"])
+        self.assertIsNone(cov["coverage_pct"])
+
     def test_stalled_tile(self):
         health = {
             "status": "ok",

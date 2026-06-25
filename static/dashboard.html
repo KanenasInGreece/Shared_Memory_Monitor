@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Shared Memory Monitor</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<link rel="stylesheet" href="/static/theme.css?v=33">
+<link rel="stylesheet" href="/static/theme.css?v=48">
 </head>
 <body data-bar-meta="dashboard">
 
@@ -45,6 +45,88 @@
         </div>
       </section>
 
+      <section class="status-deck" aria-label="Live status">
+        <div class="sidebar-head">
+          <span class="sidebar-title">Status</span>
+          <span class="pill ok" id="sidebar-system-pill" title="">—</span>
+        </div>
+
+        <div class="status-deck-block">
+          <div class="section-title section-title-tight">Drill-down</div>
+          <div class="drawer-trigger-stack drawer-trigger-stack-row">
+            <button type="button" class="drawer-trigger drawer-trigger-status ok" id="consolidation-card" aria-live="polite" aria-expanded="false" aria-controls="consolidation-drawer" aria-label="Open consolidation health" title="">
+              <span class="drawer-trigger-text">
+                <span class="drawer-trigger-label">Consolidation</span>
+                <span class="drawer-trigger-value" id="v-consolidation">—</span>
+                <span class="drawer-trigger-desc" id="consolidation-caption">—</span>
+                <span class="drawer-trigger-stale" id="consolidation-stale" hidden>signal stale</span>
+              </span>
+              <span class="drawer-trigger-go" aria-hidden="true">Open</span>
+            </button>
+            <button type="button" id="schema-open" class="drawer-trigger" aria-expanded="false" aria-controls="schema-drawer" aria-label="Open schema breakdown">
+              <span class="drawer-trigger-text">
+                <span class="drawer-trigger-label">Schema breakdown</span>
+                <span class="drawer-trigger-desc">Neo4j graph · telemetry breakdown</span>
+              </span>
+              <span class="drawer-trigger-go" aria-hidden="true">Open</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="section-title section-title-tight">Backlog &amp; queues</div>
+        <div class="status-deck-metrics">
+          <div class="sidebar-metric featured">
+            <div class="label">Dream backlog</div>
+            <div class="value" id="v-backlog">—</div>
+            <div class="delta" id="d-backlog"></div>
+            <div class="spark"><canvas id="sp-backlog"></canvas></div>
+          </div>
+
+          <div class="sidebar-metric">
+            <div class="label">REM / NREM split</div>
+            <div class="split" id="split-bar"></div>
+            <div class="split-legend">
+              <span>REM <b id="v-rem">—</b></span>
+              <span>NREM cycles <b id="v-nrem">—</b></span>
+            </div>
+            <div class="hint" id="eta-hint"></div>
+          </div>
+
+          <div class="status-deck-pipeline">
+            <div class="section-title section-title-tight">Pipeline queues</div>
+            <div class="pipe-grid pipe-grid-sidebar" id="pipeline"></div>
+          </div>
+        </div>
+
+        <div class="status-deck-ops">
+          <div class="status-deck-backup">
+            <div class="section-title section-title-tight">Backup</div>
+            <div class="backup-card idle" id="backup-card" aria-live="polite" title="">
+              <span class="backup-led" aria-hidden="true"></span>
+              <div class="backup-text">
+                <span class="value" id="v-backup">Idle</span>
+                <span class="backup-last" id="backup-last">Last —</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="status-deck-infra">
+            <div class="section-title section-title-tight">Infrastructure</div>
+            <div class="health-row health-row-sidebar" id="system-health-row">
+              <div class="health-item unknown" data-key="gateway"><div class="n">—</div><div class="l">Gateway</div></div>
+              <div class="health-item unknown" data-key="embedder"><div class="n">—</div><div class="l">Embed</div></div>
+              <div class="health-item unknown" data-key="reranker"><div class="n">—</div><div class="l">Rerank</div></div>
+              <div class="health-item unknown" data-key="llm"><div class="n">—</div><div class="l">LLM</div></div>
+              <div class="health-item unknown" data-key="nrem_daemon"><div class="n">—</div><div class="l">NREM</div></div>
+              <div class="health-item unknown" data-key="rem_daemon"><div class="n">—</div><div class="l">REM</div></div>
+            </div>
+            <div class="hint sidebar-hint" id="system-hint"></div>
+          </div>
+        </div>
+
+        <div class="sidebar-footer" id="sidebar-meta">—</div>
+      </section>
+
       <div class="chart-card chart-primary">
         <h3>Backlog over time</h3>
         <canvas id="backlog"></canvas>
@@ -69,74 +151,6 @@
         </div>
       </div>
     </main>
-
-    <aside class="sidebar" aria-label="Live status">
-      <div class="sidebar-head">
-        <span class="sidebar-title">Status</span>
-        <span class="pill ok" id="sidebar-system-pill" title="">—</span>
-      </div>
-
-      <div class="backup-card idle" id="backup-card" aria-live="polite" title="">
-        <span class="backup-led" aria-hidden="true"></span>
-        <div class="backup-text">
-          <span class="label">Backup</span>
-          <span class="value" id="v-backup">Idle</span>
-          <span class="backup-last" id="backup-last">Last —</span>
-        </div>
-      </div>
-
-      <button type="button" class="consolidation-card ok" id="consolidation-card" aria-live="polite" aria-expanded="false" aria-controls="consolidation-drawer" title="">
-        <span class="consolidation-led" aria-hidden="true"></span>
-        <div class="consolidation-text">
-          <span class="label">Consolidation</span>
-          <span class="value" id="v-consolidation">—</span>
-          <span class="consolidation-caption" id="consolidation-caption">—</span>
-          <span class="consolidation-stale" id="consolidation-stale" hidden>signal stale</span>
-        </div>
-        <span class="consolidation-go" aria-hidden="true">Details</span>
-      </button>
-
-      <div class="sidebar-metric featured">
-        <div class="label">Dream backlog</div>
-        <div class="value" id="v-backlog">—</div>
-        <div class="delta" id="d-backlog"></div>
-        <div class="spark"><canvas id="sp-backlog"></canvas></div>
-      </div>
-
-      <div class="sidebar-metric">
-        <div class="label">Bottleneck</div>
-        <div class="value value-sm" id="v-bottleneck">—</div>
-        <div class="split" id="split-bar"></div>
-        <div class="split-legend">
-          <span>REM <b id="v-rem">—</b></span>
-          <span>NREM cycles <b id="v-nrem">—</b></span>
-        </div>
-        <div class="hint" id="eta-hint"></div>
-      </div>
-
-      <div class="section-title section-title-tight">Pipeline queues</div>
-      <div class="pipe-grid pipe-grid-sidebar" id="pipeline"></div>
-
-      <div class="section-title section-title-tight">Infrastructure</div>
-      <div class="health-row health-row-sidebar" id="system-health-row">
-        <div class="health-item unknown" data-key="gateway"><div class="n">—</div><div class="l">Gateway</div></div>
-        <div class="health-item unknown" data-key="embedder"><div class="n">—</div><div class="l">Embed</div></div>
-        <div class="health-item unknown" data-key="reranker"><div class="n">—</div><div class="l">Rerank</div></div>
-        <div class="health-item unknown" data-key="llm"><div class="n">—</div><div class="l">LLM</div></div>
-        <div class="health-item unknown" data-key="nrem_daemon"><div class="n">—</div><div class="l">NREM</div></div>
-        <div class="health-item unknown" data-key="rem_daemon"><div class="n">—</div><div class="l">REM</div></div>
-      </div>
-      <div class="hint sidebar-hint" id="system-hint"></div>
-      <div class="sidebar-footer" id="sidebar-meta">—</div>
-
-      <button type="button" id="schema-open" class="schema-trigger" aria-expanded="false" aria-controls="schema-drawer">
-        <span class="schema-trigger-text">
-          <span class="schema-trigger-label">Schema breakdown</span>
-          <span class="schema-trigger-desc">Neo4j graph · telemetry breakdown</span>
-        </span>
-        <span class="schema-trigger-go" aria-hidden="true">Open</span>
-      </button>
-    </aside>
   </div>
 </div>
 
@@ -145,10 +159,11 @@
   <header class="schema-drawer-head">
     <div>
       <h2 id="consolidation-drawer-title">Consolidation health</h2>
-      <p class="schema-drawer-sub">ADR-018 liveness and coverage — insight and fact consolidation cycles</p>
+      <p class="schema-drawer-sub">Liveness and coverage — insight and fact consolidation cycles</p>
       <p id="consolidation-fetched" class="schema-fetched" hidden></p>
     </div>
     <div class="schema-drawer-actions">
+      <a href="/logs?source=gateway&amp;consolidation=1" class="schema-refresh schema-drawer-link" title="Gateway journal with consolidation filter">Logs</a>
       <button type="button" id="consolidation-refresh" class="schema-refresh" title="Reload consolidation data">↻ Refresh</button>
       <button type="button" id="consolidation-close" class="schema-close" aria-label="Close consolidation panel">×</button>
     </div>
@@ -162,23 +177,22 @@
         <div class="consolidation-summary" id="consolidation-summary"></div>
       </section>
       <section class="schema-block">
-        <h3 class="schema-block-title">Coverage by cycle</h3>
-        <p class="consolidation-note" id="consolidation-nrem-note"></p>
+        <h3 class="schema-block-title">Coverage</h3>
+        <div class="consolidation-summary" id="consolidation-coverage"></div>
+        <p class="consolidation-note" id="consolidation-coverage-note"></p>
         <div class="schema-table-card">
+          <h4>By cycle</h4>
           <div class="schema-table-scroll">
             <table id="consolidation-cycles">
               <thead><tr>
                 <th>Cycle</th><th>Outcome</th><th>Last success</th><th>In flight</th>
-                <th>Failures</th><th>Coverage</th><th>Oldest wait</th><th>Status</th>
+                <th>Failures</th><th>Eligible</th><th>Oldest wait</th><th>Status</th>
               </tr></thead>
               <tbody></tbody>
             </table>
           </div>
         </div>
-      </section>
-      <section class="schema-block">
-        <h3 class="schema-block-title">Correlate in logs</h3>
-        <p class="consolidation-note">Gateway journal patterns: <code>Consolidation run […] completed</code>, <code>CRASHED</code>, <code>deferring</code>, <code>health refresh failed</code>. Use the <a href="/logs?source=gateway&amp;consolidation=1">Logs</a> page with the <strong>Consolidation</strong> filter.</p>
+        <p class="consolidation-note" id="consolidation-nrem-note"></p>
       </section>
     </div>
   </div>
@@ -371,9 +385,9 @@ function renderConsolidation(C) {
 
   const tile = C?.tile || {};
   const state = consolidationCardClass(tile.state);
-  card.className = "consolidation-card " + state;
+  card.className = "drawer-trigger drawer-trigger-status " + state;
   if (C?.reachable === false) {
-    card.className = "consolidation-card unknown";
+    card.className = "drawer-trigger drawer-trigger-status unknown";
     val.textContent = "—";
     if (cap) cap.textContent = C?.error || "gateway unreachable";
     if (stale) stale.hidden = true;
@@ -432,22 +446,45 @@ function renderConsolidationDrilldown(C) {
     tile.fresh === false ? `<div class="consolidation-kpi warn"><span class="k">Signal</span><span class="v">stale</span></div>` : "",
   ].join("");
 
+  const coverage = C?.coverage || {};
+  const covBox = document.getElementById("consolidation-coverage");
+  if (covBox) {
+    const pctText = p => (p == null ? "—" : `${p}%`);
+    const kpis = [];
+    if (coverage.rem_processed != null) kpis.push(["REM-processed facts", String(coverage.rem_processed)]);
+    if (coverage.consolidated != null) kpis.push(["Consolidated", `${coverage.consolidated} · ${pctText(coverage.coverage_pct)}`]);
+    if (coverage.awaiting != null) kpis.push(["Awaiting fold", `${coverage.awaiting} · ${pctText(coverage.awaiting_pct)}`]);
+    covBox.innerHTML = kpis.length
+      ? kpis.map(([k, v]) => `<div class="consolidation-kpi"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`).join("")
+      : `<div class="consolidation-kpi"><span class="k">Coverage</span><span class="v">no fact census</span></div>`;
+  }
+  const covNote = document.getElementById("consolidation-coverage-note");
+  if (covNote) {
+    covNote.textContent = "Coverage = consolidated ÷ REM-processed facts. Awaiting = REM-processed facts not yet folded into a community summary. Per cycle, “Eligible” counts clusters (groups of related facts) that meet the fold gate.";
+  }
+
   const cycles = C?.cycles || [];
   tbody.innerHTML = cycles.length
     ? cycles.map(c => {
-        const cov = c.eligible_clusters ?? c.backlog;
-        const covText = cov == null ? "—" : String(cov);
+        const elig = c.eligible_clusters;
+        const eligText = elig == null ? "—" : String(elig);
+        const outcome = c.last_outcome_display || c.last_outcome || "";
         const err = c.last_error?.class
           ? `${c.last_error.class}: ${c.last_error.msg || ""}`
           : "";
-        const status = c.stalled ? "stalled" : c.in_flight ? "in flight" : c.state === "warn" ? "warn" : "ok";
+        const status = c.stalled ? "stalled"
+          : c.in_flight ? "in flight"
+          : outcome === "crashed" ? "crashed"
+          : c.state === "warn" ? "warn"
+          : outcome === "deferred" ? "deferred"
+          : "ok";
         return `<tr class="consolidation-row-${c.state || "unknown"}">` +
           `<td>${esc(c.label)}</td>` +
-          `<td>${esc(c.last_outcome || "—")}${err ? `<div class="consolidation-err">${esc(err)}</div>` : ""}</td>` +
+          `<td>${esc(outcome || "—")}${err ? `<div class="consolidation-err">${esc(err)}</div>` : ""}</td>` +
           `<td>${esc(c.last_success_age_human || "—")}</td>` +
           `<td>${c.in_flight ? "yes" : "—"}</td>` +
           `<td>${c.consecutive_failures || 0}</td>` +
-          `<td>${esc(covText)}</td>` +
+          `<td>${esc(eligText)}</td>` +
           `<td>${esc(c.eligible_oldest_age_human || "—")}</td>` +
           `<td>${esc(status)}</td></tr>`;
       }).join("")
@@ -594,13 +631,7 @@ function renderSystemHealth(H) {
   });
 
   const hint = document.getElementById("system-hint");
-  if (H?.reachable === false) {
-    hint.textContent = H.error || "gateway unreachable";
-  } else if (H?.summary && status !== "ok") {
-    hint.textContent = H.summary;
-  } else {
-    hint.textContent = "";
-  }
+  hint.textContent = H?.reachable === false ? (H.error || "gateway unreachable") : "";
 }
 
 async function loadSystemHealth() {
@@ -856,8 +887,6 @@ function renderSidebarMetrics(D) {
   const nremRaw = L.facts_unconsolidated || 0;
   const total = rem + nrem || 1;
   const bottleneck = s.bottleneck || "none";
-  document.getElementById("v-bottleneck").textContent =
-    bottleneck === "rem" ? "REM saturated" : bottleneck === "nrem" ? "NREM saturated" : "Caught up";
   document.getElementById("v-rem").textContent = rem;
   document.getElementById("v-nrem").textContent = nrem;
   document.getElementById("split-bar").innerHTML =
