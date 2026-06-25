@@ -120,12 +120,14 @@ def _check_telemetry() -> dict[str, Any]:
     t = payload.get("telemetry") or {}
     nrem = t.get("nrem") if isinstance(t.get("nrem"), dict) else {}
     bd = t.get("breakdown") if isinstance(t.get("breakdown"), dict) else {}
+    cons = t.get("consolidation") if isinstance(t.get("consolidation"), dict) else {}
     return {
         "ok": ok,
         "status": payload.get("status"),
         "error": sanitize_error(str(err)) if err else None,
         "has_nrem": bool(nrem) and "error" not in nrem,
         "has_breakdown": bool(bd) and "error" not in bd,
+        "has_consolidation": bool(cons) and "error" not in cons,
     }
 
 

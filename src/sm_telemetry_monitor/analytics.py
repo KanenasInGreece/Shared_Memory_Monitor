@@ -137,11 +137,24 @@ def story_summary(rows: list[dict]) -> dict:
     uncon_raw = latest.get("facts_unconsolidated") or 0
     nrem_src = latest.get("nrem_backlog_source", "estimate")
 
+    cons_stalled = latest.get("consolidation_stalled")
+    cons_fresh = latest.get("consolidation_fresh")
+    cons_outcome = latest.get("consolidation_last_outcome")
+
     if failed:
         headline = f"{failed} outbox failure(s) — pipeline may be stuck"
         detail = "Check gateway logs and neo4j_outbox before trusting backlog metrics."
         if ignored:
             detail += f" ({ignored} known stale failure(s) excluded from this alert.)"
+    elif cons_fresh is False:
+        headline = "Consolidation signal stale"
+        detail = "Cached /health consolidation snapshot is outdated — do not trust stalled."
+    elif cons_stalled:
+        headline = "Consolidation stalled — eligible backlog not folding"
+        detail = (
+            f"Last outcome: {cons_outcome or 'unknown'}. "
+            "Check gateway journal for CRASHED or deferring lines."
+        )
     elif backlog == 0:
         headline = "Dream cycle caught up"
         detail = "No REM or NREM backlog. New saves will re-queue work."
@@ -175,10 +188,15 @@ def story_summary(rows: list[dict]) -> dict:
 
     eta_rem_h = rem / rem_items_per_hour() if rem and rem_items_per_hour() else None
     bottleneck = "rem" if rem >= nrem else ("nrem" if nrem else "none")
+    health = latest["health"]
+    if cons_stalled and cons_fresh is not False:
+        health = "critical"
+    elif cons_fresh is False and health == "ok":
+        health = "warn"
     return {
         "headline": headline,
         "detail": detail,
-        "health": latest["health"],
+        "health": health,
         "bottleneck": bottleneck,
         "eta_rem_hours": round(eta_rem_h, 1) if eta_rem_h is not None else None,
         "rem_rate_per_hour": round(rem_items_per_hour(), 1),

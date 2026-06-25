@@ -5,7 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from .backup_reader import latest_backup_manifest
-from .bridge import get_health
+from .bridge import get_health, get_telemetry
+from .consolidation import consolidation_from_payload
 from .sanitize import sanitize_error
 from .summary import live_summary
 
@@ -169,9 +170,20 @@ def _build_component(key: str, field: str, label: str, kind: str, raw: dict, t: 
     }
 
 
-def _status_summary(components: list[dict], status: str, *, backup: dict | None = None) -> str:
+def _status_summary(
+    components: list[dict],
+    status: str,
+    *,
+    backup: dict | None = None,
+    consolidation: dict | None = None,
+) -> str:
     if backup and backup.get("in_progress"):
         return "backup underway"
+    tile = (consolidation or {}).get("tile") or {}
+    if tile.get("fresh") is False:
+        return "consolidation signal stale"
+    if tile.get("stalled"):
+        return "consolidation stalled"
     if status == "ok":
         return "all processes up"
     bits: list[str] = []
@@ -290,13 +302,34 @@ def _backup_part(raw: dict, *, reachable: bool, last: dict | None = None) -> dic
     })
 
 
-def _overall_state(components: list[dict], *, reachable: bool) -> str:
+def _consolidation_status(consolidation: dict | None) -> str | None:
+    if not consolidation or not consolidation.get("reachable"):
+        return None
+    tile = consolidation.get("tile") or {}
+    if tile.get("fresh") is False:
+        return "warn"
+    if tile.get("stalled"):
+        return "critical"
+    if tile.get("state") == "warn":
+        return "warn"
+    return None
+
+
+def _overall_state(
+    components: list[dict],
+    *,
+    reachable: bool,
+    consolidation: dict | None = None,
+) -> str:
     if not reachable:
         return "critical"
     states = [c["state"] for c in components]
     if "bad" in states:
         return "critical"
-    if "warn" in states or "unknown" in states:
+    cons = _consolidation_status(consolidation)
+    if cons == "critical":
+        return "critical"
+    if "warn" in states or "unknown" in states or cons == "warn":
         return "warn"
     return "ok"
 
@@ -305,8 +338,10 @@ def system_health_snapshot() -> dict:
     """Live infrastructure (/health) plus workload context from latest telemetry."""
     fetched_at = datetime.now(timezone.utc).isoformat()
     raw = get_health()
+    telemetry_payload = get_telemetry()
     telemetry = _telemetry_latest()
     telemetry_at = telemetry.get("collected_at")
+    consolidation = consolidation_from_payload(raw, telemetry_payload, fetched_at=fetched_at)
 
     last_backup = _resolve_last_backup(raw, reachable=raw.get("status") != "unreachable")
 
@@ -319,6 +354,7 @@ def system_health_snapshot() -> dict:
             "version": None,
             "components": [],
             "backup": _backup_part(raw, reachable=False, last=last_backup),
+            "consolidation": consolidation,
             "error": sanitize_error(raw.get("error")) or "gateway unreachable",
         }
 
@@ -327,11 +363,11 @@ def system_health_snapshot() -> dict:
         for key, field, label, kind in _INFRA_COMPONENTS
     ]
     backup = _backup_part(raw, reachable=True, last=last_backup)
-    status = _overall_state(components, reachable=True)
+    status = _overall_state(components, reachable=True, consolidation=consolidation)
 
     return {
         "status": status,
-        "summary": _status_summary(components, status, backup=backup),
+        "summary": _status_summary(components, status, backup=backup, consolidation=consolidation),
         "reachable": True,
         "fetched_at": fetched_at,
         "telemetry_at": telemetry_at,
@@ -339,5 +375,6 @@ def system_health_snapshot() -> dict:
         "api_version": raw.get("api_version"),
         "components": components,
         "backup": backup,
+        "consolidation": consolidation,
         "error": sanitize_error(raw.get("error")) or None,
     }

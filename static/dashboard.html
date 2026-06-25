@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Shared Memory Monitor</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<link rel="stylesheet" href="/static/theme.css?v=32">
+<link rel="stylesheet" href="/static/theme.css?v=33">
 </head>
 <body data-bar-meta="dashboard">
 
@@ -85,6 +85,17 @@
         </div>
       </div>
 
+      <button type="button" class="consolidation-card ok" id="consolidation-card" aria-live="polite" aria-expanded="false" aria-controls="consolidation-drawer" title="">
+        <span class="consolidation-led" aria-hidden="true"></span>
+        <div class="consolidation-text">
+          <span class="label">Consolidation</span>
+          <span class="value" id="v-consolidation">—</span>
+          <span class="consolidation-caption" id="consolidation-caption">—</span>
+          <span class="consolidation-stale" id="consolidation-stale" hidden>signal stale</span>
+        </div>
+        <span class="consolidation-go" aria-hidden="true">Details</span>
+      </button>
+
       <div class="sidebar-metric featured">
         <div class="label">Dream backlog</div>
         <div class="value" id="v-backlog">—</div>
@@ -128,6 +139,50 @@
     </aside>
   </div>
 </div>
+
+<div id="consolidation-backdrop" class="schema-backdrop" hidden></div>
+<aside id="consolidation-drawer" class="schema-drawer consolidation-drawer" role="dialog" aria-modal="true" aria-labelledby="consolidation-drawer-title" hidden>
+  <header class="schema-drawer-head">
+    <div>
+      <h2 id="consolidation-drawer-title">Consolidation health</h2>
+      <p class="schema-drawer-sub">ADR-018 liveness and coverage — insight and fact consolidation cycles</p>
+      <p id="consolidation-fetched" class="schema-fetched" hidden></p>
+    </div>
+    <div class="schema-drawer-actions">
+      <button type="button" id="consolidation-refresh" class="schema-refresh" title="Reload consolidation data">↻ Refresh</button>
+      <button type="button" id="consolidation-close" class="schema-close" aria-label="Close consolidation panel">×</button>
+    </div>
+  </header>
+  <div class="schema-drawer-body">
+    <p id="consolidation-loading" class="schema-loading">Loading consolidation data…</p>
+    <div id="consolidation-content" class="schema-content" hidden>
+      <div id="consolidation-errors" class="schema-errors" hidden></div>
+      <section class="schema-block">
+        <h3 class="schema-block-title">Liveness</h3>
+        <div class="consolidation-summary" id="consolidation-summary"></div>
+      </section>
+      <section class="schema-block">
+        <h3 class="schema-block-title">Coverage by cycle</h3>
+        <p class="consolidation-note" id="consolidation-nrem-note"></p>
+        <div class="schema-table-card">
+          <div class="schema-table-scroll">
+            <table id="consolidation-cycles">
+              <thead><tr>
+                <th>Cycle</th><th>Outcome</th><th>Last success</th><th>In flight</th>
+                <th>Failures</th><th>Coverage</th><th>Oldest wait</th><th>Status</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+      <section class="schema-block">
+        <h3 class="schema-block-title">Correlate in logs</h3>
+        <p class="consolidation-note">Gateway journal patterns: <code>Consolidation run […] completed</code>, <code>CRASHED</code>, <code>deferring</code>, <code>health refresh failed</code>. Use the <a href="/logs?source=gateway&amp;consolidation=1">Logs</a> page with the <strong>Consolidation</strong> filter.</p>
+      </section>
+    </div>
+  </div>
+</aside>
 
 <div id="schema-backdrop" class="schema-backdrop" hidden></div>
 <aside id="schema-drawer" class="schema-drawer" role="dialog" aria-modal="true" aria-labelledby="schema-drawer-title" hidden>
@@ -195,6 +250,7 @@ let curRange = localStorage.getItem("sm-range") || "6h";
 let charts = {};
 let breakdownAbort = null;
 let schemaDrawerGen = 0;
+let consolidationDrawerGen = 0;
 const C = {rem:"#8bb4d9",nrem:"#b0b0b0",dec:"#3fb950",fail:"#f85149",sum:"#9a9a9a",cum:"#7a8a9a",warn:"#e3b341"};
 const CHART = {grid:"#4a4a4a",text:"#c9c9c9",textBright:"#f4f4f4"};
 
@@ -299,6 +355,183 @@ function healthLine(c) {
   return { text: p, state: healthUiState(proc.state), title };
 }
 
+function consolidationCardClass(state) {
+  if (state === "bad") return "bad";
+  if (state === "warn") return "warn";
+  if (state === "ok") return "ok";
+  return "unknown";
+}
+
+function renderConsolidation(C) {
+  const card = document.getElementById("consolidation-card");
+  const val = document.getElementById("v-consolidation");
+  const cap = document.getElementById("consolidation-caption");
+  const stale = document.getElementById("consolidation-stale");
+  if (!card || !val) return;
+
+  const tile = C?.tile || {};
+  const state = consolidationCardClass(tile.state);
+  card.className = "consolidation-card " + state;
+  if (C?.reachable === false) {
+    card.className = "consolidation-card unknown";
+    val.textContent = "—";
+    if (cap) cap.textContent = C?.error || "gateway unreachable";
+    if (stale) stale.hidden = true;
+    card.title = C?.error || "";
+    return;
+  }
+
+  val.textContent = tile.value || "—";
+  if (cap) cap.textContent = tile.caption || "—";
+  if (stale) stale.hidden = tile.fresh !== false;
+  card.title = [
+    tile.stalled ? "stalled — actionable backlog" : null,
+    tile.fresh === false ? "signal degraded" : null,
+    tile.last_outcome && `outcome: ${tile.last_outcome}`,
+  ].filter(Boolean).join(" · ");
+}
+
+function renderConsolidationDrilldown(C) {
+  const summary = document.getElementById("consolidation-summary");
+  const tbody = document.querySelector("#consolidation-cycles tbody");
+  const note = document.getElementById("consolidation-nrem-note");
+  const fetched = document.getElementById("consolidation-fetched");
+  const errBox = document.getElementById("consolidation-errors");
+  if (!summary || !tbody) return;
+
+  if (errBox) {
+    if (C?.error) {
+      errBox.hidden = false;
+      errBox.innerHTML = `<div class="schema-error"><strong>Gateway</strong><span>${esc(C.error)}</span></div>`;
+    } else {
+      errBox.hidden = true;
+      errBox.innerHTML = "";
+    }
+  }
+
+  if (fetched) {
+    if (C?.fetched_at) {
+      fetched.hidden = false;
+      const ts = C.telemetry_at || C.fetched_at;
+      fetched.textContent = `Telemetry ${String(ts).replace("T", " ").replace("Z", " UTC")}`;
+    } else {
+      fetched.hidden = true;
+    }
+  }
+
+  const tile = C?.tile || {};
+  const rollup = C?.rollup || {};
+  const stallH = rollup.stall_threshold_seconds
+    ? `${Math.round(rollup.stall_threshold_seconds / 60)} min threshold`
+    : "—";
+  summary.innerHTML = [
+    `<div class="consolidation-kpi ${consolidationCardClass(tile.state)}"><span class="k">Health</span><span class="v">${esc(tile.value || "—")}</span></div>`,
+    `<div class="consolidation-kpi"><span class="k">Outcome</span><span class="v">${esc(tile.last_outcome || "—")}</span></div>`,
+    `<div class="consolidation-kpi"><span class="k">Last success</span><span class="v">${esc(tile.last_success_age_human || "—")}</span></div>`,
+    `<div class="consolidation-kpi"><span class="k">Stall threshold</span><span class="v">${esc(stallH)}</span></div>`,
+    tile.fresh === false ? `<div class="consolidation-kpi warn"><span class="k">Signal</span><span class="v">stale</span></div>` : "",
+  ].join("");
+
+  const cycles = C?.cycles || [];
+  tbody.innerHTML = cycles.length
+    ? cycles.map(c => {
+        const cov = c.eligible_clusters ?? c.backlog;
+        const covText = cov == null ? "—" : String(cov);
+        const err = c.last_error?.class
+          ? `${c.last_error.class}: ${c.last_error.msg || ""}`
+          : "";
+        const status = c.stalled ? "stalled" : c.in_flight ? "in flight" : c.state === "warn" ? "warn" : "ok";
+        return `<tr class="consolidation-row-${c.state || "unknown"}">` +
+          `<td>${esc(c.label)}</td>` +
+          `<td>${esc(c.last_outcome || "—")}${err ? `<div class="consolidation-err">${esc(err)}</div>` : ""}</td>` +
+          `<td>${esc(c.last_success_age_human || "—")}</td>` +
+          `<td>${c.in_flight ? "yes" : "—"}</td>` +
+          `<td>${c.consecutive_failures || 0}</td>` +
+          `<td>${esc(covText)}</td>` +
+          `<td>${esc(c.eligible_oldest_age_human || "—")}</td>` +
+          `<td>${esc(status)}</td></tr>`;
+      }).join("")
+    : `<tr class="schema-row-empty"><td colspan="8">No consolidation cycle data</td></tr>`;
+
+  const nd = C?.nrem_density || {};
+  if (note) {
+    const bits = [];
+    if (nd.fact_cycles != null || nd.decision_cycles != null) {
+      bits.push(`NREM density gate: ${nd.fact_cycles ?? 0} fact / ${nd.decision_cycles ?? 0} decision cycles`);
+    }
+    if (nd.note) bits.push(nd.note);
+    note.textContent = bits.join(" — ");
+  }
+}
+
+async function loadConsolidation({ waitPaint = false } = {}) {
+  const gen = consolidationDrawerGen;
+  const loading = document.getElementById("consolidation-loading");
+  const content = document.getElementById("consolidation-content");
+  const refreshBtn = document.getElementById("consolidation-refresh");
+  try {
+    if (loading) { loading.hidden = false; loading.textContent = "Loading consolidation data…"; }
+    if (content) content.hidden = true;
+    if (refreshBtn) refreshBtn.disabled = true;
+    if (waitPaint) await waitDrawerPaint("consolidation-drawer");
+    if (gen !== consolidationDrawerGen) return;
+    const r = await fetch("/api/consolidation");
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const C = await r.json();
+    if (gen !== consolidationDrawerGen) return;
+    renderConsolidation(C);
+    renderConsolidationDrilldown(C);
+    if (loading) loading.hidden = true;
+    if (content) content.hidden = false;
+  } catch (err) {
+    if (gen !== consolidationDrawerGen) return;
+    if (loading) loading.hidden = true;
+    if (content) content.hidden = false;
+    const box = document.getElementById("consolidation-errors");
+    if (box) {
+      box.hidden = false;
+      box.innerHTML = `<div class="schema-error"><strong>Monitor</strong><span>${esc(err.message || "Could not reach /api/consolidation")}</span></div>`;
+    }
+  } finally {
+    if (refreshBtn) refreshBtn.disabled = false;
+  }
+}
+
+function openConsolidationDrawer() {
+  consolidationDrawerGen++;
+  const backdrop = document.getElementById("consolidation-backdrop");
+  const drawer = document.getElementById("consolidation-drawer");
+  const btn = document.getElementById("consolidation-card");
+  backdrop.hidden = false;
+  drawer.hidden = false;
+  requestAnimationFrame(() => {
+    backdrop.classList.add("open");
+    drawer.classList.add("open");
+  });
+  btn.setAttribute("aria-expanded", "true");
+  document.body.classList.add("consolidation-open");
+  loadConsolidation({ waitPaint: true });
+  document.getElementById("consolidation-close").focus();
+}
+
+function closeConsolidationDrawer() {
+  consolidationDrawerGen++;
+  const backdrop = document.getElementById("consolidation-backdrop");
+  const drawer = document.getElementById("consolidation-drawer");
+  const btn = document.getElementById("consolidation-card");
+  backdrop.classList.remove("open");
+  drawer.classList.remove("open");
+  btn.setAttribute("aria-expanded", "false");
+  document.body.classList.remove("consolidation-open");
+  btn.focus();
+  setTimeout(() => {
+    if (!drawer.classList.contains("open")) {
+      backdrop.hidden = true;
+      drawer.hidden = true;
+    }
+  }, 300);
+}
+
 function renderBackup(H) {
   const card = document.getElementById("backup-card");
   const val = document.getElementById("v-backup");
@@ -340,6 +573,7 @@ function renderSystemHealth(H) {
   const status = H?.status || "unknown";
   updateSystemPill(status, H?.summary || "");
   renderBackup(H);
+  renderConsolidation(H?.consolidation || null);
 
   const byKey = Object.fromEntries((H?.components || []).map(c => [c.key, c]));
   document.querySelectorAll("#system-health-row .health-item").forEach(el => {
@@ -422,9 +656,9 @@ function resizeBreakdownCharts() {
   });
 }
 
-function waitDrawerPaint() {
+function waitDrawerPaint(drawerId = "schema-drawer") {
   return new Promise(resolve => {
-    const drawer = document.getElementById("schema-drawer");
+    const drawer = document.getElementById(drawerId);
     let done = false;
     const finish = () => {
       if (done) return;
@@ -592,8 +826,14 @@ document.getElementById("schema-open").addEventListener("click", openSchemaDrawe
 document.getElementById("schema-refresh").addEventListener("click", () => loadBreakdown({ force: true, waitPaint: false }));
 document.getElementById("schema-close").addEventListener("click", closeSchemaDrawer);
 document.getElementById("schema-backdrop").addEventListener("click", closeSchemaDrawer);
+document.getElementById("consolidation-card").addEventListener("click", openConsolidationDrawer);
+document.getElementById("consolidation-refresh").addEventListener("click", () => loadConsolidation({ waitPaint: false }));
+document.getElementById("consolidation-close").addEventListener("click", closeConsolidationDrawer);
+document.getElementById("consolidation-backdrop").addEventListener("click", closeConsolidationDrawer);
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape" && document.getElementById("schema-drawer").classList.contains("open")) closeSchemaDrawer();
+  if (e.key !== "Escape") return;
+  if (document.getElementById("consolidation-drawer").classList.contains("open")) closeConsolidationDrawer();
+  else if (document.getElementById("schema-drawer").classList.contains("open")) closeSchemaDrawer();
 });
 
 function renderSidebarMetrics(D) {

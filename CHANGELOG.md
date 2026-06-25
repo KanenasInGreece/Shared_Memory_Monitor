@@ -6,6 +6,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-06-25
+
+### Added
+
+- **Consolidation health (Status sidebar)** — clickable card keyed on gateway
+  `GET /health` → `consolidation.stalled` / `fresh`; shows outcome and last
+  success age. Opens a drill-down drawer with per-cycle liveness and coverage
+  from `telemetry.consolidation` (ADR-018 / framework PR #79).
+- **`GET /api/consolidation`** — live consolidation panel payload for the drawer.
+- **Logs — Consolidation filter** — on the Gateway daemons tab, chip filters
+  journal lines for consolidation runs, crashes, deferrals, and health-refresh
+  failures; deep link `/logs?source=gateway&consolidation=1`.
+- **`consolidation.py`** — formats liveness + coverage; `doctor` reports
+  `has_consolidation` on telemetry check.
+
+### Changed
+
+- **`/api/health`** — includes `consolidation` block; stalled consolidation
+  raises overall status to **critical**; stale signal (`fresh=false`) to **warn**.
+- **Hero headline** — prioritizes consolidation stalled / signal stale over backlog.
+- **Poll cache** — persists consolidation fields from health + telemetry.
+
 ## [0.4.6] - 2026-06-17
 
 ### Added

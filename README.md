@@ -137,6 +137,7 @@ Open **http://127.0.0.1:8765/**
 | `COORDINATOR_URL` reachable | Default `http://localhost:8888` |
 | **`monitor:read` token** | Framework-issued read-only identity — see [Quick start](#gateway-token-issued-by-the-framework) |
 | `telemetry.nrem` + `telemetry.breakdown` | Phase 3 coordinator fields — upgrade gateway if `check` reports missing |
+| `telemetry.consolidation` + `/health.consolidation` | ADR-018 consolidation signal (v0.4.7+) — upgrade gateway if `check` reports `has_consolidation: false` |
 | Python 3.11+ and [uv](https://docs.astral.sh/uv/) | `uv sync` / CLI |
 
 ### Local logs (required for `/logs` and diagram flows; same host as gateway in practice)
@@ -232,6 +233,7 @@ Charts read the **poll cache** (past `GET /memory/telemetry` responses). Live pa
 | **Hero** headline | Derived labels from cached telemetry JSON |
 | **Sidebar Status** pill | `GET /health` |
 | **Backup** card | `GET /health` (`backup_in_progress`) + latest `sm-backup-*.manifest.json` in `BACKUP_DIR` |
+| **Consolidation** card | `GET /health` → `consolidation` (cached liveness); click opens drill-down from `telemetry.consolidation` |
 | **Dream backlog** | `rem_backlog + nrem_backlog` telemetry fields |
 | **Pipeline queues** | Telemetry postgres/neo4j/outbox fields |
 | **Infrastructure** grid | `GET /health` component blocks |
@@ -269,7 +271,9 @@ Main charts: backlog over time, throughput, cumulative cleared, tier-3 growth & 
 | **REM audit** | `AUDIT_LOG_PATH` | JSONL outbox reviews |
 | **Agent audit** | `GATEWAY_AUDIT_LOG_PATH` | JSONL per-request audit |
 
-Controls: **Follow** / **Pause**, since/until filters, **File** picker (live + `.gz` archives), agent filter chips. Deep link: `/logs?source=agent_audit`.
+Controls: **Follow** / **Pause**, since/until filters, **File** picker (live + `.gz` archives), agent filter chips (agent audit), **Consolidation** filter chip (gateway journal). Deep links: `/logs?source=agent_audit`, `/logs?source=gateway&consolidation=1`.
+
+Gateway journal lines for consolidation observability are severity-colored: `Consolidation run […] CRASHED` (error), `deferring` / `health refresh failed` (warn), completed runs (info).
 
 ---
 
@@ -324,7 +328,8 @@ Entry point alias: `sm-telemetry`
 | `GET /api/meta` | Poll config (not framework data) |
 | `GET /api/summary` | Latest cached telemetry poll + display story |
 | `GET /api/history?range=&bucket=` | Cached telemetry polls |
-| `GET /api/health` | `bridge.get_health()` → gateway `GET /health` |
+| `GET /api/health` | `bridge.get_health()` + `telemetry.consolidation` → enriched infrastructure + consolidation tile |
+| `GET /api/consolidation` | Live consolidation drill-down (`consolidation.py`) |
 | `GET /api/breakdown` | `bridge.get_telemetry()` + `bridge.query_graph()` |
 | `GET /api/diagram` | Cached telemetry + `bridge.get_health()` |
 | `GET /api/diagram/agent-activity?since=&until=` | `logs_reader.agent_activity()` → `agent-audit.jsonl` |
@@ -363,6 +368,22 @@ NREM counts come from `telemetry.nrem` on the gateway — the monitor only displ
 | Sidebar / chart **NREM** | `nrem_backlog` (cycles) |
 | **NREM facts** | `facts_unconsolidated` (raw) |
 
+### Consolidation signal (ADR-018, gateway v0.4.12+)
+
+Requires framework gateway with `telemetry.consolidation` and cached `/health.consolidation`.
+
+| Source | Field | Meaning |
+|--------|-------|---------|
+| `/health` (cached ~60s) | `consolidation.stalled` | **Red alert** — eligible backlog, no fold within stall threshold, nothing in-flight |
+| `/health` | `consolidation.fresh` | `false` → show **signal stale**; do not trust `stalled` |
+| `/health` | `consolidation.last_outcome` | `completed` \| `crashed` \| `deferred` \| null |
+| `telemetry.consolidation` | `insight` / `fact_consolidation` | Per-cycle outcome, in-flight, failures, `last_error`, coverage |
+| `telemetry.consolidation.*.backlog` | strict-gate `eligible_clusters` | **Not** the same as `telemetry.nrem` density cycles |
+
+`decision_cycles > 0` with `eligible_clusters = 0` is normal (cluster fails strict insight gate) — not a stall.
+
+Correlate stalls in the **Gateway daemons** log tab (Consolidation filter): `CRASHED` (code bug), repeated `deferring` (GPU/backup), or `health refresh failed` (stale signal).
+
 ---
 
 ## systemd service
@@ -387,6 +408,7 @@ shared-memory-monitor/
 │   ├── store.py            # telemetry poll cache (SQLite/JSONL)
 │   ├── analytics.py        # display formatting of telemetry fields
 │   ├── system_health.py    # display formatting of GET /health
+│   ├── consolidation.py    # ADR-018 liveness + coverage formatting
 │   ├── breakdown.py        # bridge telemetry + graph for schema drawer
 │   ├── server.py           # UI transport (:8765)
 │   ├── doctor.py           # wiring check
@@ -408,6 +430,8 @@ Regenerate screenshots: `./scripts/capture-screenshots.sh` (Playwright; monitor 
 | Empty charts | Start poll loop or copy `data/` with history |
 | `skill:*` token source | Use dedicated monitor token in monitor `.env` |
 | NREM `estimate` source | Upgrade gateway for `telemetry.nrem` |
+| Consolidation card shows `—` | Upgrade gateway for ADR-018 `telemetry.consolidation`; run `./scripts/check-env.sh` |
+| `fresh=false` on consolidation | Coordinator cache refresh failing — check journal for `consolidation health refresh failed` |
 | Empty agent audit | Enable `GATEWAY_AUDIT_LOG_PATH` on gateway; restart gateway |
 | Empty gateway log tab | `journalctl --user -u hive-mind-gateway.service -n 5` |
 | Port 8765 busy | `fuser -k 8765/tcp` |

@@ -9,6 +9,8 @@ from sm_telemetry_monitor.logs_reader import (
     agent_activity,
     classify_agent_audit_io,
     classify_daemon_audit_io,
+    classify_gateway_line,
+    is_consolidation_line,
     journalctl_cmd,
     journal_unit,
     list_archives,
@@ -251,6 +253,29 @@ class AgentActivityTests(unittest.TestCase):
         self.assertEqual(out["daemon_logic"]["rem_daemon"]["chat"], 1)
         self.assertEqual(out["daemon_logic"]["nrem_daemon"]["embeddings"], 1)
         self.assertEqual(out["agents"], {})
+
+
+class GatewayLogClassifyTests(unittest.TestCase):
+    def test_is_consolidation_line(self):
+        self.assertTrue(is_consolidation_line(
+            "INFO:ConsolidationDaemon:Consolidation run [insight] completed: folds 0/0"
+        ))
+        self.assertTrue(is_consolidation_line(
+            "WARNING:ConsolidationDaemon:NREM: inference GPU busy — deferring consolidation"
+        ))
+        self.assertFalse(is_consolidation_line("INFO: GET /health"))
+
+    def test_classify_gateway_crash(self):
+        line = "ERROR:Consolidation run [insight] CRASHED after 1/2 folds: ValueError: boom"
+        self.assertEqual(classify_gateway_line(line), "line-err")
+
+    def test_classify_health_refresh_failed(self):
+        line = "2026-06-25 12:41:40,325 [WARNING] consolidation health refresh failed: column missing"
+        self.assertEqual(classify_gateway_line(line), "line-warn")
+
+    def test_classify_completed_run(self):
+        line = "INFO:ConsolidationDaemon:Consolidation run [fact_consolidation] completed: folds 1/1"
+        self.assertEqual(classify_gateway_line(line), "line-info")
 
 
 class FilterEntriesTests(unittest.TestCase):

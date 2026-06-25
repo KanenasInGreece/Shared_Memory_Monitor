@@ -421,6 +421,61 @@ def tail_source(
     return payload
 
 
+_CONSOLIDATION_MARKERS = (
+    "consolidation run [",
+    "consolidation health refresh failed",
+    "consolidation_runs:",
+    "insight cycle:",
+    "deferring consolidation",
+    "deferring sweep",
+    "backup in progress — deferring",
+    "inference gpu busy — deferring",
+    "consolidationdaemon:",
+    "marked ",
+    " orphaned in-flight",
+)
+
+
+def is_consolidation_line(text: str) -> bool:
+    """True when a gateway journal line relates to REM/NREM consolidation observability."""
+    low = (text or "").lower()
+    if "consolidation" in low:
+        return True
+    if "insight cycle:" in low:
+        return True
+    if "deferring consolidation" in low or "deferring sweep" in low:
+        return True
+    if "backup in progress — deferring" in low:
+        return True
+    if "nrem:" in low and "deferring" in low:
+        return True
+    if "rem:" in low and "deferring enrichment" in low:
+        return True
+    return any(marker in low for marker in _CONSOLIDATION_MARKERS)
+
+
+def classify_gateway_line(text: str) -> str:
+    """Severity class for gateway journal lines — mirrors logs.html classify()."""
+    low = (text or "").lower()
+    if "crashed after" in low and "consolidation run" in low:
+        return "line-err"
+    if "consolidation health refresh failed" in low:
+        return "line-warn"
+    if "consolidation_runs:" in low and ("orphan" in low or "could not" in low):
+        return "line-warn"
+    if "error" in low or "failed" in low or "critical" in low:
+        return "line-err"
+    if "warn" in low or "defer" in low:
+        return "line-warn"
+    if "consolidation run [" in low and "completed" in low:
+        return "line-info"
+    if "insight cycle:" in low:
+        return "line-info"
+    if "info" in low or "done" in low or "applied" in low:
+        return "line-info"
+    return ""
+
+
 _DAEMON_AGENTS = frozenset({
     "monitor", "rem_daemon", "rem", "nrem_daemon", "nrem", "consolidation",
     "coordinator", "gateway", "hive_mind", "embedder", "reranker", "proxy",

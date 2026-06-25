@@ -27,6 +27,7 @@ from .config import (
     STATIC_DIR,
 )
 from .breakdown import fetch_breakdown
+from .consolidation import consolidation_snapshot
 from .env_loader import bootstrap_env
 from .summary import live_summary
 from .system_health import system_health_snapshot
@@ -127,6 +128,9 @@ class Handler(BaseHTTPRequestHandler):
 
             if path == "/api/health":
                 return self._json(200, system_health_snapshot())
+
+            if path == "/api/consolidation":
+                return self._json(200, consolidation_snapshot())
 
             if path == "/api/diagram":
                 return self._json(200, diagram_payload())

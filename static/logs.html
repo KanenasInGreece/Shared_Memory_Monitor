@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Shared Memory Monitor — Logs</title>
-<link rel="stylesheet" href="/static/theme.css?v=29">
+<link rel="stylesheet" href="/static/theme.css?v=33">
 </head>
 <body class="logs-page">
 
@@ -47,6 +47,7 @@
     <label class="source-ctl"><input type="checkbox" id="follow" checked> Follow</label>
     <label class="source-ctl"><input type="checkbox" id="pause"> Pause</label>
     <div class="chip" id="chip-lines"><span class="k">Lines</span><span class="v">0</span></div>
+    <div class="chip" id="chip-consolidation" role="button" tabindex="0" aria-pressed="false" title="Show consolidation-related lines only" hidden><span class="k">Consolidation</span><span class="v">0</span></div>
     <div class="chip" id="chip-err" role="button" tabindex="0" aria-pressed="false" title="Show errors only"><span class="k">Errors</span><span class="v">0</span></div>
     <div class="chip" id="chip-warn" role="button" tabindex="0" aria-pressed="false" title="Show warnings only"><span class="k">Warnings</span><span class="v">0</span></div>
     <span class="log-status" id="log-status">loading…</span>
@@ -66,13 +67,18 @@
 <script>
 const pageParams = new URLSearchParams(location.search);
 const urlSource = pageParams.get("source");
+if (pageParams.get("consolidation") === "1") {
+  consolidationFilter = true;
+  localStorage.setItem("sm-log-consolidation", "1");
+}
 let source = urlSource || localStorage.getItem("sm-log-source") || "gateway";
 let archivePick = "live";
 let fileOffset = 0;
 let journalSince = null;
 let lastJournalLine = null;
 let sourceLabels = {};
-let totalLines = 0, totalErr = 0, totalWarn = 0;
+let totalLines = 0, totalErr = 0, totalWarn = 0, totalConsolidation = 0;
+let consolidationFilter = localStorage.getItem("sm-log-consolidation") === "1";
 let lineBuffer = [];
 function loadSeverityFilters() {
   const raw = localStorage.getItem("sm-log-severity") || "";
@@ -100,6 +106,7 @@ function hasAgentFilter() {
 }
 function filterStatusNote() {
   const parts = [];
+  if (hasConsolidationFilter()) parts.push("consolidation");
   if (severityFilters.size) {
     const sev = [];
     if (severityFilters.has("error")) sev.push("errors");
@@ -142,6 +149,17 @@ function gatewayAuditAgent(raw) {
   return o?.agent ? String(o.agent) : null;
 }
 
+function isConsolidationLine(text) {
+  const l = (text || "").toLowerCase();
+  if (l.includes("consolidation")) return true;
+  if (l.includes("insight cycle:")) return true;
+  if (l.includes("deferring consolidation") || l.includes("deferring sweep")) return true;
+  if (l.includes("backup in progress — deferring")) return true;
+  if (l.includes("nrem:") && l.includes("deferring")) return true;
+  if (l.includes("rem:") && l.includes("deferring enrichment")) return true;
+  return false;
+}
+
 function classify(text){
   if (source === "agent_audit") {
     const o = parseAgentAudit(text);
@@ -153,20 +171,28 @@ function classify(text){
     }
   }
   const l = (text || "").toLowerCase();
+  if (source === "gateway") {
+    if (l.includes("crashed after") && l.includes("consolidation run")) return "line-err";
+    if (l.includes("consolidation health refresh failed")) return "line-warn";
+    if (l.includes("consolidation_runs:") && (l.includes("orphan") || l.includes("could not"))) return "line-warn";
+  }
   if (l.includes("error") || l.includes("failed") || l.includes("critical")) return "line-err";
   if (l.includes("warn") || l.includes("defer")) return "line-warn";
+  if (l.includes("consolidation run [") && l.includes("completed")) return "line-info";
+  if (l.includes("insight cycle:")) return "line-info";
   if (l.includes("info") || l.includes("done") || l.includes("applied")) return "line-info";
   return "";
 }
 
 function countClasses(lines) {
-  let err = 0, warn = 0;
+  let err = 0, warn = 0, consolidation = 0;
   for (const ln of lines) {
     const c = classify(ln);
     if (c === "line-err") err++;
     else if (c === "line-warn") warn++;
+    if (source === "gateway" && isConsolidationLine(ln)) consolidation++;
   }
-  return {err, warn};
+  return {err, warn, consolidation};
 }
 
 function setChip(id, val, cls, featured) {
@@ -182,6 +208,12 @@ function setChip(id, val, cls, featured) {
     if (count > 0 || severityFilters.has(kind)) cn += " chip-clickable";
     el.setAttribute("aria-pressed", String(severityFilters.has(kind)));
   }
+  if (id === "chip-consolidation") {
+    if (consolidationFilter) cn += " chip-filter-active";
+    if (totalConsolidation > 0 || consolidationFilter) cn += " chip-clickable";
+    el.setAttribute("aria-pressed", String(consolidationFilter));
+    el.hidden = source !== "gateway";
+  }
   el.className = cn;
 }
 
@@ -189,6 +221,7 @@ function resetCounts() {
   totalLines = 0;
   totalErr = 0;
   totalWarn = 0;
+  totalConsolidation = 0;
   lineBuffer = [];
 }
 
@@ -197,9 +230,15 @@ function recomputeStats() {
   totalLines = lineBuffer.length;
   totalErr = c.err;
   totalWarn = c.warn;
+  totalConsolidation = c.consolidation;
+}
+
+function hasConsolidationFilter() {
+  return source === "gateway" && consolidationFilter;
 }
 
 function linePassesFilters(ln) {
+  if (hasConsolidationFilter() && !isConsolidationLine(ln)) return false;
   if (hasAgentFilter()) {
     const agent = gatewayAuditAgent(ln);
     if (!agent || !agentFilters.has(agent)) return false;
@@ -212,21 +251,27 @@ function linePassesFilters(ln) {
 }
 
 function visibleLines() {
-  if (!severityFilters.size && !hasAgentFilter()) return lineBuffer;
+  if (!severityFilters.size && !hasAgentFilter() && !hasConsolidationFilter()) return lineBuffer;
   return lineBuffer.filter(linePassesFilters);
 }
 
 function agentEmptyMessage() {
+  if (hasConsolidationFilter() && !hasAgentFilter() && !severityFilters.size) {
+    return "(no consolidation-related lines in view)";
+  }
   if (!hasAgentFilter()) return severityEmptyMessage();
   const agents = [...agentFilters].sort().join(", ");
-  if (!severityFilters.size) return `(no lines for agent${agentFilters.size > 1 ? "s" : ""}: ${agents})`;
+  if (!severityFilters.size && !hasConsolidationFilter()) {
+    return `(no lines for agent${agentFilters.size > 1 ? "s" : ""}: ${agents})`;
+  }
   return `(no matching lines for ${agents})`;
 }
 
 function updateChips() {
   const shown = visibleLines().length;
-  const filtered = hasSeverityFilter() || hasAgentFilter();
+  const filtered = hasSeverityFilter() || hasAgentFilter() || hasConsolidationFilter();
   setChip("chip-lines", filtered ? `${shown}/${totalLines}` : String(totalLines));
+  setChip("chip-consolidation", totalConsolidation, totalConsolidation > 0 ? "" : "");
   setChip("chip-err", totalErr, totalErr > 0 ? "bad" : "good");
   setChip("chip-warn", totalWarn, totalWarn > 0 ? "warn" : "");
   renderAgentChips();
@@ -309,6 +354,21 @@ function appendLog(lines) {
   updateChips();
 }
 
+function toggleConsolidationFilter() {
+  if (consolidationFilter) {
+    consolidationFilter = false;
+    localStorage.removeItem("sm-log-consolidation");
+  } else if (totalConsolidation > 0) {
+    consolidationFilter = true;
+    localStorage.setItem("sm-log-consolidation", "1");
+  } else {
+    return;
+  }
+  paintLog(agentEmptyMessage());
+  const el = document.getElementById("log");
+  if (document.getElementById("follow").checked) el.scrollTop = el.scrollHeight;
+}
+
 function toggleSeverityFilter(kind) {
   const count = kind === "error" ? totalErr : totalWarn;
   if (severityFilters.has(kind)) {
@@ -335,6 +395,14 @@ function bindSeverityChips() {
       }
     });
   }
+  const cons = document.getElementById("chip-consolidation");
+  cons.addEventListener("click", toggleConsolidationFilter);
+  cons.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      toggleConsolidationFilter();
+    }
+  });
 }
 
 const JOURNAL_TS_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)/;
@@ -513,6 +581,8 @@ function bindSourceTabs(sources) {
     localStorage.removeItem("sm-log-severity");
     agentFilters = new Set();
     localStorage.removeItem("sm-log-agents");
+    consolidationFilter = false;
+    localStorage.removeItem("sm-log-consolidation");
     resetCounts();
     syncSourceTabs();
     loadArchives().then(() => refresh(true));
