@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-06-25
+
 ### Changed
 
 - **Sidebar drill-downs** — Consolidation and Schema breakdown share a
