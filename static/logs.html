@@ -172,15 +172,25 @@ function classify(text){
       const st = Number(o.status);
       if (st >= 500) return "line-err";
       if (st >= 400) return "line-warn";
-      if (st >= 200) return "line-info";
+      return "line-info";
     }
+    return "";
   }
+  if (source === "rem_audit") {
+    // Structured outbox-review audit: classify by the review status only — do
+    // NOT scan the memory payload, which can contain words like "error"/"failed".
+    try {
+      const st = String(JSON.parse(text).status || "").toLowerCase();
+      if (st.includes("fail") || st.includes("error") || st.includes("crash")) return "line-err";
+      if (st.includes("skip") || st.includes("defer") || st.includes("warn")) return "line-warn";
+    } catch (_) {}
+    return "line-info";
+  }
+  // gateway journal — free-text heuristics
   const l = (text || "").toLowerCase();
-  if (source === "gateway") {
-    if (l.includes("crashed after") && l.includes("consolidation run")) return "line-err";
-    if (l.includes("consolidation health refresh failed")) return "line-warn";
-    if (l.includes("consolidation_runs:") && (l.includes("orphan") || l.includes("could not"))) return "line-warn";
-  }
+  if (l.includes("crashed after") && l.includes("consolidation run")) return "line-err";
+  if (l.includes("consolidation health refresh failed")) return "line-warn";
+  if (l.includes("consolidation_runs:") && (l.includes("orphan") || l.includes("could not"))) return "line-warn";
   if (l.includes("error") || l.includes("failed") || l.includes("critical")) return "line-err";
   if (l.includes("warn") || l.includes("defer")) return "line-warn";
   if (l.includes("consolidation run [") && l.includes("completed")) return "line-info";

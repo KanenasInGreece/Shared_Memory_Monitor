@@ -22,6 +22,7 @@ class PageSpec(TypedDict):
     viewport: dict[str, int]
     full_page: NotRequired[bool]
     element: NotRequired[str]
+    open: NotRequired[str]
 
 
 PAGES: list[PageSpec] = [
@@ -36,6 +37,13 @@ PAGES: list[PageSpec] = [
         "path": "/?schema=1&capture=1",
         "viewport": {"width": 1440, "height": 900},
         "element": "#schema-content",
+    },
+    {
+        "name": "consolidation.png",
+        "path": "/",
+        "viewport": {"width": 1440, "height": 900},
+        "element": "#consolidation-content",
+        "open": "#consolidation-card",
     },
     {
         "name": "diagram.png",
@@ -105,6 +113,13 @@ def main() -> None:
                 page.wait_for_timeout(600)
                 page.evaluate(_SCHEMA_EXPAND_JS)
                 page.wait_for_timeout(200)
+            opener = spec.get("open")
+            if opener:
+                page.wait_for_selector(opener, timeout=60_000)
+                page.click(opener)
+                page.wait_for_selector("#consolidation-drawer.open", timeout=60_000)
+                page.wait_for_selector("#consolidation-content:not([hidden])", timeout=60_000)
+                page.wait_for_timeout(600)
             target = OUT / name
             element = spec.get("element")
             if element:

@@ -30,6 +30,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **REM audit false errors** — the log severity classifier scanned the whole
+  JSONL line (including the memory-content payload), so benign REM-audit entries
+  whose content mentioned “error”/“failed”/“defer” were painted red/amber.
+  Structured audit lines are now classified by their status field only; the
+  free-text heuristics are restricted to the gateway journal.
 - **Redundant bottleneck label** — the REM/NREM saturation verdict appeared in
   both the hero banner and a sidebar card; the card is now **REM / NREM split**
   (split bar, counts, ETA) and the banner is the single source of the verdict.
@@ -44,6 +49,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Dashboard layout** — removed the fixed 340px right sidebar column (empty grid
   strip + nested scrollbar); status blocks are a full-width **status deck**
   above the charts.
+
+### Docs
+
+- Refreshed README screenshots for the status-deck layout and added a
+  **Consolidation health** drawer capture (`scripts/capture_screenshots.py` now
+  captures the consolidation drill-down). Documented the consolidation drawer
+  liveness/coverage fields and their sources.
 
 ## [0.4.7] - 2026-06-25
 

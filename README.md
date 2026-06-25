@@ -63,13 +63,19 @@ Captured from a running monitor (`./scripts/capture-screenshots.sh`).
 
 ### Monitor (`/`)
 
-Backlog charts, pipeline queues, and infrastructure health from gateway telemetry (cached polls + live `GET /health`). Range selector (`1h`–`all`) filters the local poll cache.
+A full-width **status deck** above the charts, in three labelled rows — **Drill-down** (Consolidation + Schema breakdown), **Backlog & queues** (Dream backlog, REM / NREM split, Pipeline queues), and Backup / Infrastructure — followed by backlog charts. All from gateway telemetry (cached polls + live `GET /health`). Range selector (`1h`–`all`) filters the local poll cache.
 
-![Monitor — backlog charts, pipeline queues, infrastructure health](docs/images/dashboard.png)
+![Monitor — status deck, backlog charts, pipeline queues, infrastructure health](docs/images/dashboard.png)
+
+### Consolidation health (side drawer)
+
+Opens from **Drill-down → Consolidation**. **Liveness** (health, last outcome, last success, stall threshold) from cached `GET /health`; **Coverage** computed from the `telemetry.neo4j` fact census — REM-processed facts, consolidated count + %, and awaiting-fold count + %. The per-cycle table lists insight and fact-consolidation cycles with their outcome, eligible clusters, and oldest wait. A deferred cycle with nothing eligible shows as **idle** (not a warning).
+
+![Consolidation health — liveness KPIs, fact coverage %, per-cycle table](docs/images/consolidation.png)
 
 ### Schema breakdown (side drawer)
 
-Opens from **Schema breakdown** in the sidebar — a slide-over panel on the right, not a separate page. Neo4j graph from `POST /memory/graph`; Postgres inventory from `telemetry.breakdown`.
+Opens from **Drill-down → Schema breakdown** — a slide-over panel on the right, not a separate page. Neo4j graph from `POST /memory/graph`; Postgres inventory from `telemetry.breakdown`.
 
 ![Schema breakdown — Neo4j labels, graph paths, telemetry record types and domains](docs/images/schema-breakdown.png)
 
@@ -231,13 +237,25 @@ Charts read the **poll cache** (past `GET /memory/telemetry` responses). Live pa
 |-----------------|----------|
 | **Range** (`1h`–`all`) | Filters cached telemetry polls |
 | **Hero** headline | Derived labels from cached telemetry JSON |
-| **Sidebar Status** pill | `GET /health` |
-| **Backup** card | `GET /health` (`backup_in_progress`) + latest `sm-backup-*.manifest.json` in `BACKUP_DIR` |
-| **Dream backlog** | `rem_backlog + nrem_backlog` telemetry fields |
-| **Pipeline queues** | Telemetry postgres/neo4j/outbox fields |
-| **Infrastructure** grid | `GET /health` component blocks |
-| **Drill-down → Consolidation** | `GET /health` → `consolidation` (cached liveness); opens drawer from `telemetry.consolidation` |
+| **Status** pill | `GET /health` (WARN reason on hover; component detail in the Infrastructure grid) |
+| **Drill-down → Consolidation** | `GET /health` → `consolidation` (cached liveness); opens drawer from `telemetry.consolidation` + `telemetry.neo4j` |
 | **Drill-down → Schema breakdown** | `telemetry.breakdown` + `POST /memory/graph` |
+| **Dream backlog** | `rem_backlog + nrem_backlog` telemetry fields |
+| **REM / NREM split** | `rem_backlog` vs `nrem_backlog` + ETA (the saturation verdict lives in the hero, not here) |
+| **Pipeline queues** | Telemetry postgres/neo4j/outbox fields |
+| **Backup** card | `GET /health` (`backup_in_progress`) + latest `sm-backup-*.manifest.json` in `BACKUP_DIR` |
+| **Infrastructure** grid | `GET /health` component blocks |
+
+Consolidation drawer fields:
+
+| Field | Source / meaning |
+|-------|------------------|
+| **Liveness** (health · outcome · last success · stall threshold) | `GET /health.consolidation` (cached) + `telemetry.consolidation` |
+| **Coverage** — REM-processed facts | `facts_total − facts_rem_pending` (`telemetry.neo4j`) |
+| **Coverage** — consolidated (N · %) | `rem_processed − facts_unconsolidated`, over REM-processed |
+| **Coverage** — awaiting fold (N · %) | `facts_unconsolidated`, over REM-processed |
+| **By cycle → Eligible** | `eligible_clusters` — strict-gate clusters awaiting a fold (not a ratio) |
+| **By cycle → Oldest wait** | `eligible_oldest_age_seconds` (K-th oldest anchor) |
 
 Main charts: backlog over time, throughput, cumulative cleared, tier-3 growth & errors, raw samples table.
 
