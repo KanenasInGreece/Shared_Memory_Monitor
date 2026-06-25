@@ -44,11 +44,13 @@ def _pct(num: int | None, den: int | None) -> int | None:
     return round(100 * num / den)
 
 
-def _fact_coverage(neo4j: dict) -> dict:
-    """Fact-level consolidation coverage derived from the neo4j fact census.
+def _fact_coverage(neo4j: dict, summaries: list | None = None) -> dict:
+    """Consolidation coverage from the neo4j fact/decision census + summary kinds.
 
     REM-processed facts = total − awaiting REM. Of those, the ones not yet folded
     into a community summary are 'awaiting' (eligible); the rest are consolidated.
+    `summaries` (telemetry.breakdown.summaries) lists produced consolidations by
+    kind — the output-side evidence that consolidation has occurred.
     """
     total = neo4j.get("facts_total")
     rem_pending = neo4j.get("facts_rem_pending")
@@ -61,6 +63,23 @@ def _fact_coverage(neo4j: dict) -> dict:
     if rem_processed is not None and isinstance(awaiting, int):
         consolidated = max(rem_processed - awaiting, 0)
 
+    dec_total = neo4j.get("decisions_total")
+    dec_pending = neo4j.get("decisions_rem_pending")
+    dec_processed = None
+    if isinstance(dec_total, int) and isinstance(dec_pending, int):
+        dec_processed = max(dec_total - dec_pending, 0)
+
+    kinds: list[dict] = []
+    active_total = superseded_total = 0
+    for s in summaries or []:
+        if not isinstance(s, dict):
+            continue
+        active = int(s.get("active") or 0)
+        superseded = int(s.get("superseded") or 0)
+        kinds.append({"kind": s.get("kind") or "?", "active": active, "superseded": superseded})
+        active_total += active
+        superseded_total += superseded
+
     return {
         "facts_total": total,
         "facts_rem_pending": rem_pending,
@@ -69,6 +88,12 @@ def _fact_coverage(neo4j: dict) -> dict:
         "awaiting": awaiting,
         "coverage_pct": _pct(consolidated, rem_processed),
         "awaiting_pct": _pct(awaiting, rem_processed),
+        "decisions_total": dec_total,
+        "decisions_rem_pending": dec_pending,
+        "decisions_rem_processed": dec_processed,
+        "summaries": kinds,
+        "summaries_active": active_total,
+        "summaries_superseded": superseded_total,
     }
 
 
@@ -114,7 +139,7 @@ def _normalize_cycle(key: str, raw: dict | None) -> dict:
         "last_outcome": outcome,
         "last_outcome_display": outcome_display,
         "last_success_age_seconds": age,
-        "last_success_age_human": humanize_age(age) if age is not None else "never",
+        "last_success_age_human": humanize_age(age) if age is not None else "—",
         "in_flight": bool(raw.get("in_flight")),
         "consecutive_failures": int(raw.get("consecutive_failures") or 0),
         "backlog": backlog,
@@ -162,7 +187,7 @@ def _tile_caption(
     *,
     fresh: bool,
     last_outcome: str | None,
-    age_human: str,
+    age_human: str | None,
     stalled: bool,
 ) -> str:
     if fresh is False:
@@ -195,6 +220,7 @@ def consolidation_from_payload(
     nrem_density = {}
     rollup = {}
     neo4j_census = {}
+    summaries_by_kind: list = []
 
     if isinstance(telemetry_payload, dict) and telemetry_payload.get("status") == "success":
         t = telemetry_payload.get("telemetry") or {}
@@ -205,6 +231,9 @@ def consolidation_from_payload(
             nrem_density = t["nrem"]
         if isinstance(t.get("neo4j"), dict):
             neo4j_census = t["neo4j"]
+        breakdown = t.get("breakdown")
+        if isinstance(breakdown, dict) and isinstance(breakdown.get("summaries"), list):
+            summaries_by_kind = breakdown["summaries"]
 
     cycles = [
         _normalize_cycle("insight", rollup.get("insight")),
@@ -221,7 +250,20 @@ def consolidation_from_payload(
     age = health_cons.get("last_success_age_seconds")
     if age is None:
         age = rollup.get("last_success_age_seconds")
-    age_human = humanize_age(age) if age is not None else "never"
+    if age is None:
+        # The top-level rollup can be null even when a cycle has succeeded; fall
+        # back to the freshest per-cycle success so we never claim "never" when a
+        # fold has actually happened.
+        cycle_ages = [
+            c["last_success_age_seconds"]
+            for c in cycles
+            if c.get("last_success_age_seconds") is not None
+        ]
+        if cycle_ages:
+            age = min(cycle_ages)
+    # No timestamp anywhere → leave it unset (the UI omits the field) rather than
+    # asserting "never"; the Coverage section carries the evidence of past folds.
+    age_human = humanize_age(age) if age is not None else None
 
     tile_state = _tile_state(
         stalled=stalled,
@@ -261,7 +303,7 @@ def consolidation_from_payload(
             "stall_threshold_seconds": rollup.get("stall_threshold_seconds"),
         },
         "cycles": cycles,
-        "coverage": _fact_coverage(neo4j_census),
+        "coverage": _fact_coverage(neo4j_census, summaries_by_kind),
         "nrem_density": {
             **nrem_density,
             "note": _NREM_DENSITY_NOTE,

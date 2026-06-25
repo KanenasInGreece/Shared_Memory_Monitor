@@ -135,6 +135,67 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         self.assertIsNone(cov["rem_processed"])
         self.assertIsNone(cov["coverage_pct"])
 
+    def test_last_success_falls_back_to_freshest_cycle(self):
+        # Top-level rollup age is null but a cycle succeeded — use the cycle age.
+        health = {
+            "status": "ok",
+            "consolidation": {"stalled": False, "fresh": True, "last_outcome": "completed",
+                              "last_success_age_seconds": None},
+        }
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "insight": {"last_outcome": "completed", "last_success_age_seconds": None,
+                                "eligible_clusters": 0, "stalled": False},
+                    "fact_consolidation": {"last_outcome": "completed", "last_success_age_seconds": 16255,
+                                           "eligible_clusters": 0, "stalled": False},
+                },
+            },
+        }
+        tile = consolidation_from_payload(health, telemetry)["tile"]
+        self.assertEqual(tile["last_success_age_seconds"], 16255)
+        self.assertTrue(tile["last_success_age_human"])
+
+    def test_last_success_omitted_when_unknown(self):
+        health = {
+            "status": "ok",
+            "consolidation": {"stalled": False, "fresh": True, "last_outcome": "completed",
+                              "last_success_age_seconds": None},
+        }
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "insight": {"last_outcome": "completed", "last_success_age_seconds": None, "stalled": False},
+                    "fact_consolidation": {"last_outcome": "deferred", "last_success_age_seconds": None, "stalled": False},
+                },
+            },
+        }
+        tile = consolidation_from_payload(health, telemetry)["tile"]
+        self.assertIsNone(tile["last_success_age_seconds"])
+        self.assertIsNone(tile["last_success_age_human"])
+
+    def test_coverage_decisions_and_summaries(self):
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "neo4j": {"facts_total": 175, "facts_rem_pending": 0, "facts_unconsolidated": 22,
+                          "decisions_total": 119, "decisions_rem_pending": 0},
+                "breakdown": {"summaries": [
+                    {"kind": "insight", "active": 13, "superseded": 0},
+                    {"kind": "thematic", "active": 7, "superseded": 1},
+                ]},
+            },
+        }
+        cov = consolidation_from_payload(health, telemetry)["coverage"]
+        self.assertEqual(cov["decisions_total"], 119)
+        self.assertEqual(cov["decisions_rem_processed"], 119)
+        self.assertEqual(len(cov["summaries"]), 2)
+        self.assertEqual(cov["summaries_active"], 20)
+        self.assertEqual(cov["summaries_superseded"], 1)
+
     def test_stalled_tile(self):
         health = {
             "status": "ok",

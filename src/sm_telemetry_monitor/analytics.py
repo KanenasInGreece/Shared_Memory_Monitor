@@ -23,8 +23,8 @@ PIPELINE_STAGES = (
     ("facts_total", "Neo4j facts", "Facts in knowledge graph"),
     ("facts_rem_pending", "REM queue (facts)", "Awaiting LLM enrichment"),
     ("decisions_rem_pending", "REM queue (decisions)", "Awaiting decision enrichment"),
-    ("nrem_backlog", "NREM cycles", f"Pending consolidations (≥{NREM_FACT_CLUSTER_MIN} facts or ≥{NREM_DECISION_CLUSTER_MIN} decisions per domain)"),
-    ("facts_unconsolidated", "NREM facts (raw)", "rem_processed facts not yet consolidated — not cycle count"),
+    ("nrem_backlog", "NREM cycles", f"Clusters that met the density gate (≥{NREM_FACT_CLUSTER_MIN} facts or ≥{NREM_DECISION_CLUSTER_MIN} decisions per domain) and are queued for the next consolidation sweep"),
+    ("facts_unconsolidated", "Unconsolidated", f"REM-processed facts not yet folded into a summary — they wait until a cluster meets the gate (≥{NREM_FACT_CLUSTER_MIN}/domain). A pool, not a backlog or pending cycles"),
     ("facts_consolidated", "Consolidated facts", "Merged into entity hubs"),
     ("summaries_total", "Tier-3 summaries", "Community narratives"),
 )

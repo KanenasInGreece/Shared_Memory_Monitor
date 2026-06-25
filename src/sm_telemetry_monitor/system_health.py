@@ -90,7 +90,8 @@ def _process_part(key: str, raw_value, kind: str) -> dict:
     }
 
 
-def _workload_part(key: str, raw: dict, t: dict) -> dict:
+def _workload_part(key: str, raw: dict, t: dict, *, nrem_stalled: bool = False,
+                   llm_busy: bool = False) -> dict:
     llm_ok = _state(raw.get("llm")) == "ok"
     rem_q = t.get("rem_backlog")
     nrem_q = t.get("nrem_backlog")
@@ -131,10 +132,12 @@ def _workload_part(key: str, raw: dict, t: dict) -> dict:
         st = _state(raw.get("llm"))
         if st != "ok":
             return {"value": "unavailable", "state": "bad", "caption": "dream cycle blocked"}
-        backlog = (rem_q or 0) + (nrem_q or 0)
-        if backlog > 0:
-            return {"value": "busy", "state": "ok", "caption": f"dream cycle ({backlog} backlog)"}
-        return {"value": "idle", "state": "ok", "caption": "dream cycle load"}
+        # /health only tells us the LLM is reachable. "Busy" means a dream cycle is
+        # actually running inference now (a cycle in flight) — NOT merely that a
+        # backlog exists (gated work can sit queued with the LLM idle).
+        if llm_busy:
+            return {"value": "busy", "state": "ok", "caption": "dream-cycle inference in flight"}
+        return {"value": "ready", "state": "ok", "caption": "reachable · no active cycle"}
 
     if key == "rem_daemon":
         proc = _state(raw.get("rem_daemon"))
@@ -151,15 +154,23 @@ def _workload_part(key: str, raw: dict, t: dict) -> dict:
             return {"value": "—", "state": "bad", "caption": "NREM backlog"}
         if not llm_ok:
             return {"value": "blocked (LLM down)", "state": "bad", "caption": "NREM backlog"}
-        st, val = _queue_state(nrem_q, warn_at=1, hot_at=10)
-        return {"value": val, "state": st, "caption": "NREM backlog"}
+        # A non-zero NREM backlog is normal: clusters wait for the density gate
+        # and fold on the next sweep. The actionable signal is consolidation
+        # stall (ADR-018), not the raw count — so only warn when stalled.
+        n = nrem_q or 0
+        if n <= 0:
+            return {"value": "queue idle", "state": "ok", "caption": "NREM backlog"}
+        if nrem_stalled:
+            return {"value": f"{n} stalled", "state": "warn", "caption": "NREM backlog"}
+        return {"value": f"{n} queued", "state": "ok", "caption": "NREM backlog"}
 
     return {"value": "—", "state": "unknown", "caption": "workload"}
 
 
-def _build_component(key: str, field: str, label: str, kind: str, raw: dict, t: dict) -> dict:
+def _build_component(key: str, field: str, label: str, kind: str, raw: dict, t: dict,
+                     *, nrem_stalled: bool = False, llm_busy: bool = False) -> dict:
     process = _process_part(key, raw.get(field), kind)
-    workload = _workload_part(key, raw, t)
+    workload = _workload_part(key, raw, t, nrem_stalled=nrem_stalled, llm_busy=llm_busy)
     return {
         "key": key,
         "label": label,
@@ -358,8 +369,11 @@ def system_health_snapshot() -> dict:
             "error": sanitize_error(raw.get("error")) or "gateway unreachable",
         }
 
+    nrem_stalled = bool((consolidation.get("tile") or {}).get("stalled"))
+    llm_busy = any(c.get("in_flight") for c in (consolidation.get("cycles") or []))
     components = [
-        _build_component(key, field, label, kind, raw, telemetry)
+        _build_component(key, field, label, kind, raw, telemetry,
+                         nrem_stalled=nrem_stalled, llm_busy=llm_busy)
         for key, field, label, kind in _INFRA_COMPONENTS
     ]
     backup = _backup_part(raw, reachable=True, last=last_backup)

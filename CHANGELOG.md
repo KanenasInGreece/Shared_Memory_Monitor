@@ -6,6 +6,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-06-25
+
+### Changed
+
+- **Consolidation drill-down — liveness & coverage depth.** "Last success" is now
+  derived from the freshest per-cycle success when the top-level rollup is null
+  (no more false "never" while consolidated facts/insights exist), and is hidden
+  entirely when no timestamp exists anywhere. Coverage adds a **Decisions (REM)**
+  line and a **Consolidations by type** breakdown (insight / thematic / community,
+  active + superseded) — the output-side evidence that consolidation has run.
+- **Pipeline queues — NREM clarity.** Renamed "NREM facts" → **Unconsolidated**;
+  NREM cycles and Unconsolidated are density-gated (facts wait until a cluster
+  meets the gate), so a non-zero count is normal. They now read **green = healthy**
+  (red only when consolidation is stalled) instead of an ambiguous grey, with
+  hover tooltips sourced from the telemetry hints.
+- **NREM daemon & Status pill — consistent signal.** A non-zero NREM backlog no
+  longer marks the Infrastructure NREM daemon `warn` (amber) or trips the Status
+  pill to **WARN** with an "NREM N" summary. The daemon shows "N queued" (ok) and
+  only warns when the consolidation signal is **stalled** — so the same pending
+  cycle is never green in the pipeline yet amber in Infrastructure.
+- **LLM "Busy" restated.** The LLM tile previously showed **Busy** whenever a
+  REM/NREM backlog existed, even with the LLM idle (the gateway only reports it
+  reachable). It now shows **Up** (reachable · no active cycle) and **Busy** only
+  when a dream cycle is actually in flight — so "Busy" reflects real inference,
+  not merely queued/gated work.
+
 ## [0.4.8] - 2026-06-25
 
 ### Changed

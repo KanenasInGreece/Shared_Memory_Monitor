@@ -179,6 +179,8 @@
       <section class="schema-block">
         <h3 class="schema-block-title">Coverage</h3>
         <div class="consolidation-summary" id="consolidation-coverage"></div>
+        <div class="section-title section-title-tight" id="consolidation-bytype-head" hidden>Consolidations by type</div>
+        <div class="consolidation-summary" id="consolidation-bytype" hidden></div>
         <p class="consolidation-note" id="consolidation-coverage-note"></p>
         <div class="schema-table-card">
           <h4>By cycle</h4>
@@ -264,6 +266,7 @@ let curRange = localStorage.getItem("sm-range") || "6h";
 let charts = {};
 let breakdownAbort = null;
 let schemaDrawerGen = 0;
+let consolidationStalled = false;  // shared from /api/health → colors NREM pipeline cells
 let consolidationDrawerGen = 0;
 const C = {rem:"#8bb4d9",nrem:"#b0b0b0",dec:"#3fb950",fail:"#f85149",sum:"#9a9a9a",cum:"#7a8a9a",warn:"#e3b341"};
 const CHART = {grid:"#4a4a4a",text:"#c9c9c9",textBright:"#f4f4f4"};
@@ -438,10 +441,12 @@ function renderConsolidationDrilldown(C) {
   const stallH = rollup.stall_threshold_seconds
     ? `${Math.round(rollup.stall_threshold_seconds / 60)} min threshold`
     : "—";
+  // "Last success" is omitted when no timestamp exists (rather than "never") —
+  // Coverage below shows that consolidation has produced output.
   summary.innerHTML = [
     `<div class="consolidation-kpi ${consolidationCardClass(tile.state)}"><span class="k">Health</span><span class="v">${esc(tile.value || "—")}</span></div>`,
     `<div class="consolidation-kpi"><span class="k">Outcome</span><span class="v">${esc(tile.last_outcome || "—")}</span></div>`,
-    `<div class="consolidation-kpi"><span class="k">Last success</span><span class="v">${esc(tile.last_success_age_human || "—")}</span></div>`,
+    tile.last_success_age_human ? `<div class="consolidation-kpi"><span class="k">Last success</span><span class="v">${esc(tile.last_success_age_human)}</span></div>` : "",
     `<div class="consolidation-kpi"><span class="k">Stall threshold</span><span class="v">${esc(stallH)}</span></div>`,
     tile.fresh === false ? `<div class="consolidation-kpi warn"><span class="k">Signal</span><span class="v">stale</span></div>` : "",
   ].join("");
@@ -454,9 +459,35 @@ function renderConsolidationDrilldown(C) {
     if (coverage.rem_processed != null) kpis.push(["REM-processed facts", String(coverage.rem_processed)]);
     if (coverage.consolidated != null) kpis.push(["Consolidated", `${coverage.consolidated} · ${pctText(coverage.coverage_pct)}`]);
     if (coverage.awaiting != null) kpis.push(["Awaiting fold", `${coverage.awaiting} · ${pctText(coverage.awaiting_pct)}`]);
+    if (coverage.decisions_total != null) {
+      const dp = coverage.decisions_rem_processed;
+      kpis.push(["Decisions (REM)", dp != null ? `${dp} / ${coverage.decisions_total}` : String(coverage.decisions_total)]);
+    }
     covBox.innerHTML = kpis.length
       ? kpis.map(([k, v]) => `<div class="consolidation-kpi"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`).join("")
       : `<div class="consolidation-kpi"><span class="k">Coverage</span><span class="v">no fact census</span></div>`;
+  }
+
+  const byType = document.getElementById("consolidation-bytype");
+  const byTypeHead = document.getElementById("consolidation-bytype-head");
+  const kinds = coverage.summaries || [];
+  if (byType) {
+    const labelFor = k => k === "insight" ? "Insights"
+      : k === "thematic" ? "Thematic"
+      : k === "community_summary" ? "Community"
+      : k;
+    if (kinds.length) {
+      byType.hidden = false;
+      if (byTypeHead) byTypeHead.hidden = false;
+      byType.innerHTML = kinds.map(s => {
+        const v = s.superseded ? `${s.active} · ${s.superseded} superseded` : String(s.active);
+        return `<div class="consolidation-kpi"><span class="k">${esc(labelFor(s.kind))}</span><span class="v">${esc(v)}</span></div>`;
+      }).join("");
+    } else {
+      byType.hidden = true;
+      byType.innerHTML = "";
+      if (byTypeHead) byTypeHead.hidden = true;
+    }
   }
   const covNote = document.getElementById("consolidation-coverage-note");
   if (covNote) {
@@ -608,6 +639,7 @@ function renderBackup(H) {
 
 function renderSystemHealth(H) {
   const status = H?.status || "unknown";
+  consolidationStalled = !!(H?.consolidation?.tile?.stalled);
   updateSystemPill(status, H?.summary || "");
   renderBackup(H);
   renderConsolidation(H?.consolidation || null);
@@ -908,17 +940,28 @@ function renderSidebarMetrics(D) {
   }
 
   const pmap = Object.fromEntries((D.pipeline||[]).map(x => [x.key, x]));
+  // NREM cycles + Unconsolidated are gated, not a queue: facts wait until a
+  // cluster meets the density gate, so a non-zero count is normal — not "stuck".
+  // They stay neutral; the real stall alarm lives in the Consolidation tile.
   const stages = [
     {k:"outbox_failed", l:"Failed", hot: v => v > 0, bad: true},
     {k:"facts_rem_pending", l:"Facts REM", hot: v => v > 0},
     {k:"decisions_rem_pending", l:"Dec REM", hot: v => v > 5},
-    {k:"nrem_backlog", l:"NREM cycles", hot: v => v > 0},
-    {k:"facts_unconsolidated", l:"NREM facts", hot: v => v > 10},
+    {k:"nrem_backlog", l:"NREM cycles", nrem: true},
+    {k:"facts_unconsolidated", l:"Unconsolidated", nrem: true},
   ];
-  document.getElementById("pipeline").innerHTML = stages.map(({k,l,hot,bad}) => {
-    const v = (pmap[k]||{}).value ?? 0;
-    const cls = bad && v > 0 ? "bad" : hot(v) ? "hot" : v === 0 ? "good" : "";
-    return `<div class="pipe-cell ${cls}"><div class="n">${v}</div><div class="l">${l}</div></div>`;
+  document.getElementById("pipeline").innerHTML = stages.map(({k,l,hot,bad,nrem}) => {
+    const cell = pmap[k] || {};
+    const v = cell.value ?? 0;
+    // NREM cells: green = healthy (gated work is normal); red only when the
+    // consolidation signal is stalled — matches the Consolidation tile and the
+    // Infrastructure NREM daemon, so the same count never shows two colors.
+    const cls = bad && v > 0 ? "bad"
+      : nrem ? (consolidationStalled ? "bad" : "good")
+      : (hot && hot(v)) ? "hot"
+      : v === 0 ? "good" : "";
+    const title = cell.hint ? ` title="${esc(cell.hint)}"` : "";
+    return `<div class="pipe-cell ${cls}"${title}><div class="n">${v}</div><div class="l">${esc(l)}</div></div>`;
   }).join("");
 }
 
