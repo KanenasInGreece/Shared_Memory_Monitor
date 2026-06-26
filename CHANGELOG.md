@@ -6,6 +6,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.10] - 2026-06-26
+
+### Added
+
+- **`inference_busy` — a truthful "LLM Busy" signal from nvtop.** The gateway now
+  exposes the nvtop GPU-busy gate (the exact check REM/NREM defer on) as a
+  top-level tri-state `inference_busy` (`busy` | `idle` | `unknown`) on both
+  `GET /health` and `GET /memory/telemetry`. The LLM tile reads load from this
+  signal instead of inferring "busy" only from a consolidation cycle in flight,
+  so it now reflects a user chatting directly with `:5000` — load no daemon
+  ledger could ever see. `unknown` (nvtop absent / `SLOT_AWARE=0`) is never
+  rendered as a false `idle`. The signal is also persisted to the sample history.
+
+### Changed
+
+- **The LLM tile no longer flips to critical while the LLM is running.** When the
+  `:5000` reachability probe times out under a GPU-busy load but nvtop confirms
+  the GPU is inferring, the LLM is shown as **busy (probe saturated)** — a warn,
+  not the hard "down"/critical it used to report — and the REM/NREM gates stop
+  claiming "blocked (LLM down)" while inference is plainly in flight.
+- **GPU-busy log lines read as deferred warnings, not errors.** REM/NREM
+  back-pressure during GPU-busy periods (`LLM failed — skipping`, `503 backend
+  unreachable`, connection/read timeouts, `next sweep retries`) is now classified
+  as warnings in both the log viewer and the severity counts — these are
+  self-healing deferrals the daemon retries, not faults. Genuine crashes and
+  unrelated failures still surface as errors.
+- **Consolidation deferrals are explained.** The consolidation tile and drill-down
+  now name the deferral reason from `last_deferred_reason`, rendering
+  "Deferred — inference GPU busy" / "backup in progress" instead of a bare
+  "deferred".
+
 ## [0.4.9] - 2026-06-25
 
 ### Changed

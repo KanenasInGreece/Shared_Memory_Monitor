@@ -52,6 +52,9 @@ def flatten_snapshot(payload: dict, collected_at: datetime, health: dict) -> dic
         "llm": health.get("llm"),
         "rem_daemon": health.get("rem_daemon"),
         "daemon": health.get("daemon"),
+        # nvtop GPU-busy gate (tri-state busy|idle|unknown) — distinct from `llm`
+        # reachability. Prefer /health, fall back to telemetry's top-level copy.
+        "inference_busy": health.get("inference_busy") or t.get("inference_busy"),
     }
     nrem = nrem_counts_from_telemetry(t)
     if nrem and nrem.get("nrem_backlog_source") == "telemetry":

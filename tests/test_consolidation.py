@@ -108,6 +108,35 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         fact = next(c for c in snap["cycles"] if c["key"] == "fact_consolidation")
         self.assertEqual(fact["last_outcome_display"], "deferred")
 
+    def test_deferred_reason_named(self):
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True,
+                                                    "last_outcome": "deferred"}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "inference_busy": "busy",
+                "consolidation": {
+                    "last_outcome": "deferred",
+                    "last_deferred_reason": "gpu_busy",
+                    "fact_consolidation": {
+                        "last_outcome": "deferred",
+                        "last_deferred_reason": "gpu_busy",
+                        "in_flight": False,
+                        "eligible_clusters": 3,
+                        "stalled": False,
+                    },
+                },
+            },
+        }
+        snap = consolidation_from_payload(health, telemetry)
+        self.assertEqual(snap["inference_busy"], "busy")
+        self.assertEqual(snap["last_deferred_reason"], "gpu_busy")
+        self.assertEqual(snap["last_deferred_reason_human"], "inference GPU busy")
+        self.assertEqual(snap["tile"]["value"], "Deferred — inference GPU busy")
+        fact = next(c for c in snap["cycles"] if c["key"] == "fact_consolidation")
+        self.assertEqual(fact["last_outcome_display"], "deferred — inference GPU busy")
+        self.assertEqual(fact["state"], "ok")
+
     def test_fact_coverage_computed(self):
         health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
         telemetry = {

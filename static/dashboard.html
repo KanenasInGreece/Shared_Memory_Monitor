@@ -366,7 +366,10 @@ function healthLine(c) {
   }
   if (c.key === "llm") {
     if (load.state === "bad") return { text: "down", state: "bad", title };
-    if (lv.startsWith("busy")) return { text: "busy", state: "ok", title };
+    // "busy" can be ok (reachable + GPU busy) or warn (probe saturated under a
+    // GPU-busy load) — honor load.state so a saturated probe reads warn, not ok.
+    if (lv.startsWith("busy")) return { text: "busy", state: healthUiState(load.state), title };
+    if (lv === "idle") return { text: "idle", state: "ok", title };
     return { text: p, state: "ok", title };
   }
   return { text: p, state: healthUiState(proc.state), title };

@@ -43,6 +43,19 @@ def _worst(*states: str) -> str:
     return max(states, key=lambda s: order.get(s, 0))
 
 
+def _inference_busy_state(raw: dict) -> str:
+    """nvtop GPU-busy gate, tri-state: 'busy' | 'idle' | 'unknown'.
+
+    Top-level on /health (and /memory/telemetry). 'unknown' means nvtop is
+    absent or SLOT_AWARE=0 — it is NEVER coerced to 'idle' (the gateway's
+    no-false-info guarantee), so the tile shows "load unknown", not "idle".
+    """
+    token = str(raw.get("inference_busy") or "").lower()
+    if token in ("busy", "idle", "unknown"):
+        return token
+    return "unknown"
+
+
 def _queue_state(count: int | None, *, warn_at: int = 1, hot_at: int = 10) -> tuple[str, str]:
     if count is None:
         return "unknown", "no backlog data"
@@ -91,8 +104,11 @@ def _process_part(key: str, raw_value, kind: str) -> dict:
 
 
 def _workload_part(key: str, raw: dict, t: dict, *, nrem_stalled: bool = False,
-                   llm_busy: bool = False) -> dict:
-    llm_ok = _state(raw.get("llm")) == "ok"
+                   llm_busy: bool = False, inference_busy: str = "unknown") -> dict:
+    # nvtop confirming the GPU is inferring means the LLM is serving, even if the
+    # :5000 reachability probe momentarily timed out under load — so the REM/NREM
+    # gates must not call it "blocked (LLM down)" while it is plainly running.
+    llm_ok = _state(raw.get("llm")) == "ok" or inference_busy == "busy"
     rem_q = t.get("rem_backlog")
     nrem_q = t.get("nrem_backlog")
     outbox_actionable = t.get("outbox_failed")
@@ -130,14 +146,29 @@ def _workload_part(key: str, raw: dict, t: dict, *, nrem_stalled: bool = False,
 
     if key == "llm":
         st = _state(raw.get("llm"))
+        # Two independent facts: `llm` is :5000 reachability; `inference_busy` is
+        # the nvtop GPU-busy gate REM/NREM defer on. Read load from nvtop first —
+        # it sees a user chatting directly with :5000 (bypassing the gateway),
+        # which no daemon ledger or cycle-in-flight signal can.
         if st != "ok":
+            # Probe says unreachable, but nvtop says the GPU is actively inferring:
+            # that is back-pressure (probe saturated under load), NOT an outage —
+            # so warn, never the hard "bad" that would flip the deck to critical
+            # while the LLM is plainly running.
+            if inference_busy == "busy":
+                return {"value": "busy", "state": "warn",
+                        "caption": "GPU busy · reachability probe saturated"}
             return {"value": "unavailable", "state": "bad", "caption": "dream cycle blocked"}
-        # /health only tells us the LLM is reachable. "Busy" means a dream cycle is
-        # actually running inference now (a cycle in flight) — NOT merely that a
-        # backlog exists (gated work can sit queued with the LLM idle).
+        if inference_busy == "busy":
+            return {"value": "busy", "state": "ok", "caption": "inference in flight · GPU busy"}
+        if inference_busy == "idle":
+            return {"value": "idle", "state": "ok", "caption": "reachable · GPU idle"}
+        # inference_busy == "unknown": nvtop absent / SLOT_AWARE=0 — fall back to a
+        # dream cycle in flight (the only busy signal we can still trust), and
+        # never assert "idle" we cannot observe.
         if llm_busy:
             return {"value": "busy", "state": "ok", "caption": "dream-cycle inference in flight"}
-        return {"value": "ready", "state": "ok", "caption": "reachable · no active cycle"}
+        return {"value": "ready", "state": "ok", "caption": "reachable · load unknown"}
 
     if key == "rem_daemon":
         proc = _state(raw.get("rem_daemon"))
@@ -168,9 +199,20 @@ def _workload_part(key: str, raw: dict, t: dict, *, nrem_stalled: bool = False,
 
 
 def _build_component(key: str, field: str, label: str, kind: str, raw: dict, t: dict,
-                     *, nrem_stalled: bool = False, llm_busy: bool = False) -> dict:
+                     *, nrem_stalled: bool = False, llm_busy: bool = False,
+                     inference_busy: str = "unknown") -> dict:
     process = _process_part(key, raw.get(field), kind)
-    workload = _workload_part(key, raw, t, nrem_stalled=nrem_stalled, llm_busy=llm_busy)
+    workload = _workload_part(key, raw, t, nrem_stalled=nrem_stalled, llm_busy=llm_busy,
+                              inference_busy=inference_busy)
+    if key == "llm" and process["state"] == "bad" and inference_busy == "busy":
+        # The reachability probe failed, but nvtop confirms the GPU is inferring.
+        # Don't report the LLM "down" (→ deck critical) while it is demonstrably
+        # running — degrade to a warn the deck can absorb without false alarm.
+        process = {
+            "value": "busy",
+            "state": "warn",
+            "caption": "GPU busy · probe saturated",
+        }
     return {
         "key": key,
         "label": label,
@@ -371,9 +413,11 @@ def system_health_snapshot() -> dict:
 
     nrem_stalled = bool((consolidation.get("tile") or {}).get("stalled"))
     llm_busy = any(c.get("in_flight") for c in (consolidation.get("cycles") or []))
+    inference_busy = _inference_busy_state(raw)
     components = [
         _build_component(key, field, label, kind, raw, telemetry,
-                         nrem_stalled=nrem_stalled, llm_busy=llm_busy)
+                         nrem_stalled=nrem_stalled, llm_busy=llm_busy,
+                         inference_busy=inference_busy)
         for key, field, label, kind in _INFRA_COMPONENTS
     ]
     backup = _backup_part(raw, reachable=True, last=last_backup)
@@ -385,6 +429,7 @@ def system_health_snapshot() -> dict:
         "reachable": True,
         "fetched_at": fetched_at,
         "telemetry_at": telemetry_at,
+        "inference_busy": inference_busy,
         "version": raw.get("version"),
         "api_version": raw.get("api_version"),
         "components": components,

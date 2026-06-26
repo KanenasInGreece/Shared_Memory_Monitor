@@ -277,6 +277,38 @@ class GatewayLogClassifyTests(unittest.TestCase):
         line = "INFO:ConsolidationDaemon:Consolidation run [fact_consolidation] completed: folds 1/1"
         self.assertEqual(classify_gateway_line(line), "line-info")
 
+    def test_gpu_busy_backpressure_is_warn_not_error(self):
+        # GPU-busy back-pressure during REM/NREM: self-healing deferrals the
+        # daemon retries — must read as warnings, not errors, even when the
+        # daemon logged them at ERROR or the text contains "failed".
+        for line in (
+            "WARNING:REMDaemon:REM: inference GPU busy — deferring enrichment cycle",
+            "WARNING:REMDaemon:REM: pg_id=374 LLM failed — skipping",
+            'ERROR:REMDaemon:LLM returned 503: {"error": "Backend unreachable: '
+            'Connection timeout to host http://localhost:5000/v1/chat/completions"}',
+            "ERROR:ConsolidationDaemon:Insight synthesis error for NREM: ReadTimeout:",
+            "ERROR:ConsolidationDaemon:Failed to synthesise insight for 'NREM' — "
+            "ledger rows stay open; next sweep retries.",
+        ):
+            self.assertEqual(classify_gateway_line(line), "line-warn", line)
+
+    def test_real_failures_still_error(self):
+        # A genuine crash or unrelated failure must NOT be downgraded.
+        self.assertEqual(
+            classify_gateway_line(
+                "ERROR:ConsolidationDaemon:consolidation run [insight] crashed after 3 attempts"
+            ),
+            "line-err",
+        )
+        self.assertEqual(
+            classify_gateway_line("ERROR:Coordinator:Failed to apply outbox row 42: duplicate key"),
+            "line-err",
+        )
+        self.assertEqual(
+            classify_gateway_line("ERROR:ConsolidationDaemon:insight write failed: disk full"),
+            "line-err",
+        )
+
 
 class FilterEntriesTests(unittest.TestCase):
     def test_filters_by_window(self):

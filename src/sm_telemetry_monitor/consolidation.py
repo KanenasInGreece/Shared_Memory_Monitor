@@ -17,6 +17,19 @@ _NREM_DENSITY_NOTE = (
     "strict-gate eligible clusters — do not conflate"
 )
 
+# telemetry.consolidation[.cycle].last_deferred_reason — why a cycle deferred
+# instead of folding. Both are benign back-pressure, not failures (ADR-018).
+_DEFER_REASONS = {
+    "gpu_busy": "inference GPU busy",
+    "backup_in_progress": "backup in progress",
+}
+
+
+def humanize_defer_reason(reason: str | None) -> str | None:
+    if not reason:
+        return None
+    return _DEFER_REASONS.get(str(reason).lower(), str(reason).replace("_", " "))
+
 
 def humanize_age(seconds: int | float | None) -> str:
     if seconds is None:
@@ -128,16 +141,27 @@ def _normalize_cycle(key: str, raw: dict | None) -> dict:
         backlog = raw.get("eligible_clusters")
 
     outcome = raw.get("last_outcome")
+    defer_reason = raw.get("last_deferred_reason")
+    defer_reason_human = humanize_defer_reason(defer_reason)
     # A "deferred" cycle with nothing eligible isn't postponing work — there are
     # no clusters/facts to fold, so present it as idle rather than deferred.
     no_work = not raw.get("eligible_clusters") and not backlog
-    outcome_display = "idle" if outcome == "deferred" and no_work else outcome
+    if outcome == "deferred" and no_work:
+        outcome_display = "idle"
+    elif outcome == "deferred" and defer_reason_human:
+        # Name the benign back-pressure so the drawer reads "deferred — inference
+        # GPU busy" rather than an unexplained "deferred" (ADR-018 / nvtop gate).
+        outcome_display = f"deferred — {defer_reason_human}"
+    else:
+        outcome_display = outcome
 
     cycle = {
         "key": key,
         "label": _CYCLE_LABELS.get(key, key.replace("_", " ").title()),
         "last_outcome": outcome,
         "last_outcome_display": outcome_display,
+        "last_deferred_reason": defer_reason,
+        "last_deferred_reason_human": defer_reason_human,
         "last_success_age_seconds": age,
         "last_success_age_human": humanize_age(age) if age is not None else "—",
         "in_flight": bool(raw.get("in_flight")),
@@ -167,7 +191,8 @@ def _tile_state(*, stalled: bool, fresh: bool, reachable: bool, cycles: list[dic
     return "ok"
 
 
-def _tile_value(*, stalled: bool, fresh: bool, reachable: bool, last_outcome: str | None) -> str:
+def _tile_value(*, stalled: bool, fresh: bool, reachable: bool, last_outcome: str | None,
+                defer_reason: str | None = None) -> str:
     if not reachable:
         return "—"
     if fresh is False:
@@ -175,7 +200,8 @@ def _tile_value(*, stalled: bool, fresh: bool, reachable: bool, last_outcome: st
     if stalled:
         return "Stalled"
     if last_outcome == "deferred":
-        return "Deferred"
+        reason = humanize_defer_reason(defer_reason)
+        return f"Deferred — {reason}" if reason else "Deferred"
     if last_outcome == "crashed":
         return "Crashed"
     if last_outcome == "completed":
@@ -221,10 +247,16 @@ def consolidation_from_payload(
     rollup = {}
     neo4j_census = {}
     summaries_by_kind: list = []
+    # nvtop inference-busy gate (tri-state busy|idle|unknown); top-level on both
+    # /health and /memory/telemetry. "unknown" = nvtop absent / SLOT_AWARE=0 —
+    # never coerce to "idle" (no-false-info guarantee).
+    inference_busy = health.get("inference_busy") or health_cons.get("inference_busy")
 
     if isinstance(telemetry_payload, dict) and telemetry_payload.get("status") == "success":
         t = telemetry_payload.get("telemetry") or {}
         telemetry_at = t.get("timestamp")
+        if not inference_busy:
+            inference_busy = t.get("inference_busy")
         if isinstance(t.get("consolidation"), dict):
             rollup = t["consolidation"]
         if isinstance(t.get("nrem"), dict):
@@ -247,6 +279,14 @@ def consolidation_from_payload(
     fresh = bool(fresh) if fresh is not None else None
 
     last_outcome = health_cons.get("last_outcome") or rollup.get("last_outcome")
+    defer_reason = rollup.get("last_deferred_reason")
+    if defer_reason is None:
+        # Fall back to whichever cycle actually deferred so the tile can explain
+        # an aggregate "deferred" even when the rollup omits the reason.
+        for c in cycles:
+            if c.get("last_outcome") == "deferred" and c.get("last_deferred_reason"):
+                defer_reason = c["last_deferred_reason"]
+                break
     age = health_cons.get("last_success_age_seconds")
     if age is None:
         age = rollup.get("last_success_age_seconds")
@@ -276,6 +316,9 @@ def consolidation_from_payload(
         "reachable": reachable,
         "fetched_at": fetched_at,
         "telemetry_at": telemetry_at,
+        "inference_busy": inference_busy,
+        "last_deferred_reason": defer_reason,
+        "last_deferred_reason_human": humanize_defer_reason(defer_reason),
         "tile": {
             "state": tile_state,
             "value": _tile_value(
@@ -283,10 +326,12 @@ def consolidation_from_payload(
                 fresh=fresh is not False,
                 reachable=reachable,
                 last_outcome=last_outcome,
+                defer_reason=defer_reason,
             ),
             "stalled": stalled,
             "fresh": fresh,
             "last_outcome": last_outcome,
+            "last_deferred_reason": defer_reason,
             "last_success_age_seconds": age,
             "last_success_age_human": age_human,
             "caption": _tile_caption(

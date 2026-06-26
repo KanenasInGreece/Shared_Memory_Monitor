@@ -165,6 +165,21 @@ function isConsolidationLine(text) {
   return false;
 }
 
+// REM/NREM lines that are GPU-busy back-pressure (LLM call timed out / 503 while
+// the GPU is busy) — self-healing deferrals, not faults: the cycle is skipped,
+// ledger rows stay open, the next sweep retries. Show as deferred warnings, not
+// errors. Mirrors logs_reader.is_inference_backpressure(). Crashes excluded.
+function isInferenceBackpressure(l) {
+  if (l.includes("crashed") || l.includes("traceback")) return false;
+  const hasCtx = ["llm", "inference", "insight", "synthes", "enrichment"].some(k => l.includes(k));
+  if (!hasCtx) return false;
+  return [
+    "gpu busy", "llm failed — skipping", "llm failed - skipping", "timeout",
+    "timed out", "backend unreachable", "503", "next sweep retries",
+    "ledger rows stay open",
+  ].some(m => l.includes(m));
+}
+
 function classify(text){
   if (source === "agent_audit") {
     const o = parseAgentAudit(text);
@@ -191,6 +206,7 @@ function classify(text){
   if (l.includes("crashed after") && l.includes("consolidation run")) return "line-err";
   if (l.includes("consolidation health refresh failed")) return "line-warn";
   if (l.includes("consolidation_runs:") && (l.includes("orphan") || l.includes("could not"))) return "line-warn";
+  if (isInferenceBackpressure(l)) return "line-warn";
   if (l.includes("error") || l.includes("failed") || l.includes("critical")) return "line-err";
   if (l.includes("warn") || l.includes("defer")) return "line-warn";
   if (l.includes("consolidation run [") && l.includes("completed")) return "line-info";

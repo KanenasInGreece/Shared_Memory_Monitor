@@ -454,6 +454,40 @@ def is_consolidation_line(text: str) -> bool:
     return any(marker in low for marker in _CONSOLIDATION_MARKERS)
 
 
+def is_inference_backpressure(text: str) -> bool:
+    """True for REM/NREM lines that are GPU-busy back-pressure, not real faults.
+
+    When the GPU is busy (e.g. a user chatting directly with :5000), REM/NREM
+    calls to the LLM time out or 503; the daemon logs these — sometimes at ERROR
+    — but they are self-healing: the cycle is skipped/deferred, ledger rows stay
+    open, and the next sweep retries (the same nvtop gate the defer logic uses).
+    They should read as deferred warnings, never hard errors. A genuine crash
+    (traceback / "crashed after") is excluded so real failures still surface.
+    """
+    low = (text or "").lower()
+    if "crashed" in low or "traceback" in low:
+        return False
+    has_inference_ctx = any(
+        k in low for k in ("llm", "inference", "insight", "synthes", "enrichment")
+    )
+    if not has_inference_ctx:
+        return False
+    return any(
+        marker in low
+        for marker in (
+            "gpu busy",
+            "llm failed — skipping",
+            "llm failed - skipping",
+            "timeout",
+            "timed out",
+            "backend unreachable",
+            "503",
+            "next sweep retries",
+            "ledger rows stay open",
+        )
+    )
+
+
 def classify_gateway_line(text: str) -> str:
     """Severity class for gateway journal lines — mirrors logs.html classify()."""
     low = (text or "").lower()
@@ -462,6 +496,8 @@ def classify_gateway_line(text: str) -> str:
     if "consolidation health refresh failed" in low:
         return "line-warn"
     if "consolidation_runs:" in low and ("orphan" in low or "could not" in low):
+        return "line-warn"
+    if is_inference_backpressure(low):
         return "line-warn"
     if "error" in low or "failed" in low or "critical" in low:
         return "line-err"
