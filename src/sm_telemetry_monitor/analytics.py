@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from .config import (
     IGNORED_OUTBOX_IDS,
@@ -93,6 +93,47 @@ def compute_deltas(rows: list[dict]) -> list[dict]:
             "expected_rem_rate": rem_items_per_hour(),
         })
     return deltas
+
+
+def rem_drain_signal(samples: list[dict], *, window_s: float) -> str:
+    """Is the REM backlog clearing? Client-side stall heuristic over stored samples.
+
+    `samples` are snapshots carrying `collected_at` (ISO) + `rem_backlog`. Returns:
+      - "draining"     — backlog fell vs the newest sample at least `window_s`
+                         older than the latest (REM is working it down);
+      - "flat"         — backlog held or grew across that span (no net drain);
+      - "insufficient" — no sample old enough to judge (fresh start / short
+                         history). Anchored to the latest sample's own timestamp,
+                         so it is robust to the poll-gap lag between snapshots.
+
+    Authoritative stall detection belongs on the gateway (a server-side
+    `rem_stalled` field); until then this is the honest interim approximation.
+    """
+    chrono = sorted(
+        (s for s in samples if s.get("collected_at")),
+        key=lambda s: s["collected_at"],
+    )
+    if not chrono:
+        return "insufficient"
+    latest = chrono[-1]
+    latest_b = latest.get("rem_backlog")
+    if latest_b is None:
+        return "insufficient"
+    try:
+        cutoff = datetime.fromisoformat(latest["collected_at"]) - timedelta(seconds=window_s)
+    except (TypeError, ValueError):
+        return "insufficient"
+    for s in reversed(chrono[:-1]):
+        baseline = s.get("rem_backlog")
+        if baseline is None:
+            continue
+        try:
+            ts = datetime.fromisoformat(s["collected_at"])
+        except (TypeError, ValueError):
+            continue
+        if ts <= cutoff:
+            return "draining" if latest_b < baseline else "flat"
+    return "insufficient"
 
 
 def burn_down_projection(current_backlog: int, hours_ahead: float = 6) -> list[dict]:

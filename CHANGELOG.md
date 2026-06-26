@@ -6,6 +6,31 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.11] - 2026-06-26
+
+### Changed
+
+- **The REM tile warns only on a genuine stall, never on a non-empty queue.**
+  Previously the REM daemon tile warned whenever `rem_backlog >= 1` (a flat
+  count gate), so a healthy queue draining while the LLM was busy showed a false
+  WARNING — the same false alarm NREM shed in v0.4.9. The tile now reads:
+  `queue idle` when caught up; **`N deferring`** (ok, no warn) while
+  `inference_busy == busy` (REM is gated off by design — GPU-owner-agnostic, per
+  the nvtop strict-superset guarantee); **`N draining`/`N queued`** (ok) when the
+  GPU is idle/unknown and the backlog is falling or there is too little history
+  to judge; and **`N stalled`** (warn) only when the GPU is free *and* the
+  backlog has not drained for ~2.5 REM sweeps. This mirrors NREM's stall-only
+  philosophy and consumes only already-exposed telemetry — no framework change.
+
+### Added
+
+- **`rem_drain_signal()` — a client-side REM drain heuristic** (`analytics.py`)
+  over the stored sample tail, returning `draining | flat | insufficient`,
+  anchored to the latest sample's own timestamp so the 600s persisted-poll lag
+  never trips a false stall. `REM_STALL_WINDOW_S` (= `REM_POLL_S * 2.5` = 300s)
+  mirrors NREM's 2.5×-sweep threshold. This is the honest interim until the
+  gateway exposes an authoritative server-side `rem_stalled` field.
+
 ## [0.4.10] - 2026-06-26
 
 ### Added

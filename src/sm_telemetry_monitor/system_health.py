@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
+from .analytics import rem_drain_signal
 from .backup_reader import latest_backup_manifest
 from .bridge import get_health, get_telemetry
+from .config import REM_STALL_WINDOW_S
 from .consolidation import consolidation_from_payload
 from .sanitize import sanitize_error
+from .store import load_history
 from .summary import live_summary
 
 # /health field mapping — "daemon" is the NREM consolidation process in the framework.
@@ -56,16 +59,23 @@ def _inference_busy_state(raw: dict) -> str:
     return "unknown"
 
 
-def _queue_state(count: int | None, *, warn_at: int = 1, hot_at: int = 10) -> tuple[str, str]:
-    if count is None:
-        return "unknown", "no backlog data"
-    if count == 0:
-        return "ok", "queue idle"
-    if count >= hot_at:
-        return "warn", f"{count} in backlog"
-    if count >= warn_at:
-        return "warn", f"{count} in backlog"
-    return "ok", f"{count} in backlog"
+def _rem_trend() -> str:
+    """REM backlog drain signal over the recent stored tail (analytics heuristic)."""
+    try:
+        since = datetime.now(timezone.utc) - timedelta(seconds=REM_STALL_WINDOW_S * 6)
+        rows = load_history(since=since)
+    except Exception:
+        return "insufficient"
+    samples = [
+        {
+            "collected_at": r.get("collected_at"),
+            "rem_backlog": r.get("rem_backlog")
+            if r.get("rem_backlog") is not None
+            else (r.get("facts_rem_pending") or 0) + (r.get("decisions_rem_pending") or 0),
+        }
+        for r in rows
+    ]
+    return rem_drain_signal(samples, window_s=REM_STALL_WINDOW_S)
 
 
 def _telemetry_latest() -> dict:
@@ -104,7 +114,8 @@ def _process_part(key: str, raw_value, kind: str) -> dict:
 
 
 def _workload_part(key: str, raw: dict, t: dict, *, nrem_stalled: bool = False,
-                   llm_busy: bool = False, inference_busy: str = "unknown") -> dict:
+                   llm_busy: bool = False, inference_busy: str = "unknown",
+                   rem_trend: str = "insufficient") -> dict:
     # nvtop confirming the GPU is inferring means the LLM is serving, even if the
     # :5000 reachability probe momentarily timed out under load — so the REM/NREM
     # gates must not call it "blocked (LLM down)" while it is plainly running.
@@ -176,8 +187,25 @@ def _workload_part(key: str, raw: dict, t: dict, *, nrem_stalled: bool = False,
             return {"value": "—", "state": "bad", "caption": "REM backlog"}
         if not llm_ok:
             return {"value": "blocked (LLM down)", "state": "bad", "caption": "REM backlog"}
-        st, val = _queue_state(rem_q, warn_at=1, hot_at=10)
-        return {"value": val, "state": st, "caption": "REM backlog"}
+        if rem_q is None:
+            return {"value": "no backlog data", "state": "unknown", "caption": "REM backlog"}
+        if rem_q <= 0:
+            return {"value": "queue idle", "state": "ok", "caption": "REM backlog"}
+        # A non-empty REM queue is normal — it only warrants a warning when the GPU
+        # is free yet nothing is draining (a genuine stall). While any inference
+        # holds the GPU, REM defers by design (nvtop is a strict superset — the GPU
+        # may be a direct :5000 chat, not REM; doesn't matter, REM is gated off).
+        if inference_busy == "busy":
+            return {"value": f"{rem_q} deferring", "state": "ok",
+                    "caption": "REM backlog · GPU busy"}
+        # GPU idle/unknown: REM should be working the backlog down.
+        if rem_trend == "flat":
+            return {"value": f"{rem_q} stalled", "state": "warn",
+                    "caption": "REM backlog · GPU free, not draining"}
+        if rem_trend == "draining":
+            return {"value": f"{rem_q} draining", "state": "ok", "caption": "REM backlog"}
+        # insufficient history — can't tell stall from normal poll-gap lag; don't warn.
+        return {"value": f"{rem_q} queued", "state": "ok", "caption": "REM backlog"}
 
     if key == "nrem_daemon":
         proc = _state(raw.get("daemon"))
@@ -200,10 +228,10 @@ def _workload_part(key: str, raw: dict, t: dict, *, nrem_stalled: bool = False,
 
 def _build_component(key: str, field: str, label: str, kind: str, raw: dict, t: dict,
                      *, nrem_stalled: bool = False, llm_busy: bool = False,
-                     inference_busy: str = "unknown") -> dict:
+                     inference_busy: str = "unknown", rem_trend: str = "insufficient") -> dict:
     process = _process_part(key, raw.get(field), kind)
     workload = _workload_part(key, raw, t, nrem_stalled=nrem_stalled, llm_busy=llm_busy,
-                              inference_busy=inference_busy)
+                              inference_busy=inference_busy, rem_trend=rem_trend)
     if key == "llm" and process["state"] == "bad" and inference_busy == "busy":
         # The reachability probe failed, but nvtop confirms the GPU is inferring.
         # Don't report the LLM "down" (→ deck critical) while it is demonstrably
@@ -414,10 +442,11 @@ def system_health_snapshot() -> dict:
     nrem_stalled = bool((consolidation.get("tile") or {}).get("stalled"))
     llm_busy = any(c.get("in_flight") for c in (consolidation.get("cycles") or []))
     inference_busy = _inference_busy_state(raw)
+    rem_trend = _rem_trend()
     components = [
         _build_component(key, field, label, kind, raw, telemetry,
                          nrem_stalled=nrem_stalled, llm_busy=llm_busy,
-                         inference_busy=inference_busy)
+                         inference_busy=inference_busy, rem_trend=rem_trend)
         for key, field, label, kind in _INFRA_COMPONENTS
     ]
     backup = _backup_part(raw, reachable=True, last=last_backup)

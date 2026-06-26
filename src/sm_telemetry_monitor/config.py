@@ -17,6 +17,11 @@ REM_POLL_S = 120
 REM_BATCH = 5
 MAX_REM_PER_INTERVAL = (POLL_INTERVAL_S // REM_POLL_S) * REM_BATCH
 
+# A non-empty REM queue is only a stall if the GPU is free yet the backlog has
+# not drained for ~2.5 REM sweeps (mirrors NREM's stall threshold). Below this
+# span we cannot tell a stall from the normal poll-gap lag, so we never warn.
+REM_STALL_WINDOW_S = int(REM_POLL_S * 2.5)  # 300s
+
 # NREM triggers one consolidation cycle per qualifying (entity, domain) cluster.
 NREM_FACT_CLUSTER_MIN = 5
 NREM_DECISION_CLUSTER_MIN = 2

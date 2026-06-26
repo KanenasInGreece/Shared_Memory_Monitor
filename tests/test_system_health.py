@@ -4,7 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from sm_telemetry_monitor.system_health import system_health_snapshot
+from sm_telemetry_monitor.analytics import rem_drain_signal
+from sm_telemetry_monitor.system_health import _workload_part, system_health_snapshot
 
 
 def _healthy_gateway(*, backup_in_progress=False):
@@ -171,6 +172,77 @@ class LlmInferenceBusyTests(unittest.TestCase):
         snap = self._snap({**_healthy_gateway(), "llm": "down", "inference_busy": "idle"})
         self.assertEqual(self._llm(snap)["state"], "bad")
         self.assertEqual(snap["status"], "critical")
+
+
+class RemTileTests(unittest.TestCase):
+    """REM tile warns only on a genuine stall (GPU free, backlog not draining)."""
+
+    def _rem(self, backlog, *, inference_busy="idle", rem_trend="insufficient", llm="ok"):
+        raw = {"rem_daemon": "running", "llm": llm}
+        return _workload_part(
+            "rem_daemon", raw, {"rem_backlog": backlog},
+            inference_busy=inference_busy, rem_trend=rem_trend,
+        )
+
+    def test_caught_up_is_ok(self):
+        w = self._rem(0)
+        self.assertEqual(w["state"], "ok")
+        self.assertEqual(w["value"], "queue idle")
+
+    def test_backlog_with_gpu_busy_defers_not_warns(self):
+        # The exact symptom that prompted this: 6 facts, LLM busy → no warning.
+        w = self._rem(6, inference_busy="busy")
+        self.assertEqual(w["state"], "ok")
+        self.assertIn("deferring", w["value"])
+
+    def test_backlog_draining_is_not_warn(self):
+        w = self._rem(6, inference_busy="idle", rem_trend="draining")
+        self.assertEqual(w["state"], "ok")
+        self.assertIn("draining", w["value"])
+
+    def test_backlog_insufficient_history_is_not_warn(self):
+        w = self._rem(6, inference_busy="unknown", rem_trend="insufficient")
+        self.assertEqual(w["state"], "ok")
+        self.assertIn("queued", w["value"])
+
+    def test_free_gpu_not_draining_warns(self):
+        w = self._rem(6, inference_busy="idle", rem_trend="flat")
+        self.assertEqual(w["state"], "warn")
+        self.assertIn("stalled", w["value"])
+
+    def test_no_backlog_data_is_unknown(self):
+        self.assertEqual(self._rem(None)["state"], "unknown")
+
+    def test_daemon_down_is_bad(self):
+        w = _workload_part("rem_daemon", {"rem_daemon": "stopped", "llm": "ok"},
+                           {"rem_backlog": 6}, inference_busy="idle")
+        self.assertEqual(w["state"], "bad")
+
+
+class RemDrainSignalTests(unittest.TestCase):
+    def _s(self, *pairs):
+        return [{"collected_at": t, "rem_backlog": b} for t, b in pairs]
+
+    def test_insufficient_with_single_sample(self):
+        s = self._s(("2026-06-26T12:00:00+00:00", 6))
+        self.assertEqual(rem_drain_signal(s, window_s=300), "insufficient")
+
+    def test_draining(self):
+        s = self._s(("2026-06-26T12:00:00+00:00", 10), ("2026-06-26T12:10:00+00:00", 6))
+        self.assertEqual(rem_drain_signal(s, window_s=300), "draining")
+
+    def test_flat_when_held(self):
+        s = self._s(("2026-06-26T12:00:00+00:00", 6), ("2026-06-26T12:10:00+00:00", 6))
+        self.assertEqual(rem_drain_signal(s, window_s=300), "flat")
+
+    def test_growing_counts_as_flat(self):
+        s = self._s(("2026-06-26T12:00:00+00:00", 6), ("2026-06-26T12:10:00+00:00", 9))
+        self.assertEqual(rem_drain_signal(s, window_s=300), "flat")
+
+    def test_baseline_within_window_is_insufficient(self):
+        # Both samples newer than window_s → no valid baseline → don't judge.
+        s = self._s(("2026-06-26T12:00:00+00:00", 10), ("2026-06-26T12:01:00+00:00", 6))
+        self.assertEqual(rem_drain_signal(s, window_s=300), "insufficient")
 
 
 if __name__ == "__main__":
