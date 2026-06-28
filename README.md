@@ -69,9 +69,14 @@ A full-width **status deck** above the charts, in three labelled rows — **Dril
 
 ### Consolidation health (side drawer)
 
-Opens from **Drill-down → Consolidation**. **Liveness** (health, last outcome, last success, stall threshold) from cached `GET /health`; **Coverage** computed from the `telemetry.neo4j` fact census — REM-processed facts, consolidated count + %, and awaiting-fold count + %. The per-cycle table lists insight and fact-consolidation cycles with their outcome, eligible clusters, and oldest wait. A deferred cycle with nothing eligible shows as **idle** (not a warning).
+Opens from **Drill-down → Consolidation**. The drawer reads the gateway's consolidation telemetry and `GET /health`, and shows the dream cycle's health on two axes — what it has **produced** (coverage) and what it has **to work with** (graph health):
 
-![Consolidation health — liveness KPIs, fact coverage %, per-cycle table](docs/images/consolidation.png)
+- **Liveness** — health verdict, last outcome, time since the last successful fold, and the stall threshold. A deferred cycle with nothing eligible reads as **idle**, not a warning; the only red state is a genuine stall (an eligible backlog with nothing folded inside the threshold).
+- **Coverage** (output side) — from the `telemetry.neo4j` fact census: REM-processed facts, how many are consolidated (count and %), and how many still await a fold. **Consolidations by type** lists the summaries produced — insights, thematic, community — with any superseded count.
+- **Graph health · entity resolution** (input side, gateway v0.6.0+) — from `telemetry.entity_graph`: total entities, the connected share, and the orphan and singleton shares that measure how fragmented the graph is before a fold runs. Orphan and singleton entities are weakly connected and never fold into a summary, so a high orphan share caps the coverage a cycle can reach. The counts include entities from records still awaiting REM — REM is the stage that builds an entity's relationships — so an **Awaiting REM** figure is shown and the orphan/singleton share reads as an upper bound on true fragmentation until REM catches up.
+- **By cycle** — the insight and fact-consolidation cycles with their outcome, eligible clusters, oldest wait, and last error.
+
+![Consolidation health — liveness, fact coverage %, graph-health entity resolution, per-cycle table](docs/images/consolidation.png)
 
 ### Schema breakdown (side drawer)
 
@@ -239,7 +244,7 @@ Charts read the **poll cache** (past `GET /memory/telemetry` responses). Live pa
 | **Range** (`1h`–`all`) | Filters cached telemetry polls |
 | **Hero** headline | Derived labels from cached telemetry JSON |
 | **Status** pill | `GET /health` (WARN reason on hover; component detail in the Infrastructure grid) |
-| **Drill-down → Consolidation** | `GET /health` → `consolidation` (cached liveness); opens drawer from `telemetry.consolidation` + `telemetry.neo4j` |
+| **Drill-down → Consolidation** | `GET /health` → `consolidation` (cached liveness); opens drawer from `telemetry.consolidation` + `telemetry.neo4j` + `telemetry.entity_graph` |
 | **Drill-down → Schema breakdown** | `telemetry.breakdown` + `POST /memory/graph` |
 | **Dream backlog** | `rem_backlog + nrem_backlog` telemetry fields |
 | **REM / NREM split** | `rem_backlog` vs `nrem_backlog` + ETA (the saturation verdict lives in the hero, not here) |
@@ -255,8 +260,11 @@ Consolidation drawer fields:
 | **Coverage** — REM-processed facts | `facts_total − facts_rem_pending` (`telemetry.neo4j`) |
 | **Coverage** — consolidated (N · %) | `rem_processed − facts_unconsolidated`, over REM-processed |
 | **Coverage** — awaiting fold (N · %) | `facts_unconsolidated`, over REM-processed |
-| **By cycle → Eligible** | `eligible_clusters` — strict-gate clusters awaiting a fold (not a ratio) |
-| **By cycle → Oldest wait** | `eligible_oldest_age_seconds` (K-th oldest anchor) |
+| **Graph health** — entities · connected · orphans · singletons | `telemetry.entity_graph` (gateway v0.6.0+) — graph size and fragmentation before a fold |
+| **Graph health** — top hub degree | Highest entity degree in `entity_graph.top_hubs` |
+| **Graph health** — awaiting REM | `facts_rem_pending + decisions_rem_pending` — pre-REM entities inflate the orphan share; shown as a caveat, not a verdict |
+| **By cycle → Eligible** | `eligible_clusters` — clusters awaiting a fold (a count, not a ratio) |
+| **By cycle → Oldest wait** | `eligible_oldest_age_seconds` — age of the oldest cluster still waiting |
 
 Main charts: backlog over time, throughput, cumulative cleared, tier-3 growth & errors, raw samples table.
 
@@ -387,9 +395,9 @@ NREM counts come from `telemetry.nrem` on the gateway — the monitor only displ
 | Sidebar / chart **NREM** | `nrem_backlog` (cycles) |
 | **NREM facts** | `facts_unconsolidated` (raw) |
 
-### Consolidation signal (ADR-018, gateway v0.4.12+)
+### Consolidation signal (ADR-018)
 
-Requires framework gateway with `telemetry.consolidation` and cached `/health.consolidation`.
+Requires a framework gateway that exposes `telemetry.consolidation` and a cached `/health.consolidation`.
 
 | Source | Field | Meaning |
 |--------|-------|---------|
@@ -397,9 +405,12 @@ Requires framework gateway with `telemetry.consolidation` and cached `/health.co
 | `/health` | `consolidation.fresh` | `false` → show **signal stale**; do not trust `stalled` |
 | `/health` | `consolidation.last_outcome` | `completed` \| `crashed` \| `deferred` \| null |
 | `telemetry.consolidation` | `insight` / `fact_consolidation` | Per-cycle outcome, in-flight, failures, `last_error`, coverage |
-| `telemetry.consolidation.*.backlog` | strict-gate `eligible_clusters` | **Not** the same as `telemetry.nrem` density cycles |
+| `telemetry.consolidation.*.backlog` | `eligible_clusters` | Clusters awaiting a fold — **not** the same as `telemetry.nrem` density cycles |
+| `telemetry.entity_graph` (gateway v0.6.0+) | `orphan_entities` · `singleton_entities` · `entities_total` · `top_hubs` | **Graph health** — input-side fragmentation; orphan/singleton shares cap the coverage a fold can reach |
 
-`decision_cycles > 0` with `eligible_clusters = 0` is normal (cluster fails strict insight gate) — not a stall.
+`decision_cycles > 0` with `eligible_clusters = 0` is normal (the cluster fails the strict insight gate) — not a stall.
+
+The orphan and singleton counts include entities from records still awaiting REM, which build their relationships during REM. The drawer shows an **Awaiting REM** figure so the fragmentation share reads as an upper bound, not a settled verdict.
 
 Correlate stalls in the **Gateway daemons** log tab (Consolidation filter): `CRASHED` (code bug), repeated `deferring` (GPU/backup), or `health refresh failed` (stale signal).
 

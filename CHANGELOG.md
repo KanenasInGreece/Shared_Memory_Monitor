@@ -6,6 +6,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Documentation
+
+- README consolidation section rewritten around the two-axis view (Coverage =
+  output, Graph health = input) with the new `telemetry.entity_graph` fields and
+  the REM-pending caveat; drawer-fields and metrics tables extended accordingly.
+  Screenshots refreshed from a live monitor (consolidation drawer now shows the
+  Graph health · entity resolution row).
+
 ## [0.4.12] - 2026-06-28
 
 ### Added
