@@ -164,6 +164,61 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         self.assertIsNone(cov["rem_processed"])
         self.assertIsNone(cov["coverage_pct"])
 
+    def test_graph_health_computed(self):
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "neo4j": {"facts_rem_pending": 50, "decisions_rem_pending": 32},
+                "entity_graph": {
+                    "entities_total": 1736,
+                    "orphan_entities": 961,
+                    "singleton_entities": 416,
+                    "alias_edges": 0,
+                    "alias_covered_entities": 0,
+                    "top_hubs": [
+                        {"name": "SharedMemory", "degree": 115},
+                        {"name": "Neo4j", "degree": 112},
+                    ],
+                },
+            },
+        }
+        gh = consolidation_from_payload(health, telemetry)["graph_health"]
+        self.assertTrue(gh["present"])
+        self.assertEqual(gh["entities_total"], 1736)
+        self.assertEqual(gh["orphan_pct"], 55)
+        self.assertEqual(gh["connected_entities"], 775)
+        self.assertEqual(gh["connected_pct"], 45)
+        self.assertEqual(gh["singleton_pct"], 24)
+        self.assertEqual(gh["max_hub_degree"], 115)
+        self.assertEqual(len(gh["top_hubs"]), 2)
+        # REM-pending records inflate orphan counts → flagged so the share reads
+        # as an upper bound, not a settled fragmentation verdict.
+        self.assertTrue(gh["rem_pending"])
+        self.assertEqual(gh["rem_pending_facts"], 50)
+        self.assertEqual(gh["rem_pending_decisions"], 32)
+
+    def test_graph_health_no_rem_pending(self):
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "neo4j": {"facts_rem_pending": 0, "decisions_rem_pending": 0},
+                "entity_graph": {"entities_total": 100, "orphan_entities": 10,
+                                 "singleton_entities": 5, "top_hubs": []},
+            },
+        }
+        gh = consolidation_from_payload(health, telemetry)["graph_health"]
+        self.assertTrue(gh["present"])
+        self.assertFalse(gh["rem_pending"])
+
+    def test_graph_health_missing(self):
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        gh = consolidation_from_payload(health, {"status": "success", "telemetry": {}})["graph_health"]
+        self.assertFalse(gh["present"])
+        self.assertIsNone(gh["orphan_pct"])
+        self.assertEqual(gh["top_hubs"], [])
+
     def test_last_success_falls_back_to_freshest_cycle(self):
         # Top-level rollup age is null but a cycle succeeded — use the cycle age.
         health = {

@@ -110,6 +110,78 @@ def _fact_coverage(neo4j: dict, summaries: list | None = None) -> dict:
     }
 
 
+def _graph_health(entity_graph: dict | None, neo4j: dict | None = None) -> dict:
+    """Input-side consolidation quality from telemetry.entity_graph.
+
+    ADR-017/018 frame consolidation quality on two axes: the *output* side
+    (coverage — facts folded into summaries, see ``_fact_coverage``) and the
+    *input* side (entity resolution — how well the graph is connected before
+    consolidation runs). A heavily fragmented entity graph (many orphans /
+    singletons) is the "garbage-in" leading indicator: orphan entities are never
+    pulled into a cluster, so they never consolidate regardless of cycle liveness.
+
+    These are the GDS-family signals the gateway already computes — orphan /
+    low-degree counts and the node-degree hub head — surfaced read-only with no
+    new data path. WCC/Louvain modularity are not in the gateway payload, so we
+    derive the fragmentation proxy from what is exposed rather than querying the
+    DB ourselves. Every field degrades to None on missing input (one absent
+    metric never blanks the rest).
+
+    **REM-pending caveat (anti-bloat).** ``entity_graph`` counts *every* entity
+    node, including those extracted from facts/decisions still awaiting REM — but
+    REM is the stage that builds an entity's relationships. Pre-REM entities are
+    therefore counted as orphans/singletons purely because they haven't been
+    processed yet, inflating the fragmentation share. We surface
+    ``rem_pending_facts`` / ``rem_pending_decisions`` and flag ``rem_pending`` so
+    the operator reads orphan/singleton counts as an *upper bound* on true
+    fragmentation until REM catches up — never as a settled quality verdict.
+    """
+    eg = entity_graph if isinstance(entity_graph, dict) else {}
+    census = neo4j if isinstance(neo4j, dict) else {}
+    total = eg.get("entities_total")
+    orphans = eg.get("orphan_entities")
+    singletons = eg.get("singleton_entities")
+    alias_edges = eg.get("alias_edges")
+    alias_covered = eg.get("alias_covered_entities")
+
+    hubs = []
+    for h in eg.get("top_hubs") or []:
+        if isinstance(h, dict) and h.get("name") is not None:
+            hubs.append({"name": h.get("name"), "degree": h.get("degree")})
+
+    connected = None
+    if isinstance(total, int) and isinstance(orphans, int):
+        connected = max(total - orphans, 0)
+
+    rem_pending_facts = census.get("facts_rem_pending")
+    rem_pending_decisions = census.get("decisions_rem_pending")
+    pending_total = sum(
+        v for v in (rem_pending_facts, rem_pending_decisions) if isinstance(v, int)
+    )
+
+    present = isinstance(total, int) and total > 0
+    return {
+        "present": present,
+        "entities_total": total,
+        "orphan_entities": orphans,
+        "orphan_pct": _pct(orphans, total),
+        "singleton_entities": singletons,
+        "singleton_pct": _pct(singletons, total),
+        "connected_entities": connected,
+        "connected_pct": _pct(connected, total),
+        "alias_edges": alias_edges,
+        "alias_covered_entities": alias_covered,
+        "alias_coverage_pct": _pct(alias_covered, total),
+        "max_hub_degree": hubs[0]["degree"] if hubs and hubs[0].get("degree") is not None else None,
+        "top_hubs": hubs[:5],
+        # REM-pending context: orphan/singleton counts overstate true
+        # fragmentation while records still await entity extraction.
+        "rem_pending_facts": rem_pending_facts,
+        "rem_pending_decisions": rem_pending_decisions,
+        "rem_pending": pending_total > 0,
+    }
+
+
 def _cycle_state(cycle: dict) -> str:
     if cycle.get("stalled"):
         return "bad"
@@ -246,6 +318,7 @@ def consolidation_from_payload(
     nrem_density = {}
     rollup = {}
     neo4j_census = {}
+    entity_graph: dict = {}
     summaries_by_kind: list = []
     # nvtop inference-busy gate (tri-state busy|idle|unknown); top-level on both
     # /health and /memory/telemetry. "unknown" = nvtop absent / SLOT_AWARE=0 —
@@ -263,6 +336,8 @@ def consolidation_from_payload(
             nrem_density = t["nrem"]
         if isinstance(t.get("neo4j"), dict):
             neo4j_census = t["neo4j"]
+        if isinstance(t.get("entity_graph"), dict):
+            entity_graph = t["entity_graph"]
         breakdown = t.get("breakdown")
         if isinstance(breakdown, dict) and isinstance(breakdown.get("summaries"), list):
             summaries_by_kind = breakdown["summaries"]
@@ -349,6 +424,7 @@ def consolidation_from_payload(
         },
         "cycles": cycles,
         "coverage": _fact_coverage(neo4j_census, summaries_by_kind),
+        "graph_health": _graph_health(entity_graph, neo4j_census),
         "nrem_density": {
             **nrem_density,
             "note": _NREM_DENSITY_NOTE,

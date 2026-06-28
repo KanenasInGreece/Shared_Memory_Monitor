@@ -182,6 +182,9 @@
         <div class="section-title section-title-tight" id="consolidation-bytype-head" hidden>Consolidations by type</div>
         <div class="consolidation-summary" id="consolidation-bytype" hidden></div>
         <p class="consolidation-note" id="consolidation-coverage-note"></p>
+        <div class="section-title section-title-tight" id="consolidation-graph-head" hidden>Graph health · entity resolution</div>
+        <div class="consolidation-summary" id="consolidation-graph" hidden></div>
+        <p class="consolidation-note" id="consolidation-graph-note" hidden></p>
         <div class="schema-table-card">
           <h4>By cycle</h4>
           <div class="schema-table-scroll">
@@ -495,6 +498,47 @@ function renderConsolidationDrilldown(C) {
   const covNote = document.getElementById("consolidation-coverage-note");
   if (covNote) {
     covNote.textContent = "Coverage = consolidated ÷ REM-processed facts. Awaiting = REM-processed facts not yet folded into a community summary. Per cycle, “Eligible” counts clusters (groups of related facts) that meet the fold gate.";
+  }
+
+  // Graph health — the input-side axis (ADR-017/018). Derived from
+  // telemetry.entity_graph: orphan/singleton ratios are the fragmentation
+  // proxy (the GDS-family signal), node-degree hubs the connectivity head.
+  const gh = C?.graph_health || {};
+  const ghBox = document.getElementById("consolidation-graph");
+  const ghHead = document.getElementById("consolidation-graph-head");
+  const ghNote = document.getElementById("consolidation-graph-note");
+  if (ghBox && ghHead) {
+    if (gh.present) {
+      const pct = p => (p == null ? "—" : `${p}%`);
+      const kpis = [];
+      if (gh.entities_total != null) kpis.push(["Entities", String(gh.entities_total)]);
+      if (gh.connected_pct != null) kpis.push(["Connected", `${gh.connected_entities} · ${pct(gh.connected_pct)}`]);
+      if (gh.orphan_entities != null) kpis.push(["Orphans", `${gh.orphan_entities} · ${pct(gh.orphan_pct)}`]);
+      if (gh.singleton_entities != null) kpis.push(["Singletons", `${gh.singleton_entities} · ${pct(gh.singleton_pct)}`]);
+      if (gh.max_hub_degree != null) kpis.push(["Top hub degree", String(gh.max_hub_degree)]);
+      if (gh.alias_edges != null) kpis.push(["Alias edges", String(gh.alias_edges)]);
+      // REM-pending entities aren't yet wired up, so they inflate the orphan
+      // share — show the backlog as explicit context, flagged warn when nonzero.
+      if (gh.rem_pending) {
+        const fp = gh.rem_pending_facts || 0, dp = gh.rem_pending_decisions || 0;
+        kpis.push(["Awaiting REM", `${fp} facts · ${dp} decisions`, true]);
+      }
+      ghHead.hidden = false;
+      ghBox.hidden = false;
+      ghBox.innerHTML = kpis.map(([k, v, warn]) =>
+        `<div class="consolidation-kpi${warn ? " warn" : ""}"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`).join("");
+      if (ghNote) {
+        ghNote.hidden = false;
+        ghNote.textContent = "Input-side quality: orphan + singleton entities are weakly connected and never fold into a summary, so a high orphan share caps achievable coverage regardless of cycle liveness." +
+          (gh.rem_pending ? " Counts include entities from records still awaiting REM (relationships are built during REM), so the orphan/singleton share is an upper bound on true fragmentation until REM catches up." : "") +
+          (gh.alias_edges === 0 ? " Alias edges land with the REM alias-writer (gateway v0.6.1)." : "");
+      }
+    } else {
+      ghHead.hidden = true;
+      ghBox.hidden = true;
+      ghBox.innerHTML = "";
+      if (ghNote) ghNote.hidden = true;
+    }
   }
 
   const cycles = C?.cycles || [];

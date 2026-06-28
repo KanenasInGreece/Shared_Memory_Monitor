@@ -6,6 +6,46 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.12] - 2026-06-28
+
+### Added
+
+- **Graph health — the input-side consolidation-quality axis** in the
+  consolidation drill-down. ADR-017/018 frame consolidation quality on two axes:
+  the *output* side (Coverage — facts folded into summaries, already shown) and
+  the *input* side (entity resolution — how connected the graph is before a cycle
+  runs). The drawer now surfaces the input side from `telemetry.entity_graph`:
+  **Entities**, **Connected** (count · %), **Orphans** (count · %), **Singletons**
+  (count · %), **Top hub degree**, and **Alias edges**. Orphan and singleton
+  entities are weakly connected and never fold into a summary, so a high orphan
+  share caps achievable coverage regardless of cycle liveness — making this the
+  "garbage-in" leading indicator that complements the liveness/coverage signals.
+  These are the GDS-family signals (orphan / low-degree counts and the
+  node-degree hub head) the gateway already computes; the monitor surfaces them
+  read-only with **no new data path** — consistent with the data-sourcing
+  principle. WCC / Louvain modularity are not in the gateway payload, so the
+  fragmentation proxy is derived from the orphan/singleton ratios that are.
+
+  **Requires framework gateway v0.6.0+** (first version to expose
+  `telemetry.entity_graph`). On older gateways the field is absent and the Graph
+  health block is omitted with no error.
+
+- **REM-pending anti-bloat caveat on Graph health.** `entity_graph` counts
+  *every* entity node, including those extracted from records still awaiting REM
+  — but REM is the stage that builds an entity's relationships, so a pre-REM
+  entity is counted as an orphan/singleton purely because it hasn't been
+  processed yet. Graph health now surfaces **Awaiting REM** (`rem_pending_facts`
+  / `rem_pending_decisions`, flagged warn) and annotates the note so the
+  orphan/singleton share reads as an *upper bound* on true fragmentation until
+  REM catches up — never a settled quality verdict (avoids bloated numbers).
+
+### Changed
+
+- `consolidation_from_payload` now extracts `telemetry.entity_graph` and returns
+  a `graph_health` block (`_graph_health`), threaded with the `telemetry.neo4j`
+  REM-pending census; every field degrades to `None`/`[]` on missing input so one
+  absent metric never blanks the rest.
+
 ## [0.4.11] - 2026-06-26
 
 ### Changed

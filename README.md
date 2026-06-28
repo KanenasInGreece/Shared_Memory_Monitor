@@ -144,6 +144,7 @@ Open **http://127.0.0.1:8765/**
 | **`monitor:read` token** | Framework-issued read-only identity — see [Quick start](#gateway-token-issued-by-the-framework) |
 | `telemetry.nrem` + `telemetry.breakdown` | Phase 3 coordinator fields — upgrade gateway if `check` reports missing |
 | `telemetry.consolidation` + `/health.consolidation` | ADR-018 consolidation signal (v0.4.7+) — upgrade gateway if `check` reports `has_consolidation: false` |
+| `telemetry.entity_graph` | **Requires framework gateway v0.6.0+.** Feeds the consolidation drawer's **Graph health** (input-side entity-resolution axis: orphan/singleton ratios, node-degree hubs). On older gateways the field is absent and the Graph health block is omitted (no error). |
 | Python 3.11+ and [uv](https://docs.astral.sh/uv/) | `uv sync` / CLI |
 
 ### Local logs (required for `/logs` and diagram flows; same host as gateway in practice)
