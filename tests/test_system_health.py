@@ -5,7 +5,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from sm_telemetry_monitor.analytics import rem_drain_signal
-from sm_telemetry_monitor.system_health import _workload_part, system_health_snapshot
+from sm_telemetry_monitor.system_health import (
+    _llm_pool_summary,
+    _workload_part,
+    system_health_snapshot,
+)
 
 
 def _healthy_gateway(*, backup_in_progress=False):
@@ -217,6 +221,114 @@ class RemTileTests(unittest.TestCase):
         w = _workload_part("rem_daemon", {"rem_daemon": "stopped", "llm": "ok"},
                            {"rem_backlog": 6}, inference_busy="idle")
         self.assertEqual(w["state"], "bad")
+
+
+def _pool_gateway(*, s5000="ok", s4000="ok", inflight5000=0, inflight4000=0,
+                  cooldown4000=0.0):
+    """Two-backend gateway /health as emitted since framework v0.6.1 (LLM pool)."""
+    return {
+        **_healthy_gateway(),
+        "llm_backends": {"http://localhost:5000": s5000, "http://localhost:4000": s4000},
+        "llm_pool": {
+            "http://localhost:5000": {"weight": 1.0, "inflight": inflight5000,
+                                      "routed": 38, "routed_pct": 88.4, "fails": 2,
+                                      "cooldown": 0.0, "reserved": False},
+            "http://localhost:4000": {"weight": 1.0, "inflight": inflight4000,
+                                      "routed": 5, "routed_pct": 11.6, "fails": 0,
+                                      "cooldown": cooldown4000, "reserved": False},
+        },
+    }
+
+
+class LlmPoolTests(unittest.TestCase):
+    """Multi-backend pool (v0.6.1+): per-backend busy on the LLM tile, pool-slot
+    gating on the REM tile — global GPU load is no longer the defer signal."""
+
+    def _llm_workload(self, health, *, inference_busy="idle"):
+        pool = _llm_pool_summary(health)
+        return _workload_part("llm", health, {}, inference_busy=inference_busy,
+                              llm_pool=pool), pool
+
+    def test_pool_summary_parsed(self):
+        pool = _llm_pool_summary(_pool_gateway(inflight5000=1))
+        self.assertEqual(pool["total"], 2)
+        self.assertEqual(pool["up"], 2)
+        self.assertEqual(pool["busy"], 1)
+        self.assertEqual(pool["free"], 1)
+
+    def test_single_backend_health_has_no_pool(self):
+        self.assertIsNone(_llm_pool_summary(_healthy_gateway()))
+
+    def test_second_backend_busy_shows_on_tile(self):
+        w, _ = self._llm_workload(_pool_gateway(inflight4000=2))
+        self.assertEqual(w["value"], "busy 1/2")
+        self.assertEqual(w["state"], "ok")
+
+    def test_pool_idle_gpu_idle(self):
+        w, _ = self._llm_workload(_pool_gateway())
+        self.assertEqual(w["value"], "idle")
+        self.assertIn("pool of 2", w["caption"])
+
+    def test_one_backend_down_warns_not_critical(self):
+        w, _ = self._llm_workload(_pool_gateway(s4000="down"))
+        self.assertEqual(w["value"], "1/2 up")
+        self.assertEqual(w["state"], "warn")
+
+    def test_pool_idle_but_gpu_busy_is_direct_load(self):
+        # nvtop busy while no pool call is in flight = load outside the gateway
+        # (e.g. a direct chat with a backend) — truthful busy, not an alarm.
+        w, _ = self._llm_workload(_pool_gateway(), inference_busy="busy")
+        self.assertEqual(w["value"], "busy")
+        self.assertEqual(w["state"], "ok")
+        self.assertIn("no pool call", w["caption"])
+
+    def _rem(self, health, *, inference_busy="idle", rem_trend="insufficient"):
+        pool = _llm_pool_summary(health)
+        return _workload_part("rem_daemon", {**health, "rem_daemon": "running"},
+                              {"rem_backlog": 6}, inference_busy=inference_busy,
+                              rem_trend=rem_trend, llm_pool=pool)
+
+    def test_rem_defers_only_when_pool_full(self):
+        w = self._rem(_pool_gateway(inflight5000=1, inflight4000=1))
+        self.assertEqual(w["state"], "ok")
+        self.assertIn("deferring", w["value"])
+        self.assertIn("pool busy", w["caption"])
+
+    def test_rem_stall_detected_despite_gpu_busy(self):
+        # The pre-pool trap: nvtop reads busy because REM itself (or a direct
+        # chat) holds one card, but a pool slot is free — flat backlog is a
+        # genuine stall and must warn, not hide behind "GPU busy".
+        w = self._rem(_pool_gateway(inflight5000=1), inference_busy="busy",
+                      rem_trend="flat")
+        self.assertEqual(w["state"], "warn")
+        self.assertIn("stalled", w["value"])
+
+    def test_rem_draining_with_free_slot_is_ok(self):
+        w = self._rem(_pool_gateway(inflight5000=1), inference_busy="busy",
+                      rem_trend="draining")
+        self.assertEqual(w["state"], "ok")
+        self.assertIn("draining", w["value"])
+
+    def test_snapshot_exposes_pool(self):
+        payload = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "insight": {"stalled": False, "consecutive_failures": 0},
+                    "fact_consolidation": {"stalled": False, "consecutive_failures": 0},
+                },
+            },
+        }
+        with patch("sm_telemetry_monitor.system_health.get_telemetry",
+                   return_value=payload), \
+             patch("sm_telemetry_monitor.system_health.live_summary",
+                   return_value={"latest": {}}), \
+             patch("sm_telemetry_monitor.system_health.get_health",
+                   return_value=_pool_gateway(inflight4000=1)):
+            snap = system_health_snapshot()
+        self.assertEqual(snap["llm_pool"]["busy"], 1)
+        llm = next(c for c in snap["components"] if c["key"] == "llm")
+        self.assertEqual(llm["workload"]["value"], "busy 1/2")
 
 
 class RemDrainSignalTests(unittest.TestCase):

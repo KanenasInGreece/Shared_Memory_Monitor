@@ -476,6 +476,7 @@ def is_inference_backpressure(text: str) -> bool:
         marker in low
         for marker in (
             "gpu busy",
+            "pool has no free slot",
             "llm failed — skipping",
             "llm failed - skipping",
             "timeout",

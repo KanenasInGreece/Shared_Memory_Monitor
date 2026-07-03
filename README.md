@@ -73,7 +73,7 @@ Opens from **Drill-down → Consolidation**. The drawer reads the gateway's cons
 
 - **Liveness** — health verdict, last outcome, time since the last successful fold, and the stall threshold. A deferred cycle with nothing eligible reads as **idle**, not a warning; the only red state is a genuine stall (an eligible backlog with nothing folded inside the threshold).
 - **Coverage** (output side) — from the `telemetry.neo4j` fact census: REM-processed facts, how many are consolidated (count and %), and how many still await a fold. **Consolidations by type** lists the summaries produced — insights, thematic, community — with any superseded count.
-- **Graph health · entity resolution** (input side, gateway v0.6.0+) — from `telemetry.entity_graph`: total entities, the connected share, and the orphan and singleton shares that measure how fragmented the graph is before a fold runs. Orphan and singleton entities are weakly connected and never fold into a summary, so a high orphan share caps the coverage a cycle can reach. The counts include entities from records still awaiting REM — REM is the stage that builds an entity's relationships — so an **Awaiting REM** figure is shown and the orphan/singleton share reads as an upper bound on true fragmentation until REM catches up.
+- **Graph health · entity resolution** (input side, gateway v0.6.0+; v0.6.1 semantics) — from `telemetry.entity_graph`: total entities, the **Mentioned** share (entities with live fact/decision mentions — the ones that can seed a fold), the **Structural only** share (entities holding graph edges but no live mention), **Orphans** (truly dangling degree-0 nodes — a hygiene defect, flagged when nonzero), **Singletons**, and the alias layer (**Alias edges** · groups and alias coverage) written by the v0.6.1 entity-resolution alias-writer. The counts include entities from records still awaiting REM — REM is the stage that builds an entity's relationships — so an **Awaiting REM** figure is shown and the fragmentation share reads as an upper bound until REM catches up.
 - **By cycle** — the insight and fact-consolidation cycles with their outcome, eligible clusters, oldest wait, and last error.
 
 ![Consolidation health — liveness, fact coverage %, graph-health entity resolution, per-cycle table](docs/images/consolidation.png)
@@ -149,7 +149,8 @@ Open **http://127.0.0.1:8765/**
 | **`monitor:read` token** | Framework-issued read-only identity — see [Quick start](#gateway-token-issued-by-the-framework) |
 | `telemetry.nrem` + `telemetry.breakdown` | Phase 3 coordinator fields — upgrade gateway if `check` reports missing |
 | `telemetry.consolidation` + `/health.consolidation` | ADR-018 consolidation signal (v0.4.7+) — upgrade gateway if `check` reports `has_consolidation: false` |
-| `telemetry.entity_graph` | **Requires framework gateway v0.6.0+.** Feeds the consolidation drawer's **Graph health** (input-side entity-resolution axis: orphan/singleton ratios, node-degree hubs). On older gateways the field is absent and the Graph health block is omitted (no error). |
+| `telemetry.entity_graph` | **Requires framework gateway v0.6.0+** (v0.6.1 for the corrected orphan count, `unmentioned_entities`, and the alias-layer KPIs). Feeds the consolidation drawer's **Graph health** (input-side entity-resolution axis: mention coverage, singletons, alias edges/groups, node-degree hubs). On older gateways absent fields degrade to omitted KPIs (no error). |
+| `/health.llm_pool` + `/health.llm_backends` | Emitted by v0.6.1+ gateways with more than one `LLM_BACKENDS` entry — per-backend busy on the LLM tile and pool-slot REM gating. Single-backend gateways omit them; the tiles keep the nvtop semantics. |
 | Python 3.11+ and [uv](https://docs.astral.sh/uv/) | `uv sync` / CLI |
 
 ### Local logs (required for `/logs` and diagram flows; same host as gateway in practice)
@@ -260,9 +261,10 @@ Consolidation drawer fields:
 | **Coverage** — REM-processed facts | `facts_total − facts_rem_pending` (`telemetry.neo4j`) |
 | **Coverage** — consolidated (N · %) | `rem_processed − facts_unconsolidated`, over REM-processed |
 | **Coverage** — awaiting fold (N · %) | `facts_unconsolidated`, over REM-processed |
-| **Graph health** — entities · connected · orphans · singletons | `telemetry.entity_graph` (gateway v0.6.0+) — graph size and fragmentation before a fold |
+| **Graph health** — entities · mentioned · structural only · orphans · singletons | `telemetry.entity_graph` (gateway v0.6.0+; v0.6.1 semantics) — mention coverage and fragmentation before a fold; orphans = degree-0 dangling, flagged when nonzero |
+| **Graph health** — alias edges · groups · coverage | `alias_edges` · `alias_components` · `alias_covered_entities` — the v0.6.1 entity-resolution alias layer |
 | **Graph health** — top hub degree | Highest entity degree in `entity_graph.top_hubs` |
-| **Graph health** — awaiting REM | `facts_rem_pending + decisions_rem_pending` — pre-REM entities inflate the orphan share; shown as a caveat, not a verdict |
+| **Graph health** — awaiting REM | `facts_rem_pending + decisions_rem_pending` — pre-REM entities inflate the fragmentation share; shown as a caveat, not a verdict |
 | **By cycle → Eligible** | `eligible_clusters` — clusters awaiting a fold (a count, not a ratio) |
 | **By cycle → Oldest wait** | `eligible_oldest_age_seconds` — age of the oldest cluster still waiting |
 
@@ -406,13 +408,13 @@ Requires a framework gateway that exposes `telemetry.consolidation` and a cached
 | `/health` | `consolidation.last_outcome` | `completed` \| `crashed` \| `deferred` \| null |
 | `telemetry.consolidation` | `insight` / `fact_consolidation` | Per-cycle outcome, in-flight, failures, `last_error`, coverage |
 | `telemetry.consolidation.*.backlog` | `eligible_clusters` | Clusters awaiting a fold — **not** the same as `telemetry.nrem` density cycles |
-| `telemetry.entity_graph` (gateway v0.6.0+) | `orphan_entities` · `singleton_entities` · `entities_total` · `top_hubs` | **Graph health** — input-side fragmentation; orphan/singleton shares cap the coverage a fold can reach |
+| `telemetry.entity_graph` (gateway v0.6.0+) | `entities_total` · `orphan_entities` · `unmentioned_entities` · `singleton_entities` · `alias_edges` · `alias_components` · `top_hubs` | **Graph health** — input-side fragmentation and the alias layer; v0.6.1 corrected `orphan_entities` to degree-0 dangling and added `unmentioned_entities` as the honest coverage proxy |
 
 `decision_cycles > 0` with `eligible_clusters = 0` is normal (the cluster fails the strict insight gate) — not a stall.
 
-The orphan and singleton counts include entities from records still awaiting REM, which build their relationships during REM. The drawer shows an **Awaiting REM** figure so the fragmentation share reads as an upper bound, not a settled verdict.
+The unmentioned and singleton counts include entities from records still awaiting REM, which build their relationships during REM. The drawer shows an **Awaiting REM** figure so the fragmentation share reads as an upper bound, not a settled verdict.
 
-Correlate stalls in the **Gateway daemons** log tab (Consolidation filter): `CRASHED` (code bug), repeated `deferring` (GPU/backup), or `health refresh failed` (stale signal).
+Correlate stalls in the **Gateway daemons** log tab (Consolidation filter): `CRASHED` (code bug), repeated `deferring` (LLM pool/GPU busy, backup), or `health refresh failed` (stale signal).
 
 ---
 

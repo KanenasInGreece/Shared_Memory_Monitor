@@ -6,6 +6,51 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.13] - 2026-07-03
+
+Alignment release for framework gateway **v0.6.1** (LLM backend pool +
+entity-resolution alias writer). Everything below reads only what `/health`
+and `GET /memory/telemetry` already expose — no new data path.
+
+### Added
+
+- **Per-backend LLM pool on the LLM tile.** Multi-backend gateways
+  (`LLM_BACKENDS` in the gateway env) expose `llm_pool` / `llm_backends` on
+  `/health`; the tile now reads them as the authoritative per-model busy
+  signal: `busy 1/2` when one backend is inferring, `1/2 up` (warn) when a
+  backend is down, `idle · pool of 2` when the whole pool is free. When the
+  pool is idle but nvtop still reports the GPU busy, the tile reads
+  "GPU busy · no pool call in flight" — truthful direct-load (outside the
+  gateway) rather than a false pool claim. Single-backend gateways omit the
+  pool fields and keep the existing nvtop-based tile unchanged. The snapshot
+  exposes the parsed pool as `llm_pool` for the dashboard.
+- **`pool_busy` defer reason.** v0.6.1+ daemons gate dream cycles on a free
+  pool slot and record `last_deferred_reason: "pool_busy"`; the tile and
+  drill-down now render "Deferred — LLM pool busy" (the pre-pool `gpu_busy`
+  wording is kept for single-backend stacks).
+- **Graph health aligned to the corrected v0.6.1 `entity_graph` semantics.**
+  `orphan_entities` is now truly dangling (degree 0 — flagged warn when
+  nonzero, expected 0); the new `unmentioned_entities` ("Structural only")
+  is the honest coverage proxy; **Mentioned** (entities with live
+  fact/decision mentions) replaces the old "Connected" derivation, which the
+  corrected orphan count had reduced to a constant 100%. Alias-layer KPIs are
+  now live: edges · groups (`alias_components`) and alias coverage. Pre-0.6.1
+  gateways simply omit the new KPIs.
+
+### Fixed
+
+- **REM stall detection no longer hides behind global GPU load on pool
+  gateways.** Since v0.6.1 REM defers only when the whole LLM pool is busy —
+  nvtop-busy (often REM's own card, or a direct chat) is not a defer signal
+  there. The REM tile now gates on pool free-slots: "deferring · LLM pool
+  busy" only when no slot is free, and a flat backlog with a free slot warns
+  as a genuine stall even while the GPU reads busy.
+- **Stale cycle errors no longer displayed as live faults.** The gateway keeps
+  the most recent cycle error indefinitely (e.g. `OrphanedRun` from a daemon
+  restart whose in-flight row was already recovered); the drill-down now shows
+  `last_error` only while it is current — a non-completed outcome or an active
+  failure streak — instead of pinning a long-fixed error to a healthy cycle.
+
 ### Documentation
 
 - README consolidation section rewritten around the two-axis view (Coverage =

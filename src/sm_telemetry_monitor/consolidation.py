@@ -18,9 +18,13 @@ _NREM_DENSITY_NOTE = (
 )
 
 # telemetry.consolidation[.cycle].last_deferred_reason — why a cycle deferred
-# instead of folding. Both are benign back-pressure, not failures (ADR-018).
+# instead of folding. All are benign back-pressure, not failures (ADR-018).
+# "gpu_busy" is the pre-pool nvtop gate (single-backend stacks still emit it);
+# "pool_busy" replaces it on multi-backend gateways, where REM/NREM defer only
+# when no LLM backend in the pool has a free slot.
 _DEFER_REASONS = {
     "gpu_busy": "inference GPU busy",
+    "pool_busy": "LLM pool busy",
     "backup_in_progress": "backup in progress",
 }
 
@@ -116,30 +120,35 @@ def _graph_health(entity_graph: dict | None, neo4j: dict | None = None) -> dict:
     ADR-017/018 frame consolidation quality on two axes: the *output* side
     (coverage — facts folded into summaries, see ``_fact_coverage``) and the
     *input* side (entity resolution — how well the graph is connected before
-    consolidation runs). A heavily fragmented entity graph (many orphans /
-    singletons) is the "garbage-in" leading indicator: orphan entities are never
-    pulled into a cluster, so they never consolidate regardless of cycle liveness.
+    consolidation runs). A heavily fragmented entity graph (many singletons /
+    unmentioned entities) is the "garbage-in" leading indicator: weakly
+    connected entities are never pulled into a cluster, so they never
+    consolidate regardless of cycle liveness.
 
-    These are the GDS-family signals the gateway already computes — orphan /
-    low-degree counts and the node-degree hub head — surfaced read-only with no
-    new data path. WCC/Louvain modularity are not in the gateway payload, so we
-    derive the fragmentation proxy from what is exposed rather than querying the
-    DB ourselves. Every field degrades to None on missing input (one absent
-    metric never blanks the rest).
+    Gateway v0.6.1 corrected the field semantics (the old "no live MENTIONS"
+    orphan count overstated ~500x): ``orphan_entities`` is now truly dangling
+    (degree 0 — a hygiene defect, expected 0); ``unmentioned_entities`` is the
+    honest coverage proxy (has edges — typed REM edges, summary links — but no
+    live fact/decision MENTIONS); and the alias layer is live —
+    ``alias_edges`` / ``alias_components`` / ``largest_alias_component`` track
+    the ADR-017 alias-writer's surface-form grouping. Every field degrades to
+    None on missing input (one absent metric never blanks the rest), so
+    pre-0.6.1 gateways simply omit the new KPIs.
 
     **REM-pending caveat (anti-bloat).** ``entity_graph`` counts *every* entity
     node, including those extracted from facts/decisions still awaiting REM — but
     REM is the stage that builds an entity's relationships. Pre-REM entities are
-    therefore counted as orphans/singletons purely because they haven't been
+    therefore counted as unmentioned/singletons purely because they haven't been
     processed yet, inflating the fragmentation share. We surface
     ``rem_pending_facts`` / ``rem_pending_decisions`` and flag ``rem_pending`` so
-    the operator reads orphan/singleton counts as an *upper bound* on true
-    fragmentation until REM catches up — never as a settled quality verdict.
+    the operator reads those counts as an *upper bound* on true fragmentation
+    until REM catches up — never as a settled quality verdict.
     """
     eg = entity_graph if isinstance(entity_graph, dict) else {}
     census = neo4j if isinstance(neo4j, dict) else {}
     total = eg.get("entities_total")
     orphans = eg.get("orphan_entities")
+    unmentioned = eg.get("unmentioned_entities")
     singletons = eg.get("singleton_entities")
     alias_edges = eg.get("alias_edges")
     alias_covered = eg.get("alias_covered_entities")
@@ -149,9 +158,11 @@ def _graph_health(entity_graph: dict | None, neo4j: dict | None = None) -> dict:
         if isinstance(h, dict) and h.get("name") is not None:
             hubs.append({"name": h.get("name"), "degree": h.get("degree")})
 
-    connected = None
-    if isinstance(total, int) and isinstance(orphans, int):
-        connected = max(total - orphans, 0)
+    # Entities carrying at least one live fact/decision MENTIONS — the share
+    # that can actually seed a consolidation cluster.
+    mentioned = None
+    if isinstance(total, int) and isinstance(orphans, int) and isinstance(unmentioned, int):
+        mentioned = max(total - orphans - unmentioned, 0)
 
     rem_pending_facts = census.get("facts_rem_pending")
     rem_pending_decisions = census.get("decisions_rem_pending")
@@ -165,16 +176,20 @@ def _graph_health(entity_graph: dict | None, neo4j: dict | None = None) -> dict:
         "entities_total": total,
         "orphan_entities": orphans,
         "orphan_pct": _pct(orphans, total),
+        "unmentioned_entities": unmentioned,
+        "unmentioned_pct": _pct(unmentioned, total),
         "singleton_entities": singletons,
         "singleton_pct": _pct(singletons, total),
-        "connected_entities": connected,
-        "connected_pct": _pct(connected, total),
+        "mentioned_entities": mentioned,
+        "mentioned_pct": _pct(mentioned, total),
         "alias_edges": alias_edges,
+        "alias_components": eg.get("alias_components"),
+        "largest_alias_component": eg.get("largest_alias_component"),
         "alias_covered_entities": alias_covered,
         "alias_coverage_pct": _pct(alias_covered, total),
         "max_hub_degree": hubs[0]["degree"] if hubs and hubs[0].get("degree") is not None else None,
         "top_hubs": hubs[:5],
-        # REM-pending context: orphan/singleton counts overstate true
+        # REM-pending context: unmentioned/singleton counts overstate true
         # fragmentation while records still await entity extraction.
         "rem_pending_facts": rem_pending_facts,
         "rem_pending_decisions": rem_pending_decisions,
@@ -191,15 +206,24 @@ def _cycle_state(cycle: dict) -> str:
         return "ok"
     if cycle.get("last_outcome") == "crashed":
         return "bad"
-    # deferred is a benign skip (GPU busy / backup drain); per ADR-018 the
-    # actionable signal is `stalled` (handled above), not a single deferral.
+    # deferred is a benign skip (LLM pool/GPU busy, backup drain); per ADR-018
+    # the actionable signal is `stalled` (handled above), not a single deferral.
     return "ok"
 
 
 def _normalize_cycle(key: str, raw: dict | None) -> dict:
     raw = raw if isinstance(raw, dict) else {}
     err = raw.get("last_error")
-    if isinstance(err, dict):
+    # last_error is historical: the gateway keeps the most recent error even
+    # after later cycles complete (e.g. OrphanedRun from a daemon restart whose
+    # in-flight row was already recovered). Showing it against a healthy cycle
+    # reads as a live fault, so surface it only while it is current — a
+    # non-completed last outcome or an active failure streak.
+    error_current = (
+        raw.get("last_outcome") not in ("completed", "deferred")
+        or int(raw.get("consecutive_failures") or 0) > 0
+    )
+    if isinstance(err, dict) and error_current:
         last_error = {
             "class": err.get("class"),
             "msg": sanitize_error(str(err.get("msg") or "")) or None,

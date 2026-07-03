@@ -174,7 +174,7 @@ function isInferenceBackpressure(l) {
   const hasCtx = ["llm", "inference", "insight", "synthes", "enrichment"].some(k => l.includes(k));
   if (!hasCtx) return false;
   return [
-    "gpu busy", "llm failed — skipping", "llm failed - skipping", "timeout",
+    "gpu busy", "pool has no free slot", "llm failed — skipping", "llm failed - skipping", "timeout",
     "timed out", "backend unreachable", "503", "next sweep retries",
     "ledger rows stay open",
   ].some(m => l.includes(m));

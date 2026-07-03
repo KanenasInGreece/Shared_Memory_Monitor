@@ -371,8 +371,11 @@ function healthLine(c) {
     if (load.state === "bad") return { text: "down", state: "bad", title };
     // "busy" can be ok (reachable + GPU busy) or warn (probe saturated under a
     // GPU-busy load) — honor load.state so a saturated probe reads warn, not ok.
-    if (lv.startsWith("busy")) return { text: "busy", state: healthUiState(load.state), title };
+    // Pool values pass through verbatim ("busy 1/2") so per-backend load shows.
+    if (lv.startsWith("busy")) return { text: lv, state: healthUiState(load.state), title };
     if (lv === "idle") return { text: "idle", state: "ok", title };
+    // Degraded pool ("1/2 up") — keep the load value and warn on the chip.
+    if (load.state === "warn") return { text: lv || p, state: "warn", title };
     return { text: p, state: "ok", title };
   }
   return { text: p, state: healthUiState(proc.state), title };
@@ -501,8 +504,9 @@ function renderConsolidationDrilldown(C) {
   }
 
   // Graph health — the input-side axis (ADR-017/018). Derived from
-  // telemetry.entity_graph: orphan/singleton ratios are the fragmentation
-  // proxy (the GDS-family signal), node-degree hubs the connectivity head.
+  // telemetry.entity_graph (v0.6.1 semantics): mention coverage + singletons
+  // are the fragmentation proxy, orphans are true degree-0 dangling nodes,
+  // alias edges/groups track the entity-resolution layer.
   const gh = C?.graph_health || {};
   const ghBox = document.getElementById("consolidation-graph");
   const ghHead = document.getElementById("consolidation-graph-head");
@@ -512,13 +516,22 @@ function renderConsolidationDrilldown(C) {
       const pct = p => (p == null ? "—" : `${p}%`);
       const kpis = [];
       if (gh.entities_total != null) kpis.push(["Entities", String(gh.entities_total)]);
-      if (gh.connected_pct != null) kpis.push(["Connected", `${gh.connected_entities} · ${pct(gh.connected_pct)}`]);
-      if (gh.orphan_entities != null) kpis.push(["Orphans", `${gh.orphan_entities} · ${pct(gh.orphan_pct)}`]);
+      if (gh.mentioned_pct != null) kpis.push(["Mentioned", `${gh.mentioned_entities} · ${pct(gh.mentioned_pct)}`]);
+      if (gh.unmentioned_entities != null) kpis.push(["Structural only", `${gh.unmentioned_entities} · ${pct(gh.unmentioned_pct)}`]);
+      // Orphans are truly dangling (degree 0) since gateway v0.6.1 — a hygiene
+      // defect expected to stay at zero, so any nonzero count is flagged.
+      if (gh.orphan_entities != null) kpis.push(["Orphans", `${gh.orphan_entities} · ${pct(gh.orphan_pct)}`, gh.orphan_entities > 0]);
       if (gh.singleton_entities != null) kpis.push(["Singletons", `${gh.singleton_entities} · ${pct(gh.singleton_pct)}`]);
       if (gh.max_hub_degree != null) kpis.push(["Top hub degree", String(gh.max_hub_degree)]);
-      if (gh.alias_edges != null) kpis.push(["Alias edges", String(gh.alias_edges)]);
-      // REM-pending entities aren't yet wired up, so they inflate the orphan
-      // share — show the backlog as explicit context, flagged warn when nonzero.
+      if (gh.alias_edges != null) {
+        const comps = gh.alias_components != null ? ` · ${gh.alias_components} groups` : "";
+        kpis.push(["Alias edges", `${gh.alias_edges}${comps}`]);
+      }
+      if (gh.alias_coverage_pct != null && gh.alias_edges > 0) {
+        kpis.push(["Alias coverage", `${gh.alias_covered_entities} · ${pct(gh.alias_coverage_pct)}`]);
+      }
+      // REM-pending entities aren't yet wired up, so they inflate the
+      // fragmentation share — show the backlog as explicit context, flagged warn.
       if (gh.rem_pending) {
         const fp = gh.rem_pending_facts || 0, dp = gh.rem_pending_decisions || 0;
         kpis.push(["Awaiting REM", `${fp} facts · ${dp} decisions`, true]);
@@ -529,9 +542,9 @@ function renderConsolidationDrilldown(C) {
         `<div class="consolidation-kpi${warn ? " warn" : ""}"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`).join("");
       if (ghNote) {
         ghNote.hidden = false;
-        ghNote.textContent = "Input-side quality: orphan + singleton entities are weakly connected and never fold into a summary, so a high orphan share caps achievable coverage regardless of cycle liveness." +
-          (gh.rem_pending ? " Counts include entities from records still awaiting REM (relationships are built during REM), so the orphan/singleton share is an upper bound on true fragmentation until REM catches up." : "") +
-          (gh.alias_edges === 0 ? " Alias edges land with the REM alias-writer (gateway v0.6.1)." : "");
+        ghNote.textContent = "Input-side quality: mentioned entities carry live fact/decision mentions and can seed consolidation clusters; structural-only entities hold graph edges (typed relations, summary links) but no live mention. Orphans are dangling nodes with no relationships at all — expected zero. Alias edges group surface-form variants of one concept (entity-resolution layer), keeping fragmented mentions foldable." +
+          (gh.rem_pending ? " Counts include entities from records still awaiting REM (relationships are built during REM), so the fragmentation share is an upper bound until REM catches up." : "") +
+          (gh.alias_edges === 0 ? " No alias edges yet — the alias-writer sweep hasn't run on this gateway." : "");
       }
     } else {
       ghHead.hidden = true;

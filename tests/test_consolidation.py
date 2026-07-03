@@ -137,6 +137,74 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         self.assertEqual(fact["last_outcome_display"], "deferred — inference GPU busy")
         self.assertEqual(fact["state"], "ok")
 
+    def test_deferred_reason_pool_busy_named(self):
+        # v0.6.1+ multi-backend gateways defer on a full LLM pool, not nvtop.
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True,
+                                                    "last_outcome": "deferred"}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "last_outcome": "deferred",
+                    "last_deferred_reason": "pool_busy",
+                    "fact_consolidation": {
+                        "last_outcome": "deferred",
+                        "last_deferred_reason": "pool_busy",
+                        "in_flight": False,
+                        "eligible_clusters": 3,
+                        "stalled": False,
+                    },
+                },
+            },
+        }
+        snap = consolidation_from_payload(health, telemetry)
+        self.assertEqual(snap["last_deferred_reason_human"], "LLM pool busy")
+        self.assertEqual(snap["tile"]["value"], "Deferred — LLM pool busy")
+        fact = next(c for c in snap["cycles"] if c["key"] == "fact_consolidation")
+        self.assertEqual(fact["last_outcome_display"], "deferred — LLM pool busy")
+
+    def test_stale_last_error_suppressed_after_completion(self):
+        # The gateway keeps the most recent error forever (e.g. OrphanedRun from
+        # a recovered daemon restart) — a completed cycle must not display it.
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "fact_consolidation": {
+                        "last_outcome": "completed",
+                        "consecutive_failures": 0,
+                        "stalled": False,
+                        "last_error": {"class": "OrphanedRun",
+                                       "msg": "daemon restarted while cycle was in-flight"},
+                    },
+                },
+            },
+        }
+        snap = consolidation_from_payload(health, telemetry)
+        fact = next(c for c in snap["cycles"] if c["key"] == "fact_consolidation")
+        self.assertIsNone(fact["last_error"])
+        self.assertEqual(fact["state"], "ok")
+
+    def test_current_last_error_still_surfaced(self):
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "fact_consolidation": {
+                        "last_outcome": "crashed",
+                        "consecutive_failures": 2,
+                        "stalled": False,
+                        "last_error": {"class": "LLMTimeout", "msg": "timed out"},
+                    },
+                },
+            },
+        }
+        snap = consolidation_from_payload(health, telemetry)
+        fact = next(c for c in snap["cycles"] if c["key"] == "fact_consolidation")
+        self.assertEqual(fact["last_error"]["class"], "LLMTimeout")
+
     def test_fact_coverage_computed(self):
         health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
         telemetry = {
@@ -165,17 +233,22 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         self.assertIsNone(cov["coverage_pct"])
 
     def test_graph_health_computed(self):
+        # v0.6.1 entity_graph shape: orphans are degree-0 dangling, unmentioned
+        # entities have edges but no live MENTIONS, alias layer is live.
         health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
         telemetry = {
             "status": "success",
             "telemetry": {
                 "neo4j": {"facts_rem_pending": 50, "decisions_rem_pending": 32},
                 "entity_graph": {
-                    "entities_total": 1736,
-                    "orphan_entities": 961,
-                    "singleton_entities": 416,
-                    "alias_edges": 0,
-                    "alias_covered_entities": 0,
+                    "entities_total": 2385,
+                    "orphan_entities": 0,
+                    "unmentioned_entities": 1384,
+                    "singleton_entities": 538,
+                    "alias_edges": 381,
+                    "alias_covered_entities": 535,
+                    "alias_components": 226,
+                    "largest_alias_component": 9,
                     "top_hubs": [
                         {"name": "SharedMemory", "degree": 115},
                         {"name": "Neo4j", "degree": 112},
@@ -185,18 +258,45 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         }
         gh = consolidation_from_payload(health, telemetry)["graph_health"]
         self.assertTrue(gh["present"])
-        self.assertEqual(gh["entities_total"], 1736)
-        self.assertEqual(gh["orphan_pct"], 55)
-        self.assertEqual(gh["connected_entities"], 775)
-        self.assertEqual(gh["connected_pct"], 45)
-        self.assertEqual(gh["singleton_pct"], 24)
+        self.assertEqual(gh["entities_total"], 2385)
+        self.assertEqual(gh["orphan_entities"], 0)
+        self.assertEqual(gh["orphan_pct"], 0)
+        self.assertEqual(gh["unmentioned_entities"], 1384)
+        self.assertEqual(gh["unmentioned_pct"], 58)
+        self.assertEqual(gh["mentioned_entities"], 1001)
+        self.assertEqual(gh["mentioned_pct"], 42)
+        self.assertEqual(gh["singleton_pct"], 23)
+        self.assertEqual(gh["alias_edges"], 381)
+        self.assertEqual(gh["alias_components"], 226)
+        self.assertEqual(gh["largest_alias_component"], 9)
+        self.assertEqual(gh["alias_coverage_pct"], 22)
         self.assertEqual(gh["max_hub_degree"], 115)
         self.assertEqual(len(gh["top_hubs"]), 2)
-        # REM-pending records inflate orphan counts → flagged so the share reads
-        # as an upper bound, not a settled fragmentation verdict.
+        # REM-pending records inflate fragmentation counts → flagged so the share
+        # reads as an upper bound, not a settled fragmentation verdict.
         self.assertTrue(gh["rem_pending"])
         self.assertEqual(gh["rem_pending_facts"], 50)
         self.assertEqual(gh["rem_pending_decisions"], 32)
+
+    def test_graph_health_pre_061_gateway_degrades(self):
+        # Gateways below 0.6.1 omit unmentioned_entities/alias_components — the
+        # new KPIs degrade to None without blanking the rest.
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "entity_graph": {"entities_total": 1736, "orphan_entities": 961,
+                                 "singleton_entities": 416, "alias_edges": 0,
+                                 "top_hubs": []},
+            },
+        }
+        gh = consolidation_from_payload(health, telemetry)["graph_health"]
+        self.assertTrue(gh["present"])
+        self.assertEqual(gh["orphan_pct"], 55)
+        self.assertIsNone(gh["unmentioned_entities"])
+        self.assertIsNone(gh["mentioned_entities"])
+        self.assertIsNone(gh["alias_components"])
+        self.assertEqual(gh["singleton_pct"], 24)
 
     def test_graph_health_no_rem_pending(self):
         health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}

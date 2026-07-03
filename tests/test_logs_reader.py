@@ -289,6 +289,10 @@ class GatewayLogClassifyTests(unittest.TestCase):
             "ERROR:ConsolidationDaemon:Insight synthesis error for NREM: ReadTimeout:",
             "ERROR:ConsolidationDaemon:Failed to synthesise insight for 'NREM' — "
             "ledger rows stay open; next sweep retries.",
+            # v0.6.1+ pool gate — replaces the nvtop wording on multi-backend stacks
+            "WARNING:REMDaemon:REM: LLM pool has no free slot — deferring enrichment cycle",
+            "WARNING:ConsolidationDaemon:NREM: LLM pool has no free slot — "
+            "deferring consolidation; will re-check next cycle.",
         ):
             self.assertEqual(classify_gateway_line(line), "line-warn", line)
 

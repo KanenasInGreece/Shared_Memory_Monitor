@@ -59,6 +59,48 @@ def _inference_busy_state(raw: dict) -> str:
     return "unknown"
 
 
+def _llm_pool_summary(raw: dict) -> dict | None:
+    """Multi-backend LLM pool state from /health.llm_pool + /health.llm_backends.
+
+    The gateway emits both only when more than one backend is configured
+    (LLM_BACKENDS in the gateway env); single-backend deployments omit them and
+    the tiles keep the nvtop-based semantics. Per-backend `inflight` is the
+    truthful busy signal for each model — all LLM traffic flows through the
+    gateway pool, and REM/NREM gate on a free slot, not on global GPU load.
+    """
+    pool = raw.get("llm_pool")
+    if not isinstance(pool, dict) or not pool:
+        return None
+    reach = raw.get("llm_backends") if isinstance(raw.get("llm_backends"), dict) else {}
+    backends = []
+    for url, p in pool.items():
+        if not isinstance(p, dict):
+            continue
+        status = str(reach.get(url, "")).lower() or "unknown"
+        inflight = int(p.get("inflight") or 0)
+        cooldown = float(p.get("cooldown") or 0.0)
+        reserved = bool(p.get("reserved"))
+        backends.append({
+            "url": url,
+            # short label for UI chips: strip scheme, keep host:port tail
+            "label": url.split("//", 1)[-1],
+            "status": status,
+            "inflight": inflight,
+            "cooldown": cooldown,
+            "reserved": reserved,
+            "available": status == "ok" and inflight == 0 and cooldown <= 0 and not reserved,
+        })
+    if not backends:
+        return None
+    return {
+        "backends": backends,
+        "total": len(backends),
+        "up": sum(1 for b in backends if b["status"] == "ok"),
+        "busy": sum(1 for b in backends if b["inflight"] > 0),
+        "free": sum(1 for b in backends if b["available"]),
+    }
+
+
 def _rem_trend() -> str:
     """REM backlog drain signal over the recent stored tail (analytics heuristic)."""
     try:
@@ -115,7 +157,7 @@ def _process_part(key: str, raw_value, kind: str) -> dict:
 
 def _workload_part(key: str, raw: dict, t: dict, *, nrem_stalled: bool = False,
                    llm_busy: bool = False, inference_busy: str = "unknown",
-                   rem_trend: str = "insufficient") -> dict:
+                   rem_trend: str = "insufficient", llm_pool: dict | None = None) -> dict:
     # nvtop confirming the GPU is inferring means the LLM is serving, even if the
     # :5000 reachability probe momentarily timed out under load — so the REM/NREM
     # gates must not call it "blocked (LLM down)" while it is plainly running.
@@ -157,10 +199,40 @@ def _workload_part(key: str, raw: dict, t: dict, *, nrem_stalled: bool = False,
 
     if key == "llm":
         st = _state(raw.get("llm"))
-        # Two independent facts: `llm` is :5000 reachability; `inference_busy` is
-        # the nvtop GPU-busy gate REM/NREM defer on. Read load from nvtop first —
-        # it sees a user chatting directly with :5000 (bypassing the gateway),
-        # which no daemon ledger or cycle-in-flight signal can.
+        # Two independent facts: `llm` is backend reachability; `inference_busy`
+        # is the nvtop GPU-busy signal. On a multi-backend gateway the pool's
+        # per-backend in-flight is the authoritative per-model busy signal (all
+        # LLM traffic flows through the gateway), so read it first.
+        if llm_pool:
+            n = llm_pool["total"]
+            if llm_pool["up"] == 0:
+                # whole pool unreachable — same saturation nuance as single-backend
+                if inference_busy == "busy":
+                    return {"value": "busy", "state": "warn",
+                            "caption": "GPU busy · reachability probes saturated"}
+                return {"value": "unavailable", "state": "bad", "caption": "dream cycle blocked"}
+            busy_n = llm_pool["busy"]
+            down_n = n - llm_pool["up"]
+            if busy_n > 0:
+                cap = f"{busy_n} of {n} backends inferring"
+                if down_n:
+                    cap += f" · {down_n} down"
+                return {"value": f"busy {busy_n}/{n}", "state": "warn" if down_n else "ok",
+                        "caption": cap}
+            if down_n:
+                return {"value": f"{llm_pool['up']}/{n} up", "state": "warn",
+                        "caption": f"pool degraded · {down_n} backend{'s' if down_n > 1 else ''} down"}
+            if inference_busy == "busy":
+                # pool idle but the GPU is inferring: load outside the gateway
+                # (e.g. a direct chat with a backend) — truthful, not an alarm.
+                return {"value": "busy", "state": "ok",
+                        "caption": "GPU busy · no pool call in flight"}
+            if inference_busy == "idle":
+                return {"value": "idle", "state": "ok", "caption": f"pool of {n} · GPU idle"}
+            return {"value": "ready", "state": "ok", "caption": f"pool of {n} · load unknown"}
+        # Single backend: read load from nvtop first — it sees a user chatting
+        # directly with :5000 (bypassing the gateway), which no daemon ledger or
+        # cycle-in-flight signal can.
         if st != "ok":
             # Probe says unreachable, but nvtop says the GPU is actively inferring:
             # that is back-pressure (probe saturated under load), NOT an outage —
@@ -191,8 +263,22 @@ def _workload_part(key: str, raw: dict, t: dict, *, nrem_stalled: bool = False,
             return {"value": "no backlog data", "state": "unknown", "caption": "REM backlog"}
         if rem_q <= 0:
             return {"value": "queue idle", "state": "ok", "caption": "REM backlog"}
-        # A non-empty REM queue is normal — it only warrants a warning when the GPU
-        # is free yet nothing is draining (a genuine stall). While any inference
+        # A non-empty REM queue is normal — it only warrants a warning when the
+        # LLM is free yet nothing is draining (a genuine stall). What "free"
+        # means depends on the gateway: multi-backend pools gate REM on a free
+        # pool slot (v0.6.1+, defer reason "pool_busy"), so global GPU load is
+        # NOT a defer signal there — REM itself keeps a card busy while it works.
+        if llm_pool:
+            if llm_pool["free"] == 0:
+                return {"value": f"{rem_q} deferring", "state": "ok",
+                        "caption": "REM backlog · LLM pool busy"}
+            if rem_trend == "flat":
+                return {"value": f"{rem_q} stalled", "state": "warn",
+                        "caption": "REM backlog · pool slot free, not draining"}
+            if rem_trend == "draining":
+                return {"value": f"{rem_q} draining", "state": "ok", "caption": "REM backlog"}
+            return {"value": f"{rem_q} queued", "state": "ok", "caption": "REM backlog"}
+        # Single-backend stacks keep the global nvtop gate: while any inference
         # holds the GPU, REM defers by design (nvtop is a strict superset — the GPU
         # may be a direct :5000 chat, not REM; doesn't matter, REM is gated off).
         if inference_busy == "busy":
@@ -228,10 +314,12 @@ def _workload_part(key: str, raw: dict, t: dict, *, nrem_stalled: bool = False,
 
 def _build_component(key: str, field: str, label: str, kind: str, raw: dict, t: dict,
                      *, nrem_stalled: bool = False, llm_busy: bool = False,
-                     inference_busy: str = "unknown", rem_trend: str = "insufficient") -> dict:
+                     inference_busy: str = "unknown", rem_trend: str = "insufficient",
+                     llm_pool: dict | None = None) -> dict:
     process = _process_part(key, raw.get(field), kind)
     workload = _workload_part(key, raw, t, nrem_stalled=nrem_stalled, llm_busy=llm_busy,
-                              inference_busy=inference_busy, rem_trend=rem_trend)
+                              inference_busy=inference_busy, rem_trend=rem_trend,
+                              llm_pool=llm_pool)
     if key == "llm" and process["state"] == "bad" and inference_busy == "busy":
         # The reachability probe failed, but nvtop confirms the GPU is inferring.
         # Don't report the LLM "down" (→ deck critical) while it is demonstrably
@@ -442,11 +530,13 @@ def system_health_snapshot() -> dict:
     nrem_stalled = bool((consolidation.get("tile") or {}).get("stalled"))
     llm_busy = any(c.get("in_flight") for c in (consolidation.get("cycles") or []))
     inference_busy = _inference_busy_state(raw)
+    llm_pool = _llm_pool_summary(raw)
     rem_trend = _rem_trend()
     components = [
         _build_component(key, field, label, kind, raw, telemetry,
                          nrem_stalled=nrem_stalled, llm_busy=llm_busy,
-                         inference_busy=inference_busy, rem_trend=rem_trend)
+                         inference_busy=inference_busy, rem_trend=rem_trend,
+                         llm_pool=llm_pool)
         for key, field, label, kind in _INFRA_COMPONENTS
     ]
     backup = _backup_part(raw, reachable=True, last=last_backup)
@@ -459,6 +549,7 @@ def system_health_snapshot() -> dict:
         "fetched_at": fetched_at,
         "telemetry_at": telemetry_at,
         "inference_busy": inference_busy,
+        "llm_pool": llm_pool,
         "version": raw.get("version"),
         "api_version": raw.get("api_version"),
         "components": components,
