@@ -151,6 +151,9 @@ Open **http://127.0.0.1:8765/**
 | `telemetry.consolidation` + `/health.consolidation` | ADR-018 consolidation signal (v0.4.7+) — upgrade gateway if `check` reports `has_consolidation: false` |
 | `telemetry.entity_graph` | **Requires framework gateway v0.6.0+** (v0.6.1 for the corrected orphan count, `unmentioned_entities`, and the alias-layer KPIs). Feeds the consolidation drawer's **Graph health** (input-side entity-resolution axis: mention coverage, singletons, alias edges/groups, node-degree hubs). On older gateways absent fields degrade to omitted KPIs (no error). |
 | `/health.llm_pool` + `/health.llm_backends` | Emitted by v0.6.1+ gateways with more than one `LLM_BACKENDS` entry — per-backend busy on the LLM tile and pool-slot REM gating. Single-backend gateways omit them; the tiles keep the nvtop semantics. |
+| `telemetry.spine` | **Framework gateway v0.6.2+** — feeds the consolidation drawer's **First-write quality** band (record completeness, schema-growth candidates, duplicate-resolution). Older gateways omit it (band hidden, no error). |
+| `telemetry.compliance` | **Framework gateway v0.6.3+** — feeds **Schema conformance** (graph writes inside the agreed ontology). Older gateways omit it. |
+| `telemetry.latency` | **Framework gateway v0.6.3+** — feeds the **Throughput & latency** drawer (per-model enrichment model-floor vs queue-wait split; consolidation-cycle p50/p95). Older gateways omit it (drawer shows an unsupported note). |
 | Python 3.11+ and [uv](https://docs.astral.sh/uv/) | `uv sync` / CLI |
 
 ### Local logs (required for `/logs` and diagram flows; same host as gateway in practice)

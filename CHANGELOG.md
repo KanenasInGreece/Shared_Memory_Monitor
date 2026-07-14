@@ -6,6 +6,48 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-15
+
+First consumption of the framework gateway's **v0.6.2 / v0.6.3** telemetry — the
+new `spine`, `compliance`, and `latency` blocks. Everything below reads only
+what `GET /health` and `GET /memory/telemetry` already expose (read-only
+`monitor:read` token); no new data path.
+
+### Added
+
+- **First-write quality band** (consolidation drawer, above Coverage). Sourced
+  from `telemetry.spine` + `postgres.outbox_failed_oldest_age_seconds`, it is the
+  *upstream* quality gate for the two consolidation axes: a record folds and
+  resolves well only if it arrived complete. Three groups read left-to-right —
+  **Completeness** (the fill-rate of the fields the write path prompts for:
+  decisions with sources cited / alternatives / confidence, facts with a
+  citation; low rates flagged as an elicitation gap), **Schema growth** (metadata
+  keys records carry that the schema hasn't adopted — promotion candidates, not
+  errors), and **Integrity** (duplicate-entity merges, plus any writes abandoned
+  before reaching the graph). Omitted with no error on pre-0.6.2 gateways.
+- **Schema conformance** (integrity group of the same band). From
+  `telemetry.compliance`: whether graph node labels and relationship types stay
+  within the agreed ontology, naming the off-vocabulary offenders. Pre-0.6.3
+  gateways omit it.
+- **Throughput & latency drawer** (new drill-down). From `telemetry.latency`:
+  - **Record enrichment** — per backend model, a stacked bar splitting time into
+    the model's own compute (**model floor**, set by model + hardware) vs
+    **queue wait** (delay under load). A mostly-floor bar is model-bound; a large
+    wait segment is load-bound (add capacity / reduce concurrency). Degrades to an
+    honest empty state when no enrichment ran in the window.
+  - **Consolidation cycles** — median and p95 cycle time over a rolling window,
+    always shown with the sample count and window, plus a plain-language note on
+    the p95/p50 spread. The gateway gates this to real synthesis cycles
+    (`folds_succeeded > 0`), so deferred/no-op sweeps no longer skew it.
+  - A **queue-wait chip** promotes to the drawer trigger on the main deck *only*
+    when a model's contention share crosses 30% — otherwise latency stays in the
+    drill-down (no vanity always-on number).
+
+### Changed
+
+- Clarity pass on drawer copy for a general audience — internal terms (the
+  framework's "spine" etc.) are not surfaced in the UI.
+
 ## [0.4.13] - 2026-07-03
 
 Alignment release for framework gateway **v0.6.1** (LLM backend pool +

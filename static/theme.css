@@ -2378,3 +2378,86 @@ body.diagram-page { min-height: 100vh; }
   color: var(--muted);
   font-family: var(--mono);
 }
+/* ── Throughput & latency drawer ─────────────────────────────────────────── */
+/* A lead paragraph that frames a block before its metrics (also used by the
+   first-write-quality band). */
+.consolidation-note-lead {
+  margin: .1rem 0 .7rem;
+  color: var(--muted);
+  font-size: .74rem;
+  line-height: 1.5;
+}
+
+.lat-empty {
+  padding: .7rem .8rem;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: .78rem;
+}
+
+.lat-bar-row { margin: 0 0 .85rem; }
+.lat-bar-row.lat-dim { opacity: .72; }               /* low-n: visually lighter */
+
+.lat-bar-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: .5rem;
+  margin-bottom: .3rem;
+}
+.lat-model {
+  font-family: var(--mono);
+  font-size: .82rem;
+  color: var(--text);
+  font-weight: 600;
+}
+.lat-badge {
+  font-size: .66rem;
+  font-family: var(--mono);
+  color: var(--muted);
+  padding: .05rem .4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.lat-badge.warn { color: var(--warn-bright); border-color: var(--warn-dim); }
+
+/* The hero bar: model-floor segment (calm) + queue-wait segment (warm). */
+.lat-bar {
+  display: flex;
+  height: 16px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--card-inset);
+  border: 1px solid var(--border-dark);
+}
+.lat-seg { height: 100%; }
+.lat-seg-service { background: #6f8db0; }            /* model floor — calm blue */
+.lat-seg-contention {                                /* queue wait — warm + hatched */
+  background:
+    repeating-linear-gradient(45deg,
+      var(--warn) 0, var(--warn) 5px,
+      var(--warn-dim) 5px, var(--warn-dim) 10px);
+}
+
+.lat-bar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3rem .9rem;
+  margin-top: .28rem;
+  font-size: .68rem;
+  font-family: var(--mono);
+  color: var(--muted);
+}
+.lat-key { display: inline-flex; align-items: center; gap: .32rem; }
+.lat-key::before {
+  content: "";
+  width: 9px; height: 9px;
+  border-radius: 2px;
+  display: inline-block;
+}
+.lat-key-service::before { background: #6f8db0; }
+.lat-key-contention::before { background: var(--warn); }
+.lat-lown { color: var(--warn-bright); }
+.lat-n { color: var(--muted); }

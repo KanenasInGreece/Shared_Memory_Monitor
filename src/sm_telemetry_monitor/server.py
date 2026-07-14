@@ -28,6 +28,7 @@ from .config import (
 )
 from .breakdown import fetch_breakdown
 from .consolidation import consolidation_snapshot
+from .latency import latency_snapshot
 from .env_loader import bootstrap_env
 from .summary import live_summary
 from .system_health import system_health_snapshot
@@ -131,6 +132,9 @@ class Handler(BaseHTTPRequestHandler):
 
             if path == "/api/consolidation":
                 return self._json(200, consolidation_snapshot())
+
+            if path == "/api/latency":
+                return self._json(200, latency_snapshot())
 
             if path == "/api/diagram":
                 return self._json(200, diagram_payload())

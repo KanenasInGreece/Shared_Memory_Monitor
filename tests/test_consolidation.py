@@ -319,6 +319,85 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         self.assertIsNone(gh["orphan_pct"])
         self.assertEqual(gh["top_hubs"], [])
 
+    def test_first_write_quality_computed(self):
+        # telemetry.spine (gateway v0.6.2+) + postgres dead-letter age → the
+        # upstream first-write-quality band.
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "postgres": {"outbox_failed_oldest_age_seconds": None},
+                "spine": {
+                    "decisions": {"total": 190, "grounded_in_pct": 4.2,
+                                  "alternatives_pct": 76.3, "confidence_pct": 83.7,
+                                  "elicited_pct": 2.1},
+                    "facts": {"total": 285, "source_ref_pct": 6.7, "elicited_pct": 0.7},
+                    "emergent_unprojected_fields": [
+                        {"key": "connected_from", "n": 193},
+                        {"key": "principal", "n": 193},
+                    ],
+                    "alias": {"adjudications": 612, "by_verdict": {"alias": 381, "distinct": 231}},
+                },
+            },
+        }
+        q = consolidation_from_payload(health, telemetry)["first_write_quality"]
+        self.assertTrue(q["present"])
+        self.assertEqual(q["decisions"]["grounded_in_pct"], 4.2)
+        self.assertEqual(q["facts"]["source_ref_pct"], 6.7)
+        self.assertEqual(q["emergent_count"], 2)
+        self.assertEqual(q["alias_merged"], 381)
+        self.assertEqual(q["alias_distinct"], 231)
+        self.assertIsNone(q["dead_letter_age_seconds"])   # healthy: nothing stuck
+        self.assertIsNone(q["dead_letter_age_human"])
+
+    def test_first_write_quality_dead_letter_age(self):
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "postgres": {"outbox_failed_oldest_age_seconds": 7200},
+                "spine": {"facts": {"total": 10, "source_ref_pct": 50.0}},
+            },
+        }
+        q = consolidation_from_payload(health, telemetry)["first_write_quality"]
+        self.assertEqual(q["dead_letter_age_seconds"], 7200)
+        self.assertEqual(q["dead_letter_age_human"], "2h ago")
+
+    def test_first_write_quality_missing_on_old_gateway(self):
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        q = consolidation_from_payload(health, {"status": "success", "telemetry": {}})["first_write_quality"]
+        self.assertFalse(q["present"])
+        self.assertEqual(q["emergent_fields"], [])
+
+    def test_schema_conformance_non_compliant(self):
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "compliance": {
+                    "predicate_distribution": {"MENTIONS": 4458, "GROUNDED_IN": 13},
+                    "label_compliance": "non-compliant",
+                    "relationship_compliance": "non-compliant",
+                    "invalid_labels": [{"name": "Conversation", "count": 5},
+                                       {"name": "DockerContainer", "count": 4}],
+                    "invalid_relationships": [{"name": "HAS_STEP", "count": 4}],
+                },
+            },
+        }
+        c = consolidation_from_payload(health, telemetry)["schema_conformance"]
+        self.assertTrue(c["present"])
+        self.assertFalse(c["compliant"])
+        self.assertEqual(c["invalid_label_total"], 9)
+        self.assertEqual(c["invalid_relationship_total"], 4)
+        self.assertEqual(c["predicate_types"], 2)
+
+    def test_schema_conformance_missing_on_old_gateway(self):
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        c = consolidation_from_payload(health, {"status": "success", "telemetry": {}})["schema_conformance"]
+        self.assertFalse(c["present"])
+        self.assertFalse(c["compliant"])
+        self.assertEqual(c["invalid_labels"], [])
+
     def test_last_success_falls_back_to_freshest_cycle(self):
         # Top-level rollup age is null but a cycle succeeded — use the cycle age.
         health = {

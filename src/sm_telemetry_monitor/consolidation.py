@@ -197,6 +197,113 @@ def _graph_health(entity_graph: dict | None, neo4j: dict | None = None) -> dict:
     }
 
 
+def _first_write_quality(spine: dict | None, postgres: dict | None = None) -> dict:
+    """First-write quality — how complete a record is the moment it is written.
+
+    Sourced from ``telemetry.spine`` (gateway v0.6.2+; the block is omitted with
+    no error on older gateways — no new data path, per the read-only sourcing
+    principle). This is the *upstream* quality gate for the two consolidation
+    axes already shown: a record folds and resolves well downstream only if it
+    arrived complete. The framework's own finding — "graph quality begins at the
+    first write" — is that weak first writes are not repaired by later graph
+    combing, so this reads before Coverage (output) and Graph health (input).
+
+    Three signals, presented left-to-right as one story:
+
+    * **Completeness** — the fill-rate of the high-signal fields the write path
+      asks for (decisions: sources cited, alternatives weighed, confidence;
+      facts: a citation). Low completeness means records enter thin, which
+      bounds how much the later enrichment pass can add.
+    * **Schema growth** — metadata keys that records carry but the schema does
+      not yet formally capture. A high count is not a fault; it is the schema
+      signalling what it wants to become (promotion candidates).
+    * **Integrity** — the write path's housekeeping: how many duplicate-entity
+      merges it adjudicated (keeping one concept from fragmenting across many
+      spellings), and whether any write has been abandoned before reaching the
+      graph (``outbox_failed_oldest_age_seconds`` — a growing age means writes
+      are being dropped, the one alert here).
+    """
+    sp = spine if isinstance(spine, dict) else {}
+    pg = postgres if isinstance(postgres, dict) else {}
+    dec = sp.get("decisions") if isinstance(sp.get("decisions"), dict) else {}
+    fac = sp.get("facts") if isinstance(sp.get("facts"), dict) else {}
+
+    emergent: list[dict] = []
+    for e in sp.get("emergent_unprojected_fields") or []:
+        if isinstance(e, dict) and e.get("key") is not None:
+            emergent.append({"key": e.get("key"), "n": e.get("n")})
+
+    alias = sp.get("alias") if isinstance(sp.get("alias"), dict) else {}
+    verdict = alias.get("by_verdict") if isinstance(alias.get("by_verdict"), dict) else {}
+
+    dead_letter_age = pg.get("outbox_failed_oldest_age_seconds")
+
+    present = bool(dec) or bool(fac)
+    return {
+        "present": present,
+        "decisions": {
+            "total": dec.get("total"),
+            "grounded_in_pct": dec.get("grounded_in_pct"),
+            "alternatives_pct": dec.get("alternatives_pct"),
+            "confidence_pct": dec.get("confidence_pct"),
+            "elicited_pct": dec.get("elicited_pct"),
+        },
+        "facts": {
+            "total": fac.get("total"),
+            "source_ref_pct": fac.get("source_ref_pct"),
+            "elicited_pct": fac.get("elicited_pct"),
+        },
+        "emergent_fields": emergent[:8],
+        "emergent_count": len(emergent),
+        "alias_adjudications": alias.get("adjudications"),
+        "alias_merged": verdict.get("alias"),
+        "alias_distinct": verdict.get("distinct"),
+        # Dead-letter age: a write the outbox worker gave up applying to Neo4j.
+        # None (the healthy case) means nothing is stuck.
+        "dead_letter_age_seconds": dead_letter_age,
+        "dead_letter_age_human": humanize_age(dead_letter_age) if dead_letter_age is not None else None,
+    }
+
+
+def _schema_conformance(compliance: dict | None) -> dict:
+    """Schema conformance — do graph writes stay inside the agreed vocabulary.
+
+    Sourced from ``telemetry.compliance`` (gateway v0.6.3+). The integrity
+    companion to first-write quality: node labels and relationship types are
+    meant to be drawn from a fixed ontology, and anything outside it is a write
+    the schema did not sanction. We surface the verdict plus the offending
+    labels/relationships so the operator can see exactly what drifted, without
+    needing graph access. ``predicate_types`` counts the distinct relationship
+    kinds in use — context for how richly the graph is wired.
+    """
+    c = compliance if isinstance(compliance, dict) else {}
+
+    def _named(key: str) -> list[dict]:
+        out: list[dict] = []
+        for item in c.get(key) or []:
+            if isinstance(item, dict) and item.get("name") is not None:
+                out.append({"name": item.get("name"), "count": item.get("count")})
+        return out
+
+    invalid_labels = _named("invalid_labels")
+    invalid_rels = _named("invalid_relationships")
+    label_ok = c.get("label_compliance")
+    rel_ok = c.get("relationship_compliance")
+    predicates = c.get("predicate_distribution")
+    present = bool(label_ok or rel_ok or invalid_labels or invalid_rels or predicates)
+    return {
+        "present": present,
+        "label_compliance": label_ok,
+        "relationship_compliance": rel_ok,
+        "compliant": label_ok == "compliant" and rel_ok == "compliant",
+        "invalid_labels": invalid_labels[:8],
+        "invalid_relationships": invalid_rels[:8],
+        "invalid_label_total": sum(x.get("count") or 0 for x in invalid_labels),
+        "invalid_relationship_total": sum(x.get("count") or 0 for x in invalid_rels),
+        "predicate_types": len(predicates) if isinstance(predicates, dict) else None,
+    }
+
+
 def _cycle_state(cycle: dict) -> str:
     if cycle.get("stalled"):
         return "bad"
@@ -343,6 +450,9 @@ def consolidation_from_payload(
     rollup = {}
     neo4j_census = {}
     entity_graph: dict = {}
+    postgres_census: dict = {}
+    spine: dict = {}
+    compliance: dict = {}
     summaries_by_kind: list = []
     # nvtop inference-busy gate (tri-state busy|idle|unknown); top-level on both
     # /health and /memory/telemetry. "unknown" = nvtop absent / SLOT_AWARE=0 —
@@ -362,6 +472,12 @@ def consolidation_from_payload(
             neo4j_census = t["neo4j"]
         if isinstance(t.get("entity_graph"), dict):
             entity_graph = t["entity_graph"]
+        if isinstance(t.get("postgres"), dict):
+            postgres_census = t["postgres"]
+        if isinstance(t.get("spine"), dict):
+            spine = t["spine"]
+        if isinstance(t.get("compliance"), dict):
+            compliance = t["compliance"]
         breakdown = t.get("breakdown")
         if isinstance(breakdown, dict) and isinstance(breakdown.get("summaries"), list):
             summaries_by_kind = breakdown["summaries"]
@@ -447,6 +563,8 @@ def consolidation_from_payload(
             "stall_threshold_seconds": rollup.get("stall_threshold_seconds"),
         },
         "cycles": cycles,
+        "first_write_quality": _first_write_quality(spine, postgres_census),
+        "schema_conformance": _schema_conformance(compliance),
         "coverage": _fact_coverage(neo4j_census, summaries_by_kind),
         "graph_health": _graph_health(entity_graph, neo4j_census),
         "nrem_density": {

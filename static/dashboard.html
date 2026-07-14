@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Shared Memory Monitor</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<link rel="stylesheet" href="/static/theme.css?v=48">
+<link rel="stylesheet" href="/static/theme.css?v=49">
 </head>
 <body data-bar-meta="dashboard">
 
@@ -60,6 +60,14 @@
                 <span class="drawer-trigger-value" id="v-consolidation">—</span>
                 <span class="drawer-trigger-desc" id="consolidation-caption">—</span>
                 <span class="drawer-trigger-stale" id="consolidation-stale" hidden>signal stale</span>
+              </span>
+              <span class="drawer-trigger-go" aria-hidden="true">Open</span>
+            </button>
+            <button type="button" class="drawer-trigger drawer-trigger-status ok" id="latency-card" aria-expanded="false" aria-controls="latency-drawer" aria-label="Open throughput and latency">
+              <span class="drawer-trigger-text">
+                <span class="drawer-trigger-label">Throughput &amp; latency</span>
+                <span class="drawer-trigger-value" id="v-latency">Processing speed</span>
+                <span class="drawer-trigger-desc" id="latency-caption">enrichment &amp; consolidation timing</span>
               </span>
               <span class="drawer-trigger-go" aria-hidden="true">Open</span>
             </button>
@@ -159,7 +167,7 @@
   <header class="schema-drawer-head">
     <div>
       <h2 id="consolidation-drawer-title">Consolidation health</h2>
-      <p class="schema-drawer-sub">Liveness and coverage — insight and fact consolidation cycles</p>
+      <p class="schema-drawer-sub">The quality chain, read top to bottom: how complete records are when written, whether consolidation is keeping up, how much has folded into summaries, and how well the entity graph connects.</p>
       <p id="consolidation-fetched" class="schema-fetched" hidden></p>
     </div>
     <div class="schema-drawer-actions">
@@ -172,6 +180,17 @@
     <p id="consolidation-loading" class="schema-loading">Loading consolidation data…</p>
     <div id="consolidation-content" class="schema-content" hidden>
       <div id="consolidation-errors" class="schema-errors" hidden></div>
+      <section class="schema-block" id="consolidation-fwq-block" hidden>
+        <h3 class="schema-block-title">First-write quality</h3>
+        <p class="consolidation-note consolidation-note-lead">How complete and clean each record is the moment it is written — the upstream gate for everything below. Records that arrive thin or messy limit how much later processing can recover, so this reads first.</p>
+        <div class="section-title section-title-tight">Completeness · are new records arriving full?</div>
+        <div class="consolidation-summary" id="consolidation-fwq-complete"></div>
+        <div class="section-title section-title-tight" id="consolidation-fwq-emergent-head" hidden>Schema growth · fields the data carries but the schema hasn't adopted</div>
+        <div class="consolidation-summary" id="consolidation-fwq-emergent" hidden></div>
+        <div class="section-title section-title-tight">Integrity · is the write path keeping the graph clean?</div>
+        <div class="consolidation-summary" id="consolidation-fwq-integrity"></div>
+        <p class="consolidation-note" id="consolidation-fwq-note"></p>
+      </section>
       <section class="schema-block">
         <h3 class="schema-block-title">Liveness</h3>
         <div class="consolidation-summary" id="consolidation-summary"></div>
@@ -198,6 +217,38 @@
           </div>
         </div>
         <p class="consolidation-note" id="consolidation-nrem-note"></p>
+      </section>
+    </div>
+  </div>
+</aside>
+
+<div id="latency-backdrop" class="schema-backdrop" hidden></div>
+<aside id="latency-drawer" class="schema-drawer consolidation-drawer" role="dialog" aria-modal="true" aria-labelledby="latency-drawer-title" hidden>
+  <header class="schema-drawer-head">
+    <div>
+      <h2 id="latency-drawer-title">Throughput &amp; latency</h2>
+      <p class="schema-drawer-sub">How long the memory system takes to process work — separate from whether the data is good. Enrichment is the many small per-record steps; consolidation cycles are the periodic, heavier synthesis passes.</p>
+      <p id="latency-fetched" class="schema-fetched" hidden></p>
+    </div>
+    <div class="schema-drawer-actions">
+      <button type="button" id="latency-refresh" class="schema-refresh" title="Reload latency data">↻ Refresh</button>
+      <button type="button" id="latency-close" class="schema-close" aria-label="Close latency panel">×</button>
+    </div>
+  </header>
+  <div class="schema-drawer-body">
+    <p id="latency-loading" class="schema-loading">Loading latency data…</p>
+    <div id="latency-content" class="schema-content" hidden>
+      <div id="latency-errors" class="schema-errors" hidden></div>
+      <section class="schema-block">
+        <h3 class="schema-block-title">Record enrichment · where the time goes</h3>
+        <p class="consolidation-note consolidation-note-lead">Each backend model's per-record time, split into the model's own compute — a floor set by the model and hardware — and time spent waiting for a free slot when the system is busy. A bar that is mostly floor is limited by the model; a large wait segment means it is limited by load, and the fix is more capacity or less concurrency, not a faster model.</p>
+        <div id="latency-rem"></div>
+        <p class="consolidation-note" id="latency-rem-note"></p>
+      </section>
+      <section class="schema-block">
+        <h3 class="schema-block-title">Consolidation cycles</h3>
+        <div class="consolidation-summary" id="latency-nrem"></div>
+        <p class="consolidation-note" id="latency-nrem-note"></p>
       </section>
     </div>
   </div>
@@ -417,6 +468,99 @@ function renderConsolidation(C) {
   ].filter(Boolean).join(" · ");
 }
 
+// First-write quality — the upstream gate (telemetry.spine + telemetry.compliance
+// + postgres.outbox_failed_oldest_age_seconds). Three groups read left-to-right:
+// completeness (are records full?), schema growth (what the data wants added),
+// integrity (is the write path keeping the graph clean?).
+function renderFirstWriteQuality(C) {
+  const block = document.getElementById("consolidation-fwq-block");
+  if (!block) return;
+  const q = C?.first_write_quality || {};
+  if (!q.present) { block.hidden = true; return; }
+  block.hidden = false;
+
+  const pct = p => (p == null ? "—" : `${p}%`);
+  // Fields the write path actively asks for should be near-universal; a low fill
+  // rate means elicitation isn't landing, so flag it as the actionable signal.
+  const lowFill = p => p != null && p < 50;
+  const kpiHtml = rows => rows.map(([k, v, warn]) =>
+    `<div class="consolidation-kpi${warn ? " warn" : ""}"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`).join("");
+
+  // Completeness
+  const dec = q.decisions || {}, fac = q.facts || {};
+  const comp = [];
+  if (dec.total != null) {
+    comp.push(["Decisions written", String(dec.total)]);
+    comp.push(["— with sources cited", pct(dec.grounded_in_pct), lowFill(dec.grounded_in_pct)]);
+    comp.push(["— with alternatives", pct(dec.alternatives_pct), lowFill(dec.alternatives_pct)]);
+    comp.push(["— with confidence", pct(dec.confidence_pct), lowFill(dec.confidence_pct)]);
+  }
+  if (fac.total != null) {
+    comp.push(["Facts written", String(fac.total)]);
+    comp.push(["— with a citation", pct(fac.source_ref_pct), lowFill(fac.source_ref_pct)]);
+  }
+  document.getElementById("consolidation-fwq-complete").innerHTML =
+    comp.length ? kpiHtml(comp) : `<div class="consolidation-kpi"><span class="k">Completeness</span><span class="v">no data</span></div>`;
+
+  // Schema growth — emergent (captured-but-unadopted) metadata keys
+  const emHead = document.getElementById("consolidation-fwq-emergent-head");
+  const emBox = document.getElementById("consolidation-fwq-emergent");
+  const em = q.emergent_fields || [];
+  if (em.length) {
+    emHead.hidden = false; emBox.hidden = false;
+    const rows = [["Keys not yet in schema", String(q.emergent_count)]];
+    em.slice(0, 4).forEach(f => rows.push([f.key, `${f.n} records`]));
+    emBox.innerHTML = kpiHtml(rows);
+  } else {
+    emHead.hidden = true; emBox.hidden = true; emBox.innerHTML = "";
+  }
+
+  // Integrity — duplicate resolution + abandoned writes + schema conformance
+  const conf = C?.schema_conformance || {};
+  const integ = [];
+  if (q.alias_adjudications != null) {
+    integ.push(["Duplicate checks run", String(q.alias_adjudications)]);
+    if (q.alias_merged != null) integ.push(["— merged as duplicates", String(q.alias_merged)]);
+    if (q.alias_distinct != null) integ.push(["— kept distinct", String(q.alias_distinct)]);
+  }
+  // Abandoned writes: a record the outbox worker gave up applying to the graph.
+  // None is the healthy case; any age at all is worth flagging.
+  if (q.dead_letter_age_seconds != null) {
+    integ.push(["Abandoned writes", `oldest ${q.dead_letter_age_human}`, true]);
+  } else {
+    integ.push(["Abandoned writes", "none"]);
+  }
+  // Schema conformance — labels/relationships outside the agreed vocabulary.
+  if (conf.present) {
+    if (conf.compliant) {
+      integ.push(["Schema conformance", "within vocabulary"]);
+    } else {
+      const bits = [];
+      if (conf.invalid_label_total) bits.push(`${conf.invalid_label_total} labels`);
+      if (conf.invalid_relationship_total) bits.push(`${conf.invalid_relationship_total} links`);
+      integ.push(["Off-vocabulary writes", bits.join(" · ") || "present", true]);
+    }
+  }
+  document.getElementById("consolidation-fwq-integrity").innerHTML = kpiHtml(integ);
+
+  // Note — explain the story + name the off-vocabulary offenders when present
+  const note = document.getElementById("consolidation-fwq-note");
+  if (note) {
+    let txt = "Completeness is measured against the fields the write path prompts for, so a low rate points to elicitation, not to the record's author. Schema-growth keys are promotion candidates, not errors. ";
+    if (conf.present && !conf.compliant) {
+      const labs = (conf.invalid_labels || []).slice(0, 4).map(x => x.name).join(", ");
+      const rels = (conf.invalid_relationships || []).slice(0, 4).map(x => x.name).join(", ");
+      txt += "Off-vocabulary writes drift from the agreed ontology";
+      if (labs) txt += ` — labels: ${labs}`;
+      if (rels) txt += `${labs ? ";" : " —"} links: ${rels}`;
+      txt += ".";
+    } else if (conf.present) {
+      txt += "All graph writes are within the agreed vocabulary.";
+    }
+    note.textContent = txt;
+  }
+}
+
 function renderConsolidationDrilldown(C) {
   const summary = document.getElementById("consolidation-summary");
   const tbody = document.querySelector("#consolidation-cycles tbody");
@@ -459,6 +603,8 @@ function renderConsolidationDrilldown(C) {
     `<div class="consolidation-kpi"><span class="k">Stall threshold</span><span class="v">${esc(stallH)}</span></div>`,
     tile.fresh === false ? `<div class="consolidation-kpi warn"><span class="k">Signal</span><span class="v">stale</span></div>` : "",
   ].join("");
+
+  renderFirstWriteQuality(C);
 
   const coverage = C?.coverage || {};
   const covBox = document.getElementById("consolidation-coverage");
@@ -658,6 +804,173 @@ function closeConsolidationDrawer() {
       drawer.hidden = true;
     }
   }, 300);
+}
+
+// ── Throughput & latency drawer ──────────────────────────────────────────────
+let latencyDrawerGen = 0;
+
+const fmtMs = ms => {
+  if (ms == null) return "—";
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)} s`;
+};
+const fmtSecs = s => {
+  if (s == null) return "—";
+  if (s < 90) return `${Math.round(s)}s`;
+  const m = Math.floor(s / 60), r = Math.round(s % 60);
+  return r ? `${m}m ${r}s` : `${m}m`;
+};
+
+// Cloe's rule: no always-on latency number. The trigger only lights up when
+// queue-wait crosses the promotion threshold; otherwise it stays neutral.
+function renderLatencyTile(L) {
+  const card = document.getElementById("latency-card");
+  const val = document.getElementById("v-latency");
+  const cap = document.getElementById("latency-caption");
+  if (!card || !val) return;
+  if (L?.reachable === false) {
+    card.className = "drawer-trigger drawer-trigger-status unknown";
+    val.textContent = "—";
+    if (cap) cap.textContent = "gateway unreachable";
+    return;
+  }
+  const chip = L?.chip;
+  if (chip && chip.contention_pct != null) {
+    card.className = "drawer-trigger drawer-trigger-status warn";
+    val.textContent = `${chip.contention_pct}% queue wait`;
+    if (cap) cap.textContent = "load is slowing enrichment";
+  } else {
+    card.className = "drawer-trigger drawer-trigger-status ok";
+    val.textContent = "Processing speed";
+    if (cap) cap.textContent = "enrichment & consolidation timing";
+  }
+}
+
+function renderLatency(L) {
+  const fetched = document.getElementById("latency-fetched");
+  const errBox = document.getElementById("latency-errors");
+  if (errBox) {
+    if (L?.error) { errBox.hidden = false; errBox.innerHTML = `<div class="schema-error"><strong>Gateway</strong><span>${esc(L.error)}</span></div>`; }
+    else { errBox.hidden = true; errBox.innerHTML = ""; }
+  }
+  if (fetched) {
+    if (L?.fetched_at) { fetched.hidden = false; const ts = L.telemetry_at || L.fetched_at; fetched.textContent = `Telemetry ${String(ts).replace("T", " ").replace("Z", " UTC")}`; }
+    else fetched.hidden = true;
+  }
+
+  renderLatencyTile(L);
+
+  // REM per-model stacked bars — model floor vs queue wait
+  const remBox = document.getElementById("latency-rem");
+  const rem = L?.rem || {};
+  if (remBox) {
+    if (!L?.present) {
+      remBox.innerHTML = `<p class="lat-empty">This gateway does not report processing latency yet.</p>`;
+    } else if (!rem.present || !(rem.models || []).length) {
+      remBox.innerHTML = `<p class="lat-empty">No record enrichment ran in the measured window — nothing to time yet.</p>`;
+    } else {
+      remBox.innerHTML = rem.models.map(m => {
+        const sf = m.service_frac ?? (m.contention_frac != null ? 100 - m.contention_frac : 100);
+        const cf = m.contention_frac ?? 0;
+        const badgeWarn = m.contention_pct != null && m.contention_pct >= 30;
+        const badge = m.contention_pct != null ? `<span class="lat-badge${badgeWarn ? " warn" : ""}">${m.contention_pct}% wait</span>` : "";
+        const lown = m.low_n ? `<span class="lat-lown">n=${m.n ?? "?"} · few samples</span>` : (m.n != null ? `<span class="lat-n">n=${m.n}</span>` : "");
+        return `<div class="lat-bar-row${m.low_n ? " lat-dim" : ""}">
+            <div class="lat-bar-head"><span class="lat-model">${esc(m.model)}</span>${badge}</div>
+            <div class="lat-bar" role="img" aria-label="model compute ${fmtMs(m.service_ms)}, queue wait ${fmtMs(m.contention_ms)}">
+              <span class="lat-seg lat-seg-service" style="width:${sf}%"></span>
+              <span class="lat-seg lat-seg-contention" style="width:${cf}%"></span>
+            </div>
+            <div class="lat-bar-legend"><span class="lat-key lat-key-service">model ${fmtMs(m.service_ms)}</span><span class="lat-key lat-key-contention">wait ${fmtMs(m.contention_ms)}</span>${lown}</div>
+          </div>`;
+      }).join("");
+    }
+  }
+
+  // NREM consolidation-cycle p50/p95 — variance signal, always with n + window
+  const nremBox = document.getElementById("latency-nrem");
+  const nremNote = document.getElementById("latency-nrem-note");
+  const nrem = L?.nrem || {};
+  if (nremBox) {
+    if (!nrem.present) {
+      nremBox.innerHTML = `<div class="consolidation-kpi"><span class="k">Cycle time</span><span class="v">no completed cycles in window</span></div>`;
+    } else {
+      const nsuffix = nrem.n != null ? ` · n=${nrem.n}${nrem.window_days ? `, ${nrem.window_days}d` : ""}` : "";
+      const rows = [
+        ["Typical cycle (median)", fmtSecs(nrem.p50_seconds)],
+        [`Slowest seen (p95)${nsuffix}`, fmtSecs(nrem.p95_seconds), nrem.spread != null && nrem.spread >= 3],
+      ];
+      nremBox.innerHTML = rows.map(([k, v, warn]) => `<div class="consolidation-kpi${warn ? " warn" : ""}"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`).join("");
+    }
+  }
+  if (nremNote) {
+    const bits = [];
+    if (nrem.present && nrem.spread != null && nrem.spread >= 2) bits.push(`The slowest cycle ran about ${nrem.spread}× the typical one — that spread reflects how much context a cycle had to read, not a fault.`);
+    if (nrem.low_n) bits.push(`Only ${nrem.n ?? "a few"} cycle(s) in the window, so read these as observations, not a trend.`);
+    if (nrem.note) bits.push(nrem.note + ".");
+    nremNote.textContent = bits.join(" ");
+  }
+}
+
+async function loadLatency({ waitPaint = false } = {}) {
+  const gen = latencyDrawerGen;
+  const loading = document.getElementById("latency-loading");
+  const content = document.getElementById("latency-content");
+  const refreshBtn = document.getElementById("latency-refresh");
+  try {
+    if (loading) { loading.hidden = false; loading.textContent = "Loading latency data…"; }
+    if (content) content.hidden = true;
+    if (refreshBtn) refreshBtn.disabled = true;
+    if (waitPaint) await waitDrawerPaint("latency-drawer");
+    if (gen !== latencyDrawerGen) return;
+    const r = await fetch("/api/latency");
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const L = await r.json();
+    if (gen !== latencyDrawerGen) return;
+    renderLatency(L);
+    if (loading) loading.hidden = true;
+    if (content) content.hidden = false;
+  } catch (err) {
+    if (loading) { loading.hidden = false; loading.textContent = "Could not load latency data."; }
+  } finally {
+    if (refreshBtn) refreshBtn.disabled = false;
+  }
+}
+
+// Lightweight deck poll: updates only the trigger chip (promote-on-threshold).
+async function loadLatencyChip() {
+  try {
+    const r = await fetch("/api/latency");
+    if (!r.ok) return;
+    renderLatencyTile(await r.json());
+  } catch (_) {}
+}
+
+function openLatencyDrawer() {
+  latencyDrawerGen++;
+  const backdrop = document.getElementById("latency-backdrop");
+  const drawer = document.getElementById("latency-drawer");
+  const btn = document.getElementById("latency-card");
+  backdrop.hidden = false;
+  drawer.hidden = false;
+  requestAnimationFrame(() => { backdrop.classList.add("open"); drawer.classList.add("open"); });
+  btn.setAttribute("aria-expanded", "true");
+  document.body.classList.add("consolidation-open");
+  loadLatency({ waitPaint: true });
+  document.getElementById("latency-close").focus();
+}
+
+function closeLatencyDrawer() {
+  latencyDrawerGen++;
+  const backdrop = document.getElementById("latency-backdrop");
+  const drawer = document.getElementById("latency-drawer");
+  const btn = document.getElementById("latency-card");
+  backdrop.classList.remove("open");
+  drawer.classList.remove("open");
+  btn.setAttribute("aria-expanded", "false");
+  document.body.classList.remove("consolidation-open");
+  btn.focus();
+  setTimeout(() => { if (!drawer.classList.contains("open")) { backdrop.hidden = true; drawer.hidden = true; } }, 300);
 }
 
 function renderBackup(H) {
@@ -953,9 +1266,14 @@ document.getElementById("consolidation-card").addEventListener("click", openCons
 document.getElementById("consolidation-refresh").addEventListener("click", () => loadConsolidation({ waitPaint: false }));
 document.getElementById("consolidation-close").addEventListener("click", closeConsolidationDrawer);
 document.getElementById("consolidation-backdrop").addEventListener("click", closeConsolidationDrawer);
+document.getElementById("latency-card").addEventListener("click", openLatencyDrawer);
+document.getElementById("latency-refresh").addEventListener("click", () => loadLatency({ waitPaint: false }));
+document.getElementById("latency-close").addEventListener("click", closeLatencyDrawer);
+document.getElementById("latency-backdrop").addEventListener("click", closeLatencyDrawer);
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
-  if (document.getElementById("consolidation-drawer").classList.contains("open")) closeConsolidationDrawer();
+  if (document.getElementById("latency-drawer").classList.contains("open")) closeLatencyDrawer();
+  else if (document.getElementById("consolidation-drawer").classList.contains("open")) closeConsolidationDrawer();
   else if (document.getElementById("schema-drawer").classList.contains("open")) closeSchemaDrawer();
 });
 
@@ -1100,9 +1418,11 @@ fetch("/api/meta").then(r=>r.json()).then(m=>{
 }).catch(()=>{});
 loadSummary();
 loadSystemHealth();
+loadLatencyChip();
 refresh();
 setInterval(loadSummary, 30000);
 setInterval(loadSystemHealth, 30000);
+setInterval(loadLatencyChip, 30000);
 setInterval(refresh, 60000);
 
 (async function bootSchemaCapture() {
