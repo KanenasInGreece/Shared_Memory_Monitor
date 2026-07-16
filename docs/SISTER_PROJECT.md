@@ -21,9 +21,13 @@ The monitor never imports framework Python code. **No third data path** in monit
 
 | Route | Purpose |
 |-------|---------|
-| `GET /health` | Infrastructure grid (embedder, LLM, daemons) |
-| `GET /memory/telemetry` | Pipeline metrics, `telemetry.nrem`, `telemetry.breakdown` |
+| `GET /health` | Infrastructure grid (embedder, LLM, daemons); `version` + `api_version` for client compat |
+| `GET /memory/telemetry` | Pipeline metrics, `nrem`, `breakdown`, `spine`, `compliance`, `latency`, `entity_graph`, `consolidation` |
 | `POST /memory/graph` | Neo4j schema panels (read-only Cypher, server-side guard) |
+
+**Client API version:** `bridge.API_VERSION` must match the **deployed** gateway
+`api_version` (v2 as of framework 0.6.5 / retro-as-record). Do not jump to an
+unreleased tree version (e.g. rem-rebuild v3) until `/health` reports it live.
 
 **Framework logs** (`logs_reader.py` → journal + JSONL on monitor host):
 

@@ -486,7 +486,8 @@ function renderFirstWriteQuality(C) {
   const kpiHtml = rows => rows.map(([k, v, warn]) =>
     `<div class="consolidation-kpi${warn ? " warn" : ""}"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`).join("");
 
-  // Completeness
+  // Completeness — spine.facts is the framework's non-decision bucket (facts +
+  // retrospectives + other types after retro-as-record / API v2), not "facts only".
   const dec = q.decisions || {}, fac = q.facts || {};
   const comp = [];
   if (dec.total != null) {
@@ -494,10 +495,16 @@ function renderFirstWriteQuality(C) {
     comp.push(["— with sources cited", pct(dec.grounded_in_pct), lowFill(dec.grounded_in_pct)]);
     comp.push(["— with alternatives", pct(dec.alternatives_pct), lowFill(dec.alternatives_pct)]);
     comp.push(["— with confidence", pct(dec.confidence_pct), lowFill(dec.confidence_pct)]);
+    if (dec.elicited_pct != null) {
+      comp.push(["— elicited at write", pct(dec.elicited_pct), lowFill(dec.elicited_pct)]);
+    }
   }
   if (fac.total != null) {
-    comp.push(["Facts written", String(fac.total)]);
+    comp.push(["Non-decision records", String(fac.total)]);
     comp.push(["— with a citation", pct(fac.source_ref_pct), lowFill(fac.source_ref_pct)]);
+    if (fac.elicited_pct != null) {
+      comp.push(["— elicited at write", pct(fac.elicited_pct), lowFill(fac.elicited_pct)]);
+    }
   }
   document.getElementById("consolidation-fwq-complete").innerHTML =
     comp.length ? kpiHtml(comp) : `<div class="consolidation-kpi"><span class="k">Completeness</span><span class="v">no data</span></div>`;
@@ -546,7 +553,10 @@ function renderFirstWriteQuality(C) {
   // Note — explain the story + name the off-vocabulary offenders when present
   const note = document.getElementById("consolidation-fwq-note");
   if (note) {
-    let txt = "Completeness is measured against the fields the write path prompts for, so a low rate points to elicitation, not to the record's author. Schema-growth keys are promotion candidates, not errors. ";
+    let txt = "Completeness is measured against the fields the write path prompts for, so a low rate points to elicitation, not to the record's author. "
+      + "Elicited % is how often the operator was asked for those fields at save time. "
+      + "Non-decision records are the gateway's spine bucket for everything that is not a decision (facts, retrospectives, and other types) — not a pure fact count. "
+      + "Schema-growth keys are promotion candidates, not errors. ";
     if (conf.present && !conf.compliant) {
       const labs = (conf.invalid_labels || []).slice(0, 4).map(x => x.name).join(", ");
       const rels = (conf.invalid_relationships || []).slice(0, 4).map(x => x.name).join(", ");
@@ -1166,6 +1176,10 @@ function renderBreakdown(B) {
     : `<tr class="schema-row-empty"><td colspan="2">${esc(pg.error || "No sources")}</td></tr>`;
 
   const metaRows = [];
+  if (pg.technical_docs != null) metaRows.push(["postgres", "technical_docs", pg.technical_docs]);
+  if (pg.technical_docs_superseded != null) {
+    metaRows.push(["postgres", "technical_docs (superseded)", pg.technical_docs_superseded]);
+  }
   (pg.outbox || []).forEach(o => metaRows.push(["outbox", o.key, o.count]));
   (pg.summaries || []).forEach(s => metaRows.push(["summary", `${s.kind} (active)`, s.active]));
   (pg.summaries || []).forEach(s => metaRows.push(["summary", `${s.kind} (superseded)`, s.superseded]));

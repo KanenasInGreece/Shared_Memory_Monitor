@@ -6,6 +6,44 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-07-16
+
+Alignment with **live** framework gateway **v0.6.5 / api_version 2** (retro-as-record)
+and a README packaging pass: USP lede + quick start first. Still a pure visual aid
+over **existing** gateway telemetry and logs — no new data path.
+
+### Fixed
+
+- **API contract header** — `bridge.API_VERSION` (and the doctor write-probe header)
+  now advertise **2**, matching live framework gateway **v0.6.5 / api_version 2**
+  (retro-as-record). Ends the recurring gateway journal skew warning for the
+  monitor agent. Policy: track the *deployed* gateway, not an unreleased tree
+  (e.g. rem-rebuild API v3).
+- **Doctor `dashboard_history`** — `FEATURE_MATRIX` depended on `telemetry_cache`
+  but readiness never handled that key (always `unknown`). Now maps to poll-cache
+  sample count like other local features.
+- **Doctor report** — connectivity line includes gateway version + server/client
+  `api_version` and `compat`.
+- **Deferred cycle display** — `eligible_clusters is None` no longer collapses to
+  **idle** (unknown ≠ zero). Idle only when the gate census is *explicitly* 0.
+- **Agent-audit I/O classification** — `/memory/search` is **read**; supersede /
+  review_hold / relations/label are **write**; lineage `GET /memory/status/{id}`
+  and relations/review are **read**.
+
+### Changed
+
+- **First-write completeness labels** (API v2 honesty) — spine non-decision total
+  is labeled **Non-decision records** (facts + retrospectives + other types), not
+  “Facts written”. Note explains the gateway bucket. **Elicited %** is shown for
+  decisions and non-decision records when the spine provides it.
+- **README** — opens with a USP-style pitch (visual aid over *existing* Shared
+  Memory telemetry) and **Quick start** before architecture depth.
+
+### Added
+
+- **Superseded docs count** — `postgres.technical_docs_superseded` (and total) on
+  the Schema drawer meta table and in the poll-cache flatten; no new data path.
+
 ## [0.5.0] - 2026-07-15
 
 First consumption of the framework gateway's **v0.6.2 / v0.6.3** telemetry — the
@@ -498,7 +536,10 @@ and `GET /memory/telemetry` already expose — no new data path.
 - `.env` and `.grok/` gitignored; doctor never prints credential values
 - Error sanitization for tokens and connection strings
 
-[Unreleased]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/compare/v0.4.0...main
+[Unreleased]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/compare/v0.5.1...main
+[0.5.1]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.5.1
+[0.5.0]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.5.0
+[0.4.13]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.4.13
 [0.4.0]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.4.0
 [0.3.9]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.3.9
 [0.3.8]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.3.8

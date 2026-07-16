@@ -87,7 +87,9 @@ def postgres_breakdown_from_telemetry(telemetry: dict) -> dict:
     """Map telemetry.breakdown + postgres.outbox into the schema drawer shape."""
     out: dict = {
         "record_types": [], "agents": [], "sources": [], "domains": [],
-        "summaries": [], "outbox": [], "error": None,
+        "summaries": [], "outbox": [],
+        "technical_docs": None, "technical_docs_superseded": None,
+        "error": None,
     }
     bd = telemetry.get("breakdown")
     if isinstance(bd, dict) and bd.get("error"):
@@ -103,7 +105,10 @@ def postgres_breakdown_from_telemetry(telemetry: dict) -> dict:
     out["domains"] = bd.get("domains") or []
     out["summaries"] = bd.get("summaries") or []
 
-    ob = (telemetry.get("postgres") or {}).get("outbox") or {}
+    pg = telemetry.get("postgres") if isinstance(telemetry.get("postgres"), dict) else {}
+    out["technical_docs"] = pg.get("technical_docs")
+    out["technical_docs_superseded"] = pg.get("technical_docs_superseded")
+    ob = pg.get("outbox") or {}
     if isinstance(ob, dict):
         out["outbox"] = [{"key": k, "count": v} for k, v in ob.items()]
     return out
@@ -117,10 +122,10 @@ def fetch_postgres_breakdown() -> dict:
         return {
             "record_types": [], "agents": [], "sources": [], "domains": [],
             "summaries": [], "outbox": [],
+            "technical_docs": None, "technical_docs_superseded": None,
             "error": sanitize_error(str(err)),
         }
     return postgres_breakdown_from_telemetry(payload["telemetry"])
-
 
 def _breakdown_ok(payload: dict) -> bool:
     nj = payload.get("neo4j") or {}

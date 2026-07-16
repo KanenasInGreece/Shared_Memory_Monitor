@@ -13,11 +13,17 @@ class BreakdownFromTelemetryTests(unittest.TestCase):
                 "domains": [],
                 "summaries": [{"kind": "community_summary", "active": 3, "superseded": 1}],
             },
-            "postgres": {"outbox": {"applied": 100, "failed": 1}},
+            "postgres": {
+                "technical_docs": 682,
+                "technical_docs_superseded": 10,
+                "outbox": {"applied": 100, "failed": 1},
+            },
         })
         self.assertIsNone(pg["error"])
         self.assertEqual(pg["record_types"][0]["count"], 10)
         self.assertEqual(pg["outbox"], [{"key": "applied", "count": 100}, {"key": "failed", "count": 1}])
+        self.assertEqual(pg["technical_docs"], 682)
+        self.assertEqual(pg["technical_docs_superseded"], 10)
 
     def test_breakdown_error(self):
         pg = postgres_breakdown_from_telemetry({"breakdown": {"error": "db down"}})

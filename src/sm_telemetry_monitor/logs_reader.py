@@ -518,17 +518,28 @@ _DAEMON_AGENTS = frozenset({
     "coordinator", "gateway", "hive_mind", "embedder", "reranker", "proxy",
 })
 
+# Exact-path write routes (POST bodies that mutate memory). Search is read-only
+# despite POST (JSON body); see _READ_PATHS / prefix rules in classify_agent_audit_io.
 _WRITE_PATHS = frozenset({
     "/memory/save",
     "/memory/retrospective",
-    "/memory/search",
+    "/memory/supersede",
+    "/memory/review_hold",
+    "/memory/relations/label",
 })
 
 _READ_PATHS = frozenset({
     "/memory/telemetry",
     "/memory/graph",
+    "/memory/search",
+    "/memory/relations/review",
     "/health",
 })
+
+# Prefixes: lineage is GET /memory/status/{pg_id}; keep in sync with framework routes.
+_READ_PATH_PREFIXES = (
+    "/memory/status",
+)
 
 
 def _is_daemon_agent(agent: str | None) -> bool:
@@ -572,6 +583,8 @@ def classify_agent_audit_io(method: str | None, path: str | None) -> str | None:
     if route in _WRITE_PATHS:
         return "write"
     if route in _READ_PATHS:
+        return "read"
+    if any(route == p or route.startswith(p + "/") for p in _READ_PATH_PREFIXES):
         return "read"
     verb = (method or "GET").upper()
     if verb == "GET":

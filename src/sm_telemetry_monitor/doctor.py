@@ -10,7 +10,7 @@ from typing import Any
 
 import httpx
 
-from .bridge import get_health, get_telemetry, query_graph
+from .bridge import API_VERSION, get_health, get_telemetry, query_graph
 from .config import DATA_DIR, DB_FILE, ROOT, STATIC_DIR
 from .env_loader import (
     MONITOR_ROOT,
@@ -105,10 +105,20 @@ def _gateway_client() -> dict[str, Any]:
 def _check_coordinator() -> dict[str, Any]:
     raw = get_health()
     ok = raw.get("status") not in ("unreachable", "error") and "error" not in raw
+    srv = raw.get("api_version")
+    if srv is None:
+        compat = "unknown"
+    elif srv == API_VERSION:
+        compat = "ok"
+    else:
+        compat = "incompatible"
     return {
         "ok": ok,
         "status": raw.get("status"),
         "version": raw.get("version"),
+        "api_version": srv,
+        "client_api_version": API_VERSION,
+        "compat": compat,
         "error": sanitize_error(raw.get("error") or raw.get("message")) or None,
     }
 
@@ -146,7 +156,7 @@ def _check_read_role() -> dict[str, Any]:
     token = (get("AGENT_TOKEN") or "").strip()
     if not token:
         return {"ok": False, "telemetry_ok": False, "write_denied": False, "error": "AGENT_TOKEN missing"}
-    headers = {"Authorization": f"Bearer {token}", "X-SM-Api-Version": "1"}
+    headers = {"Authorization": f"Bearer {token}", "X-SM-Api-Version": str(API_VERSION)}
     try:
         with httpx.Client(timeout=8.0) as client:
             t = client.get(f"{base}/memory/telemetry", headers=headers)
@@ -230,8 +240,10 @@ def _feature_readiness(checks: dict[str, Any]) -> list[dict[str, Any]]:
     token_src = keys.get("agent_token_source", "unknown")
 
     def ready(feature: str) -> tuple[bool, str]:
-        if feature == "local":
-            return data["samples"] > 0, "needs poll loop history" if data["samples"] == 0 else "ok"
+        if feature in ("local", "telemetry_cache"):
+            if data["samples"] > 0:
+                return True, "ok"
+            return False, "needs poll loop history"
         if feature == "coordinator":
             if keys.get("AGENT_TOKEN") != "set":
                 return False, "set AGENT_TOKEN in monitor .env"
@@ -337,6 +349,18 @@ def format_report(report: dict[str, Any]) -> str:
     for name, block in report["connectivity"].items():
         mark = "ok" if block.get("ok") else "FAIL"
         extra = f" — {block['error']}" if block.get("error") else ""
+        if name == "coordinator":
+            ver = block.get("version")
+            srv = block.get("api_version")
+            cli = block.get("client_api_version")
+            compat = block.get("compat")
+            bits = []
+            if ver is not None:
+                bits.append(f"gateway {ver}")
+            if srv is not None or cli is not None:
+                bits.append(f"api server={srv} client={cli} compat={compat}")
+            if bits:
+                extra = (extra + " · " + " · ".join(bits)) if extra else " · " + " · ".join(bits)
         if name == "telemetry" and block.get("has_breakdown"):
             extra = (extra + " · breakdown ok") if extra else " · breakdown ok"
         lines.append(f"  {name}: {mark}{extra}")

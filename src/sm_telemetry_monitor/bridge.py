@@ -13,7 +13,11 @@ from .sanitize import sanitize_error
 
 bootstrap_env()
 
-API_VERSION = 1
+# Wire contract with the live gateway (GET /health api_version). Bump only when
+# the deployed gateway contract changes — not when an unreleased framework branch
+# advances (e.g. rem-rebuild API v3). Live gateway as of v0.6.5 is API v2
+# (retro-as-record). Mismatch only logs a gateway warning; reads still work.
+API_VERSION = 2
 CLIENT_VERSION_HEADER = "X-SM-Api-Version"
 
 _HTTP: httpx.Client | None = None

@@ -1,12 +1,72 @@
 # Shared Memory Monitor
 
-> Read-only operations UI for the [Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory) REM/NREM dream cycle — **http://127.0.0.1:8765/**
+## See the dream cycle — without new data plumbing
+
+**Shared Memory already knows how healthy it is.** The gateway publishes that as
+`GET /health` and `GET /memory/telemetry` (plus read-only graph and framework
+logs). This sister project turns those **existing** signals into a live ops
+picture: backlog and REM/NREM pressure, consolidation liveness and coverage,
+first-write quality, graph shape, latency, topology, and audit trails — so you
+**see** the pipeline instead of grepping JSON and journals.
+
+| | |
+|--|--|
+| **What you get** | Visual ops aid over **framework-owned** telemetry and logs |
+| **What you do not get** | A second metrics store, DB credentials, or write access to memory |
+| **Dashboard** | **http://127.0.0.1:8765/** |
+
+---
+
+## Quick start
+
+```bash
+git clone https://github.com/KanenasInGreece/Shared_Memory_Monitor.git
+cd Shared_Memory_Monitor
+./scripts/install.sh
+```
+
+### Gateway token (issued by the framework)
+
+`AGENT_TOKEN` is **not** an agent skill token. The [Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory) ships a dedicated **`monitor`** identity for this dashboard: register it in gateway `AGENT_TOKENS`, assign **`monitor:read`** in `AGENT_ROLES`, and copy the minted token here. That role is read-only — `GET /health`, `GET /memory/telemetry`, and guarded `POST /memory/graph` only; `POST /memory/save` and search return **403**.
+
+**How to mint it** (on the gateway host): run the framework's [`generate_tokens.py`](https://github.com/KanenasInGreece/Shared_Memory/blob/main/shared-memory/scripts/generate_tokens.py) (or `bootstrap_tokens.sh` on a fresh install). It prints `AGENT_TOKENS=...,monitor:tok_...` and `AGENT_ROLES=monitor:read`. Add those lines to the **gateway** `.env`, restart `hive-mind-gateway.service`, then paste the `monitor` token below.
+
+Details: [Framework SECURITY.md — read-only roles (`AGENT_ROLES`)](https://github.com/KanenasInGreece/Shared_Memory/blob/main/SECURITY.md#agent-authentication--implemented-v035).
+
+Edit **this repo's** `.env` (monitor `.env` wins over framework/skill copies for `AGENT_TOKEN` and `COORDINATOR_URL`):
+
+```bash
+AGENT_TOKEN=tok_...                  # monitor token from framework generate_tokens.py
+COORDINATOR_URL=http://localhost:8888
+# SHARED_MEMORY_ROOT=/path/to/framework   # optional — audit log path discovery
+```
+
+```bash
+curl -s http://localhost:8888/health | head -c 200
+./scripts/check-env.sh               # expect: monitor token, telemetry ok, read_role ok
+                                     # also: api server=N client=N compat=ok
+./scripts/run-loop.sh --serve --interval 600
+```
+
+Open **http://127.0.0.1:8765/**
+
+| Path | Page |
+|------|------|
+| `/` | Pipeline dashboard (+ consolidation, latency, schema drawers) |
+| `/diagram` | Framework topology |
+| `/logs` | Journal + audit tail (3s refresh) |
+
+**Persist as a user service** (optional): `./scripts/install-systemd-user.sh` then  
+`systemctl --user restart shared-memory-monitor.service`.
+
+---
 
 ## Contents
 
+- [See the dream cycle — without new data plumbing](#see-the-dream-cycle--without-new-data-plumbing)
+- [Quick start](#quick-start)
 - [What this is](#what-this-is)
 - [Screenshots](#screenshots)
-- [Quick start](#quick-start)
 - [Prerequisites](#prerequisites)
 - [Architecture](#architecture)
 - [Pages in detail](#pages-in-detail)
@@ -48,6 +108,8 @@ Three browser views (**Monitor**, **Diagram**, **Logs**) over the **same two ups
 | Infrastructure, diagram node health | `GET /health` |
 | Schema Neo4j panels | `POST /memory/graph` |
 | Schema Postgres panels | `telemetry.breakdown` in the telemetry payload |
+| First-write quality · schema conformance | `telemetry.spine` + `telemetry.compliance` |
+| Throughput & latency drawer | `telemetry.latency` |
 | Log panes | Journal + audit files the framework writes |
 | Diagram agent/daemon flows | Same `agent-audit.jsonl` as the **Agent audit** log tab |
 
@@ -63,7 +125,7 @@ Captured from a running monitor (`./scripts/capture-screenshots.sh`).
 
 ### Monitor (`/`)
 
-A full-width **status deck** above the charts, in three labelled rows — **Drill-down** (Consolidation + Schema breakdown), **Backlog & queues** (Dream backlog, REM / NREM split, Pipeline queues), and Backup / Infrastructure — followed by backlog charts. All from gateway telemetry (cached polls + live `GET /health`). Range selector (`1h`–`all`) filters the local poll cache.
+A full-width **status deck** above the charts, in three labelled rows — **Drill-down** (Consolidation, Throughput & latency, Schema breakdown), **Backlog & queues** (Dream backlog, REM / NREM split, Pipeline queues), and Backup / Infrastructure — followed by backlog charts. All from gateway telemetry (cached polls + live `GET /health`). Range selector (`1h`–`all`) filters the local poll cache.
 
 ![Monitor — status deck, backlog charts, pipeline queues, infrastructure health](docs/images/dashboard.png)
 
@@ -71,7 +133,8 @@ A full-width **status deck** above the charts, in three labelled rows — **Dril
 
 Opens from **Drill-down → Consolidation**. The drawer reads the gateway's consolidation telemetry and `GET /health`, and shows the dream cycle's health on two axes — what it has **produced** (coverage) and what it has **to work with** (graph health):
 
-- **Liveness** — health verdict, last outcome, time since the last successful fold, and the stall threshold. A deferred cycle with nothing eligible reads as **idle**, not a warning; the only red state is a genuine stall (an eligible backlog with nothing folded inside the threshold).
+- **First-write quality** (upstream, gateway v0.6.2+) — completeness of high-signal fields, schema-growth candidates, integrity (including off-vocabulary labels/links from `telemetry.compliance`). Non-decision totals include facts **and** retrospectives after framework API v2.
+- **Liveness** — health verdict, last outcome, time since the last successful fold, and the stall threshold. A deferred cycle with an **explicit** empty eligible census reads as **idle**; unknown eligibility keeps the deferred reason (e.g. pool busy). The only red state is a genuine stall.
 - **Coverage** (output side) — from the `telemetry.neo4j` fact census: REM-processed facts, how many are consolidated (count and %), and how many still await a fold. **Consolidations by type** lists the summaries produced — insights, thematic, community — with any superseded count.
 - **Graph health · entity resolution** (input side, gateway v0.6.0+; v0.6.1 semantics) — from `telemetry.entity_graph`: total entities, the **Mentioned** share (entities with live fact/decision mentions — the ones that can seed a fold), the **Structural only** share (entities holding graph edges but no live mention), **Orphans** (truly dangling degree-0 nodes — a hygiene defect, flagged when nonzero), **Singletons**, and the alias layer (**Alias edges** · groups and alias coverage) written by the v0.6.1 entity-resolution alias-writer. The counts include entities from records still awaiting REM — REM is the stage that builds an entity's relationships — so an **Awaiting REM** figure is shown and the fragmentation share reads as an upper bound until REM catches up.
 - **By cycle** — the insight and fact-consolidation cycles with their outcome, eligible clusters, oldest wait, and last error.
@@ -80,7 +143,7 @@ Opens from **Drill-down → Consolidation**. The drawer reads the gateway's cons
 
 ### Schema breakdown (side drawer)
 
-Opens from **Drill-down → Schema breakdown** — a slide-over panel on the right, not a separate page. Neo4j graph from `POST /memory/graph`; Postgres inventory from `telemetry.breakdown`.
+Opens from **Drill-down → Schema breakdown** — a slide-over panel on the right, not a separate page. Neo4j graph from `POST /memory/graph`; Postgres inventory from `telemetry.breakdown` (plus `technical_docs` / superseded counts).
 
 ![Schema breakdown — Neo4j labels, graph paths, telemetry record types and domains](docs/images/schema-breakdown.png)
 
@@ -98,46 +161,6 @@ Live framework topology: agents → gateway; REM/NREM ↔ gateway; memory and in
 
 ---
 
-## Quick start
-
-```bash
-git clone https://github.com/KanenasInGreece/Shared_Memory_Monitor.git
-cd Shared_Memory_Monitor
-./scripts/install.sh
-```
-
-### Gateway token (issued by the framework)
-
-`AGENT_TOKEN` is **not** an agent skill token. The [Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory) ships a dedicated **`monitor`** identity for this dashboard: register it in gateway `AGENT_TOKENS`, assign **`monitor:read`** in `AGENT_ROLES`, and copy the minted token here. That role is read-only — `GET /health`, `GET /memory/telemetry`, and guarded `POST /memory/graph` only; `POST /memory/save` and search return **403**.
-
-**How to mint it** (on the gateway host): run the framework's [`generate_tokens.py`](https://github.com/KanenasInGreece/Shared_Memory/blob/main/shared-memory/scripts/generate_tokens.py) (or `bootstrap_tokens.sh` on a fresh install). It prints `AGENT_TOKENS=...,monitor:tok_...` and `AGENT_ROLES=monitor:read`. Add those lines to the **gateway** `.env`, restart `hive-mind-gateway.service`, then paste the `monitor` token below.
-
-Details: [Framework SECURITY.md — read-only roles (`AGENT_ROLES`)](https://github.com/KanenasInGreece/Shared_Memory/blob/main/SECURITY.md#agent-authentication--implemented-v035).
-
-Edit **this repo's** `.env` (monitor `.env` wins over framework/skill copies for `AGENT_TOKEN` and `COORDINATOR_URL`):
-
-```bash
-AGENT_TOKEN=tok_...                  # monitor token from framework generate_tokens.py
-COORDINATOR_URL=http://localhost:8888
-# SHARED_MEMORY_ROOT=/path/to/framework   # optional — audit log path discovery
-```
-
-```bash
-curl -s http://localhost:8888/health | head -c 200
-./scripts/check-env.sh               # expect: monitor token, telemetry ok, read_role ok
-./scripts/run-loop.sh --serve --interval 600
-```
-
-Open **http://127.0.0.1:8765/**
-
-| Path | Page |
-|------|------|
-| `/` | Pipeline dashboard (+ schema drawer) |
-| `/diagram` | Framework topology |
-| `/logs` | Journal + audit tail (3s refresh) |
-
----
-
 ## Prerequisites
 
 ### Gateway HTTP (required)
@@ -151,9 +174,11 @@ Open **http://127.0.0.1:8765/**
 | `telemetry.consolidation` + `/health.consolidation` | ADR-018 consolidation signal (v0.4.7+) — upgrade gateway if `check` reports `has_consolidation: false` |
 | `telemetry.entity_graph` | **Requires framework gateway v0.6.0+** (v0.6.1 for the corrected orphan count, `unmentioned_entities`, and the alias-layer KPIs). Feeds the consolidation drawer's **Graph health** (input-side entity-resolution axis: mention coverage, singletons, alias edges/groups, node-degree hubs). On older gateways absent fields degrade to omitted KPIs (no error). |
 | `/health.llm_pool` + `/health.llm_backends` | Emitted by v0.6.1+ gateways with more than one `LLM_BACKENDS` entry — per-backend busy on the LLM tile and pool-slot REM gating. Single-backend gateways omit them; the tiles keep the nvtop semantics. |
-| `telemetry.spine` | **Framework gateway v0.6.2+** — feeds the consolidation drawer's **First-write quality** band (record completeness, schema-growth candidates, duplicate-resolution). Older gateways omit it (band hidden, no error). |
+| `telemetry.spine` | **Framework gateway v0.6.2+** — feeds the consolidation drawer's **First-write quality** band (record completeness, schema-growth candidates, duplicate-resolution). After **API v2 / retro-as-record (gateway ≥0.6.5)**, spine “facts” is the **non-decision** bucket (facts + retrospectives + other types) — the UI labels it accordingly. Older gateways omit the block (band hidden, no error). |
 | `telemetry.compliance` | **Framework gateway v0.6.3+** — feeds **Schema conformance** (graph writes inside the agreed ontology). Older gateways omit it. |
 | `telemetry.latency` | **Framework gateway v0.6.3+** — feeds the **Throughput & latency** drawer (per-model enrichment model-floor vs queue-wait split; consolidation-cycle p50/p95). Older gateways omit it (drawer shows an unsupported note). |
+| `postgres.technical_docs_superseded` | Soft-superseded row count on Schema drawer meta (and poll cache). |
+| Client `X-SM-Api-Version` | Monitor advertises **api_version 2** (matches gateway 0.6.5). `./scripts/check-env.sh` reports server/client compat. |
 | Python 3.11+ and [uv](https://docs.astral.sh/uv/) | `uv sync` / CLI |
 
 ### Local logs (required for `/logs` and diagram flows; same host as gateway in practice)

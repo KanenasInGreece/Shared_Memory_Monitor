@@ -211,9 +211,10 @@ def _first_write_quality(spine: dict | None, postgres: dict | None = None) -> di
     Three signals, presented left-to-right as one story:
 
     * **Completeness** — the fill-rate of the high-signal fields the write path
-      asks for (decisions: sources cited, alternatives weighed, confidence;
-      facts: a citation). Low completeness means records enter thin, which
-      bounds how much the later enrichment pass can add.
+      asks for (decisions: sources cited, alternatives weighed, confidence,
+      elicited; spine "facts" = non-decision records including retrospectives
+      after API v2: citation + elicited). Low completeness means records enter
+      thin, which bounds how much the later enrichment pass can add.
     * **Schema growth** — metadata keys that records carry but the schema does
       not yet formally capture. A high count is not a fault; it is the schema
       signalling what it wants to become (promotion candidates).
@@ -348,8 +349,12 @@ def _normalize_cycle(key: str, raw: dict | None) -> dict:
     defer_reason_human = humanize_defer_reason(defer_reason)
     # A "deferred" cycle with nothing eligible isn't postponing work — there are
     # no clusters/facts to fold, so present it as idle rather than deferred.
-    no_work = not raw.get("eligible_clusters") and not backlog
-    if outcome == "deferred" and no_work:
+    # Only when the gate census is *explicitly* zero: eligible_clusters=None means
+    # "unknown / not reported" (fact_consolidation often omits it) and must not
+    # collapse to idle while the rollup still says pool_busy/gpu_busy.
+    elig = raw.get("eligible_clusters")
+    explicit_no_work = elig is not None and not elig and not backlog
+    if outcome == "deferred" and explicit_no_work:
         outcome_display = "idle"
     elif outcome == "deferred" and defer_reason_human:
         # Name the benign back-pressure so the drawer reads "deferred — inference

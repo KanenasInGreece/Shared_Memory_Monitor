@@ -64,8 +64,8 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         self.assertEqual(snap["cycles"][0]["label"], "Insight")
 
     def test_deferred_with_no_work_reads_idle(self):
-        # A deferred cycle with nothing eligible is idle, not a postponed job,
-        # and must not be flagged as a warning.
+        # A deferred cycle with an *explicit* empty gate census is idle, not a
+        # postponed job, and must not be flagged as a warning.
         health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
         telemetry = {
             "status": "success",
@@ -73,6 +73,32 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
                 "consolidation": {
                     "fact_consolidation": {
                         "last_outcome": "deferred",
+                        "in_flight": False,
+                        "consecutive_failures": 0,
+                        "backlog": 0,
+                        "eligible_clusters": 0,
+                        "stalled": False,
+                    },
+                },
+            },
+        }
+        snap = consolidation_from_payload(health, telemetry)
+        fact = next(c for c in snap["cycles"] if c["key"] == "fact_consolidation")
+        self.assertEqual(fact["last_outcome"], "deferred")
+        self.assertEqual(fact["last_outcome_display"], "idle")
+        self.assertEqual(fact["state"], "ok")
+
+    def test_deferred_null_eligibility_keeps_deferred(self):
+        # eligible_clusters=None means unknown (not "zero") — do not claim idle
+        # while the cycle is still deferred for pool/GPU back-pressure.
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "fact_consolidation": {
+                        "last_outcome": "deferred",
+                        "last_deferred_reason": "pool_busy",
                         "in_flight": False,
                         "consecutive_failures": 0,
                         "backlog": 0,
@@ -84,8 +110,7 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         }
         snap = consolidation_from_payload(health, telemetry)
         fact = next(c for c in snap["cycles"] if c["key"] == "fact_consolidation")
-        self.assertEqual(fact["last_outcome"], "deferred")
-        self.assertEqual(fact["last_outcome_display"], "idle")
+        self.assertEqual(fact["last_outcome_display"], "deferred — LLM pool busy")
         self.assertEqual(fact["state"], "ok")
 
     def test_deferred_with_backlog_stays_deferred(self):

@@ -143,9 +143,14 @@ class ArchiveTests(unittest.TestCase):
 class AgentActivityTests(unittest.TestCase):
     def test_classify_memory_io(self):
         self.assertEqual(classify_agent_audit_io("POST", "/memory/save"), "write")
-        self.assertEqual(classify_agent_audit_io("POST", "/memory/search"), "write")
+        self.assertEqual(classify_agent_audit_io("POST", "/memory/search"), "read")
+        self.assertEqual(classify_agent_audit_io("POST", "/memory/retrospective"), "write")
+        self.assertEqual(classify_agent_audit_io("POST", "/memory/supersede"), "write")
         self.assertEqual(classify_agent_audit_io("GET", "/memory/telemetry"), "read")
         self.assertEqual(classify_agent_audit_io("POST", "/memory/graph"), "read")
+        self.assertEqual(classify_agent_audit_io("GET", "/memory/status/42"), "read")
+        self.assertEqual(classify_agent_audit_io("POST", "/memory/relations/review"), "read")
+        self.assertEqual(classify_agent_audit_io("POST", "/memory/relations/label"), "write")
         self.assertIsNone(classify_agent_audit_io("POST", "/v1/chat/completions"))
 
     def test_daemon_agents_excluded(self):
@@ -221,7 +226,7 @@ class AgentActivityTests(unittest.TestCase):
         self.assertEqual(out["daemon_logic"], {
             "nrem_daemon": {"chat": 1, "embeddings": 0, "proxy": 0},
         })
-        self.assertEqual(out2["agents"]["claude"], {"read": 0, "write": 1})
+        self.assertEqual(out2["agents"]["claude"], {"read": 1, "write": 0})
 
     @mock.patch("sm_telemetry_monitor.logs_reader.agent_audit_path")
     def test_daemon_logic_activity(self, mock_path):

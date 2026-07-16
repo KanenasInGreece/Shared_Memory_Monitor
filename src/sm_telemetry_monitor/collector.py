@@ -33,6 +33,7 @@ def flatten_snapshot(payload: dict, collected_at: datetime, health: dict) -> dic
         "collected_at": collected_at.isoformat(),
         "telemetry_ts": t.get("timestamp"),
         "technical_docs": pg.get("technical_docs"),
+        "technical_docs_superseded": pg.get("technical_docs_superseded"),
         "outbox_pending": ob.get("pending", 0),
         "outbox_applied": ob.get("applied"),
         "outbox_rem_reviewed": ob.get("rem_reviewed"),
