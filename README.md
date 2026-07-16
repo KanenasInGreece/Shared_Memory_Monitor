@@ -19,9 +19,10 @@ first-write quality, graph shape, latency, topology, and audit trails — so you
 
 ## Quick start
 
-**Coding agents:** follow **[AGENTS.md](AGENTS.md)** (Part 1) — interview → install →
+Give your agent (Claude, antigravity, etc) the **[AGENTS.md](AGENTS.md)** and it will do: interview → install →
 wire `monitor:read` → verify with `./scripts/agent-status.sh` → start/upgrade.
-Humans can use the same scripts below.
+
+Prefere complete control? Humans can use the same scripts below.
 
 ```bash
 git clone https://github.com/KanenasInGreece/Shared_Memory_Monitor.git
@@ -31,7 +32,7 @@ cd Shared_Memory_Monitor
 
 ### Gateway token (issued by the framework)
 
-`AGENT_TOKEN` is **not** an agent skill token. The [Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory) ships a dedicated **`monitor`** identity for this dashboard: register it in gateway `AGENT_TOKENS`, assign **`monitor:read`** in `AGENT_ROLES`, and copy the minted token here. That role is read-only — `GET /health`, `GET /memory/telemetry`, and guarded `POST /memory/graph` only; `POST /memory/save` and search return **403**.
+You will need to generate an `AGENT_TOKEN`, which teh shared memory framework mints -- this is not a stand-alone project, but rather an add-on.   The [Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory) ships a dedicated **`monitor`** identity for this dashboard: register it in gateway `AGENT_TOKENS`, assign **`monitor:read`** in `AGENT_ROLES`, and copy the minted token here. That role is read-only — `GET /health`, `GET /memory/telemetry`, and guarded `POST /memory/graph` only; `POST /memory/save` and search return **403**.
 
 **How to mint it** (on the gateway host): run the framework's [`generate_tokens.py`](https://github.com/KanenasInGreece/Shared_Memory/blob/main/shared-memory/scripts/generate_tokens.py) (or `bootstrap_tokens.sh` on a fresh install). It prints `AGENT_TOKENS=...,monitor:tok_...` and `AGENT_ROLES=monitor:read`. Add those lines to the **gateway** `.env`, restart `hive-mind-gateway.service`, then paste the `monitor` token below.
 
