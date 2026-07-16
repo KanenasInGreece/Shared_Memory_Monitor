@@ -101,6 +101,75 @@ def _llm_pool_summary(raw: dict) -> dict | None:
     }
 
 
+def _gateway_config(raw: dict) -> dict | None:
+    """Non-secret effective config from /health.config (framework v0.6.1+).
+
+    Always present on modern gateways — including single-backend installs where
+    ``llm_pool`` / live ``llm_backends`` status maps are omitted. Surfaces the
+    resolved backend list, pool-tuning knobs, affinity settings, and embed cap
+    so the operator can inspect the live setup without reading gateway ``.env``.
+    Secrets are never echoed by the gateway in this block.
+    """
+    cfg = raw.get("config")
+    if not isinstance(cfg, dict) or not cfg:
+        return None
+
+    backends_raw = cfg.get("llm_backends")
+    backends: list[dict] = []
+    if isinstance(backends_raw, list):
+        for b in backends_raw:
+            if not isinstance(b, dict):
+                continue
+            url = b.get("url")
+            if not url:
+                continue
+            backends.append({
+                "url": str(url),
+                "label": str(url).split("//", 1)[-1],
+                "weight": b.get("weight"),
+            })
+
+    pool_tuning = cfg.get("llm_pool_tuning") if isinstance(cfg.get("llm_pool_tuning"), dict) else {}
+    affinity = cfg.get("llm_affinity") if isinstance(cfg.get("llm_affinity"), dict) else {}
+    embed_max = cfg.get("embed_max_chars")
+
+    n = len(backends)
+    if n == 0 and not pool_tuning and not affinity and embed_max is None:
+        return None
+
+    bits: list[str] = []
+    if n:
+        bits.append(f"{n} LLM backend" + ("s" if n != 1 else ""))
+    if embed_max is not None:
+        try:
+            em = int(embed_max)
+            if em >= 1000 and em % 1000 == 0:
+                bits.append(f"embed {em // 1000}k")
+            else:
+                bits.append(f"embed {em}")
+        except (TypeError, ValueError):
+            bits.append(f"embed {embed_max}")
+
+    return {
+        "present": True,
+        "backend_count": n,
+        "backends": backends,
+        "embed_max_chars": embed_max,
+        "pool_tuning": {
+            "fail_threshold": pool_tuning.get("fail_threshold"),
+            "fail_window_s": pool_tuning.get("fail_window_s"),
+            "cooldown_s": pool_tuning.get("cooldown_s"),
+            "max_tries": pool_tuning.get("max_tries"),
+        } if pool_tuning else None,
+        "affinity": {
+            "prefix_chars": affinity.get("prefix_chars"),
+            "ttl_s": affinity.get("ttl_s"),
+            "max_inflight": affinity.get("max_inflight"),
+        } if affinity else None,
+        "summary": " · ".join(bits) if bits else "configured",
+    }
+
+
 def _rem_trend() -> str:
     """REM backlog drain signal over the recent stored tail (analytics heuristic)."""
     try:
@@ -521,6 +590,8 @@ def system_health_snapshot() -> dict:
             "fetched_at": fetched_at,
             "telemetry_at": telemetry_at,
             "version": None,
+            "api_version": None,
+            "config": None,
             "components": [],
             "backup": _backup_part(raw, reachable=False, last=last_backup),
             "consolidation": consolidation,
@@ -531,6 +602,7 @@ def system_health_snapshot() -> dict:
     llm_busy = any(c.get("in_flight") for c in (consolidation.get("cycles") or []))
     inference_busy = _inference_busy_state(raw)
     llm_pool = _llm_pool_summary(raw)
+    gateway_config = _gateway_config(raw)
     rem_trend = _rem_trend()
     components = [
         _build_component(key, field, label, kind, raw, telemetry,
@@ -552,6 +624,7 @@ def system_health_snapshot() -> dict:
         "llm_pool": llm_pool,
         "version": raw.get("version"),
         "api_version": raw.get("api_version"),
+        "config": gateway_config,
         "components": components,
         "backup": backup,
         "consolidation": consolidation,

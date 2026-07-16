@@ -21,13 +21,19 @@ The monitor never imports framework Python code. **No third data path** in monit
 
 | Route | Purpose |
 |-------|---------|
-| `GET /health` | Infrastructure grid (embedder, LLM, daemons); `version` + `api_version` for client compat |
+| `GET /health` | Infrastructure grid (embedder, LLM, daemons); `version` + `api_version` for client compat; non-secret `config` (LLM backends, pool tuning, affinity, embed cap) |
 | `GET /memory/telemetry` | Pipeline metrics, `nrem`, `breakdown`, `spine`, `compliance`, `latency`, `entity_graph`, `consolidation` |
 | `POST /memory/graph` | Neo4j schema panels (read-only Cypher, server-side guard) |
 
-**Client API version:** `bridge.API_VERSION` must match the **deployed** gateway
-`api_version` (v2 as of framework 0.6.5 / retro-as-record). Do not jump to an
-unreleased tree version (e.g. rem-rebuild v3) until `/health` reports it live.
+**Client API version:** Monitor **v0.5.4** sets `bridge.API_VERSION = 3` to match
+the **deployed** gateway `api_version` (framework **≥ 0.7.0** / enrichment rebuild
++ relation calibration routes). Do not jump ahead of what live `/health` reports.
+
+**Out of scope for `monitor:read`:** `POST /memory/relations/review` and
+`/memory/relations/label` are the operator calibration oracle for machine-minted
+edges (API v3). They require a write-capable skill token; the monitor does not
+proxy them. Calibration state is not yet on `GET /memory/telemetry` — when the
+framework surfaces it read-only, the monitor can add a band without a new data path.
 
 **Framework logs** (`logs_reader.py` → journal + JSONL on monitor host):
 

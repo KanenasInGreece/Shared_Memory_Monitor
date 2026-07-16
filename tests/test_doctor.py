@@ -23,14 +23,14 @@ class DoctorTests(unittest.TestCase):
                 self.assertIn(state, ("missing", "set"))
 
     def test_client_api_version_matches_bridge(self):
-        self.assertEqual(API_VERSION, 2)
+        self.assertEqual(API_VERSION, 3)
         with patch("sm_telemetry_monitor.doctor.get_health", return_value={
-            "status": "ok", "version": "0.6.5", "api_version": 2,
+            "status": "ok", "version": "0.7.0", "api_version": 3,
         }):
             from sm_telemetry_monitor.doctor import _check_coordinator
             block = _check_coordinator()
-        self.assertEqual(block["client_api_version"], 2)
-        self.assertEqual(block["api_version"], 2)
+        self.assertEqual(block["client_api_version"], 3)
+        self.assertEqual(block["api_version"], 3)
         self.assertEqual(block["compat"], "ok")
 
     def test_dashboard_history_ready_when_samples(self):

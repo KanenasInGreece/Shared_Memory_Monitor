@@ -6,6 +6,43 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-07-16
+
+**Compatible with Shared Memory Framework gateway v0.7.0 · wire contract API v3.**
+
+This release aligns the monitor client with the live enrichment-rebuild gateway
+(framework **0.7.0**, `api_version` **3**). The dashboard remains a pure visual
+aid over existing `GET /health` and `GET /memory/telemetry` — no new data path.
+Relation calibration routes (`/memory/relations/review`, `/label`) stay
+write-role only and are not proxied here.
+
+### Compatibility
+
+| Monitor | Framework gateway | Client `X-SM-Api-Version` |
+|---------|-------------------|--------------------------|
+| **0.5.4** | **≥ 0.7.0** (verified on 0.7.0) | **3** |
+| 0.5.1–0.5.3 | 0.6.5 (retro-as-record) | 2 |
+
+`./scripts/check-env.sh` reports `api server=N client=N compat=ok` when versions
+match. Older gateways still answer most reads; the header bump stops gateway
+skew warnings after a 0.7.0 deploy.
+
+### Changed
+
+- **API contract header** — `bridge.API_VERSION` (and the doctor write-probe
+  header) advertise **3**, matching framework **v0.7.0 / api_version 3**. Policy
+  unchanged: track the *deployed* gateway contract, not an unreleased tree.
+
+### Added
+
+- **Gateway effective config** — `/health.config` (backends + weights, pool
+  tuning, affinity knobs, `embed_max_chars`) is parsed into `/api/health` and
+  shown under Infrastructure (e.g. `Gateway 0.7.0 · API 3 · 1 LLM backend ·
+  embed 24k`; hover for per-backend / tuning detail). Works on single-backend
+  installs where live `llm_pool` status maps are omitted.
+- **Largest alias group** KPI on Graph health — surfaces
+  `entity_graph.largest_alias_component` when the alias layer is active.
+
 ## [0.5.3] - 2026-07-16
 
 ### Added

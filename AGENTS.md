@@ -192,8 +192,8 @@ If only running foreground, stop and re-run `./scripts/run-loop.sh --serve --int
 ```
 
 After upgrade, confirm `compat=ok` if the gateway bumped `api_version` — the monitor
-must advertise the **deployed** gateway contract (`bridge.API_VERSION`), not an
-unreleased framework branch.
+must advertise the **deployed** gateway contract (`bridge.API_VERSION`; currently **3**
+for framework ≥0.7.0), not an unreleased framework branch.
 
 ### Stop
 

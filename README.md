@@ -14,6 +14,7 @@ first-write quality, graph shape, latency, topology, and audit trails — so you
 | **What you get** | Visual ops aid over **framework-owned** telemetry and logs |
 | **What you do not get** | A second metrics store, DB credentials, or write access to memory |
 | **Dashboard** | **http://127.0.0.1:8765/** |
+| **This release** | **v0.5.4** — **API v3** client · compatible with **Shared Memory Framework ≥ v0.7.0** |
 
 ---
 
@@ -22,7 +23,7 @@ first-write quality, graph shape, latency, topology, and audit trails — so you
 Give your agent (Claude, antigravity, etc) the **[AGENTS.md](AGENTS.md)** and it will do: interview → install →
 wire `monitor:read` → verify with `./scripts/agent-status.sh` → start/upgrade.
 
-Prefere complete control? Humans can use the same scripts below.
+Prefer complete control? Humans can use the same scripts below.
 
 ```bash
 git clone https://github.com/KanenasInGreece/Shared_Memory_Monitor.git
@@ -32,7 +33,7 @@ cd Shared_Memory_Monitor
 
 ### Gateway token (issued by the framework)
 
-You will need to generate an `AGENT_TOKEN`, which teh shared memory framework mints -- this is not a stand-alone project, but rather an add-on.   The [Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory) ships a dedicated **`monitor`** identity for this dashboard: register it in gateway `AGENT_TOKENS`, assign **`monitor:read`** in `AGENT_ROLES`, and copy the minted token here. That role is read-only — `GET /health`, `GET /memory/telemetry`, and guarded `POST /memory/graph` only; `POST /memory/save` and search return **403**.
+You will need to generate an `AGENT_TOKEN`, which the shared memory framework mints — this is not a stand-alone project, but rather an add-on. The [Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory) ships a dedicated **`monitor`** identity for this dashboard: register it in gateway `AGENT_TOKENS`, assign **`monitor:read`** in `AGENT_ROLES`, and copy the minted token here. That role is read-only — `GET /health`, `GET /memory/telemetry`, and guarded `POST /memory/graph` only; `POST /memory/save` and search return **403**.
 
 **How to mint it** (on the gateway host): run the framework's [`generate_tokens.py`](https://github.com/KanenasInGreece/Shared_Memory/blob/main/shared-memory/scripts/generate_tokens.py) (or `bootstrap_tokens.sh` on a fresh install). It prints `AGENT_TOKENS=...,monitor:tok_...` and `AGENT_ROLES=monitor:read`. Add those lines to the **gateway** `.env`, restart `hive-mind-gateway.service`, then paste the `monitor` token below.
 
@@ -98,12 +99,15 @@ Open **http://127.0.0.1:8765/**
 
 **Shared Memory Monitor** is a sister project to the framework — a read-only **view** over **gateway telemetry** and **framework logs**. It does not own memory stores, daemons, or a separate metrics API.
 
+**Compatibility (v0.5.4):** targets **Shared Memory Framework gateway v0.7.0** and advertises client wire contract **API v3** (`X-SM-Api-Version: 3`). Doctor/`./scripts/check-env.sh` should report `compat=ok` against a 0.7.0 gateway. Earlier monitor releases (0.5.1–0.5.3) spoke API v2 for framework 0.6.5.
+
 | | Framework | Monitor (this repo) |
 |---|-----------|---------------------|
 | **Role** | Memory layer — gateway, daemons, Postgres, Neo4j | Presents telemetry + logs |
 | **Agent surface** | `memory_bridge.py` skill / MCP | Two clients only: `bridge.py`, `logs_reader.py` |
 | **Credentials** | Full gateway + DB secrets on gateway host | `monitor:read` token in monitor `.env` only |
 | **Upstream data** | Serves telemetry; writes journal + audit JSONL | Reads those directly — never Postgres/Neo4j |
+| **Wire contract** | `api_version` on `GET /health` (0.7.0 → **3**) | `bridge.API_VERSION` must match deployed gateway |
 
 Three browser views (**Monitor**, **Diagram**, **Logs**) over the **same two upstream sources**:
 
@@ -115,7 +119,7 @@ Three browser views (**Monitor**, **Diagram**, **Logs**) over the **same two ups
 | On screen | Traces to |
 |-----------|-----------|
 | Backlog, outbox, NREM, charts, hero | `GET /memory/telemetry` (cached in `data/telemetry.db` between polls) |
-| Infrastructure, diagram node health | `GET /health` |
+| Infrastructure, diagram node health, gateway version / API / config | `GET /health` (+ `config` on framework ≥0.6.1) |
 | Schema Neo4j panels | `POST /memory/graph` |
 | Schema Postgres panels | `telemetry.breakdown` in the telemetry payload |
 | First-write quality · schema conformance | `telemetry.spine` + `telemetry.compliance` |
@@ -146,7 +150,7 @@ Opens from **Drill-down → Consolidation**. The drawer reads the gateway's cons
 - **First-write quality** (upstream, gateway v0.6.2+) — completeness of high-signal fields, schema-growth candidates, integrity (including off-vocabulary labels/links from `telemetry.compliance`). Non-decision totals include facts **and** retrospectives after framework API v2.
 - **Liveness** — health verdict, last outcome, time since the last successful fold, and the stall threshold. A deferred cycle with an **explicit** empty eligible census reads as **idle**; unknown eligibility keeps the deferred reason (e.g. pool busy). The only red state is a genuine stall.
 - **Coverage** (output side) — from the `telemetry.neo4j` fact census: REM-processed facts, how many are consolidated (count and %), and how many still await a fold. **Consolidations by type** lists the summaries produced — insights, thematic, community — with any superseded count.
-- **Graph health · entity resolution** (input side, gateway v0.6.0+; v0.6.1 semantics) — from `telemetry.entity_graph`: total entities, the **Mentioned** share (entities with live fact/decision mentions — the ones that can seed a fold), the **Structural only** share (entities holding graph edges but no live mention), **Orphans** (truly dangling degree-0 nodes — a hygiene defect, flagged when nonzero), **Singletons**, and the alias layer (**Alias edges** · groups and alias coverage) written by the v0.6.1 entity-resolution alias-writer. The counts include entities from records still awaiting REM — REM is the stage that builds an entity's relationships — so an **Awaiting REM** figure is shown and the fragmentation share reads as an upper bound until REM catches up.
+- **Graph health · entity resolution** (input side, gateway v0.6.0+; v0.6.1 semantics) — from `telemetry.entity_graph`: total entities, the **Mentioned** share (entities with live fact/decision mentions — the ones that can seed a fold), the **Structural only** share (entities holding graph edges but no live mention), **Orphans** (truly dangling degree-0 nodes — a hygiene defect, flagged when nonzero), **Singletons**, and the alias layer (**Alias edges** · groups · alias coverage · **largest alias group**) written by the v0.6.1 entity-resolution alias-writer. The counts include entities from records still awaiting REM — REM is the stage that builds an entity's relationships — so an **Awaiting REM** figure is shown and the fragmentation share reads as an upper bound until REM catches up.
 - **By cycle** — the insight and fact-consolidation cycles with their outcome, eligible clusters, oldest wait, and last error.
 
 ![Consolidation health — liveness, fact coverage %, graph-health entity resolution, per-cycle table](docs/images/consolidation.png)
@@ -184,11 +188,12 @@ Live framework topology: agents → gateway; REM/NREM ↔ gateway; memory and in
 | `telemetry.consolidation` + `/health.consolidation` | ADR-018 consolidation signal (v0.4.7+) — upgrade gateway if `check` reports `has_consolidation: false` |
 | `telemetry.entity_graph` | **Requires framework gateway v0.6.0+** (v0.6.1 for the corrected orphan count, `unmentioned_entities`, and the alias-layer KPIs). Feeds the consolidation drawer's **Graph health** (input-side entity-resolution axis: mention coverage, singletons, alias edges/groups, node-degree hubs). On older gateways absent fields degrade to omitted KPIs (no error). |
 | `/health.llm_pool` + `/health.llm_backends` | Emitted by v0.6.1+ gateways with more than one `LLM_BACKENDS` entry — per-backend busy on the LLM tile and pool-slot REM gating. Single-backend gateways omit them; the tiles keep the nvtop semantics. |
+| `/health.config` | **Framework gateway v0.6.1+** — always-on non-secret echo of resolved LLM backends + weights, pool tuning, affinity knobs, and `embed_max_chars`. Shown under Infrastructure (and hover detail) even on single-backend installs. |
 | `telemetry.spine` | **Framework gateway v0.6.2+** — feeds the consolidation drawer's **First-write quality** band (record completeness, schema-growth candidates, duplicate-resolution). After **API v2 / retro-as-record (gateway ≥0.6.5)**, spine “facts” is the **non-decision** bucket (facts + retrospectives + other types) — the UI labels it accordingly. Older gateways omit the block (band hidden, no error). |
 | `telemetry.compliance` | **Framework gateway v0.6.3+** — feeds **Schema conformance** (graph writes inside the agreed ontology). Older gateways omit it. |
 | `telemetry.latency` | **Framework gateway v0.6.3+** — feeds the **Throughput & latency** drawer (per-model enrichment model-floor vs queue-wait split; consolidation-cycle p50/p95). Older gateways omit it (drawer shows an unsupported note). |
 | `postgres.technical_docs_superseded` | Soft-superseded row count on Schema drawer meta (and poll cache). |
-| Client `X-SM-Api-Version` | Monitor advertises **api_version 2** (matches gateway 0.6.5). `./scripts/check-env.sh` reports server/client compat. |
+| Client `X-SM-Api-Version` | Monitor **v0.5.4** advertises **api_version 3** — **compatible with Shared Memory Framework gateway ≥ v0.7.0**. `./scripts/check-env.sh` reports `server=N client=N compat=ok` when they match. |
 | Python 3.11+ and [uv](https://docs.astral.sh/uv/) | `uv sync` / CLI |
 
 ### Local logs (required for `/logs` and diagram flows; same host as gateway in practice)
@@ -300,7 +305,7 @@ Consolidation drawer fields:
 | **Coverage** — consolidated (N · %) | `rem_processed − facts_unconsolidated`, over REM-processed |
 | **Coverage** — awaiting fold (N · %) | `facts_unconsolidated`, over REM-processed |
 | **Graph health** — entities · mentioned · structural only · orphans · singletons | `telemetry.entity_graph` (gateway v0.6.0+; v0.6.1 semantics) — mention coverage and fragmentation before a fold; orphans = degree-0 dangling, flagged when nonzero |
-| **Graph health** — alias edges · groups · coverage | `alias_edges` · `alias_components` · `alias_covered_entities` — the v0.6.1 entity-resolution alias layer |
+| **Graph health** — alias edges · groups · coverage · largest group | `alias_edges` · `alias_components` · `alias_covered_entities` · `largest_alias_component` — the v0.6.1 entity-resolution alias layer |
 | **Graph health** — top hub degree | Highest entity degree in `entity_graph.top_hubs` |
 | **Graph health** — awaiting REM | `facts_rem_pending + decisions_rem_pending` — pre-REM entities inflate the fragmentation share; shown as a caveat, not a verdict |
 | **By cycle → Eligible** | `eligible_clusters` — clusters awaiting a fold (a count, not a ratio) |
@@ -446,7 +451,7 @@ Requires a framework gateway that exposes `telemetry.consolidation` and a cached
 | `/health` | `consolidation.last_outcome` | `completed` \| `crashed` \| `deferred` \| null |
 | `telemetry.consolidation` | `insight` / `fact_consolidation` | Per-cycle outcome, in-flight, failures, `last_error`, coverage |
 | `telemetry.consolidation.*.backlog` | `eligible_clusters` | Clusters awaiting a fold — **not** the same as `telemetry.nrem` density cycles |
-| `telemetry.entity_graph` (gateway v0.6.0+) | `entities_total` · `orphan_entities` · `unmentioned_entities` · `singleton_entities` · `alias_edges` · `alias_components` · `top_hubs` | **Graph health** — input-side fragmentation and the alias layer; v0.6.1 corrected `orphan_entities` to degree-0 dangling and added `unmentioned_entities` as the honest coverage proxy |
+| `telemetry.entity_graph` (gateway v0.6.0+) | `entities_total` · `orphan_entities` · `unmentioned_entities` · `singleton_entities` · `alias_edges` · `alias_components` · `alias_covered_entities` · `largest_alias_component` · `top_hubs` | **Graph health** — input-side fragmentation and the alias layer; v0.6.1 corrected orphans, added unmentioned + alias KPIs (largest group included in monitor v0.5.4) |
 
 `decision_cycles > 0` with `eligible_clusters = 0` is normal (the cluster fails the strict insight gate) — not a stall.
 
@@ -513,18 +518,20 @@ Regenerate screenshots: `./scripts/capture-screenshots.sh` (Playwright; monitor 
 | Doc | Topic |
 |-----|-------|
 | [SISTER_PROJECT.md](docs/SISTER_PROJECT.md) | Framework boundary |
-| [CHANGELOG.md](CHANGELOG.md) | Releases |
+| [CHANGELOG.md](CHANGELOG.md) | Releases (current: **v0.5.4** · API **3** · framework **0.7.0**) |
 | [SECURITY.md](SECURITY.md) | Secrets policy |
 
 ```bash
 ./scripts/pre-publish-check.sh && ./scripts/publish.sh
+# release: tag must match pyproject / __init__ / CHANGELOG
+# gh release create v0.5.4 --title "v0.5.4" --notes-file …
 ```
 
 ---
 
 ## Related
 
-- [Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory) — gateway, daemons, telemetry API
+- [Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory) — gateway, daemons, telemetry API (**v0.7.0** is the current compatibility target for this monitor)
 - **shared-memory skill** — agent CLI; monitor uses the same read routes via `httpx` plus local logs
 
 ---

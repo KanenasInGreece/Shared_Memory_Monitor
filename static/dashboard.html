@@ -686,6 +686,11 @@ function renderConsolidationDrilldown(C) {
       if (gh.alias_coverage_pct != null && gh.alias_edges > 0) {
         kpis.push(["Alias coverage", `${gh.alias_covered_entities} · ${pct(gh.alias_coverage_pct)}`]);
       }
+      // Largest WCC component after alias merges — how far a single concept
+      // cluster has grown (entity-resolution quality signal, gateway v0.6.1+).
+      if (gh.largest_alias_component != null && gh.alias_edges > 0) {
+        kpis.push(["Largest alias group", String(gh.largest_alias_component)]);
+      }
       // REM-pending entities aren't yet wired up, so they inflate the
       // fragmentation share — show the backlog as explicit context, flagged warn.
       if (gh.rem_pending) {
@@ -1020,6 +1025,20 @@ function renderBackup(H) {
   card.title = titleBits.join(" · ");
 }
 
+function gatewayConfigHint(H) {
+  // Non-secret live config from /health.config (v0.6.1+) + version contract.
+  if (!H || H.reachable === false) return H?.error || "gateway unreachable";
+  const bits = [];
+  if (H.version) bits.push(`Gateway ${H.version}`);
+  if (H.api_version != null) bits.push(`API ${H.api_version}`);
+  const cfg = H.config;
+  if (cfg?.summary) bits.push(cfg.summary);
+  else if (cfg?.backend_count) {
+    bits.push(`${cfg.backend_count} LLM backend${cfg.backend_count === 1 ? "" : "s"}`);
+  }
+  return bits.join(" · ");
+}
+
 function renderSystemHealth(H) {
   const status = H?.status || "unknown";
   consolidationStalled = !!(H?.consolidation?.tile?.stalled);
@@ -1046,7 +1065,28 @@ function renderSystemHealth(H) {
   });
 
   const hint = document.getElementById("system-hint");
-  hint.textContent = H?.reachable === false ? (H.error || "gateway unreachable") : "";
+  hint.textContent = gatewayConfigHint(H);
+  // Richer title: per-backend list + pool tuning when present (no secrets).
+  const cfg = H?.config;
+  if (hint && cfg?.present) {
+    const lines = [];
+    if (cfg.backends?.length) {
+      lines.push("Backends: " + cfg.backends.map(b =>
+        b.weight != null ? `${b.label} (w=${b.weight})` : b.label).join(", "));
+    }
+    const pt = cfg.pool_tuning;
+    if (pt && (pt.fail_threshold != null || pt.cooldown_s != null)) {
+      lines.push(`Pool tuning: fail≥${pt.fail_threshold ?? "—"}/${pt.fail_window_s ?? "—"}s · cooldown ${pt.cooldown_s ?? "—"}s · max tries ${pt.max_tries ?? "—"}`);
+    }
+    const aff = cfg.affinity;
+    if (aff && aff.prefix_chars != null) {
+      lines.push(`Affinity: prefix ${aff.prefix_chars} · ttl ${aff.ttl_s ?? "—"}s · max inflight ${aff.max_inflight ?? "—"}`);
+    }
+    if (cfg.embed_max_chars != null) lines.push(`Embed max chars: ${cfg.embed_max_chars}`);
+    hint.title = lines.join("\n");
+  } else if (hint) {
+    hint.title = "";
+  }
 }
 
 async function loadSystemHealth() {

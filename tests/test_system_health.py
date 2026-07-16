@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from sm_telemetry_monitor.analytics import rem_drain_signal
 from sm_telemetry_monitor.system_health import (
+    _gateway_config,
     _llm_pool_summary,
     _workload_part,
     system_health_snapshot,
@@ -238,6 +239,72 @@ def _pool_gateway(*, s5000="ok", s4000="ok", inflight5000=0, inflight4000=0,
                                       "cooldown": cooldown4000, "reserved": False},
         },
     }
+
+
+class GatewayConfigTests(unittest.TestCase):
+    """/health.config (v0.6.1+) — always-on non-secret effective setup echo."""
+
+    def test_config_parsed_from_single_backend_health(self):
+        health = {
+            **_healthy_gateway(),
+            "version": "0.7.0",
+            "api_version": 3,
+            "config": {
+                "llm_backends": [{"url": "http://localhost:4000", "weight": 1.0}],
+                "llm_pool_tuning": {
+                    "fail_threshold": 2,
+                    "fail_window_s": 60.0,
+                    "cooldown_s": 300.0,
+                    "max_tries": 3,
+                },
+                "llm_affinity": {
+                    "prefix_chars": 6144,
+                    "ttl_s": 600.0,
+                    "max_inflight": 4,
+                },
+                "embed_max_chars": 24000,
+            },
+        }
+        cfg = _gateway_config(health)
+        self.assertTrue(cfg["present"])
+        self.assertEqual(cfg["backend_count"], 1)
+        self.assertEqual(cfg["backends"][0]["label"], "localhost:4000")
+        self.assertEqual(cfg["embed_max_chars"], 24000)
+        self.assertIn("1 LLM backend", cfg["summary"])
+        self.assertIn("embed 24k", cfg["summary"])
+        self.assertEqual(cfg["pool_tuning"]["cooldown_s"], 300.0)
+        self.assertEqual(cfg["affinity"]["prefix_chars"], 6144)
+
+    def test_config_absent_on_legacy_health(self):
+        self.assertIsNone(_gateway_config(_healthy_gateway()))
+
+    @patch("sm_telemetry_monitor.system_health.get_telemetry")
+    @patch("sm_telemetry_monitor.system_health.live_summary", return_value={"latest": {}})
+    def test_snapshot_exposes_config(self, _summary, mock_telemetry):
+        mock_telemetry.return_value = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "insight": {"stalled": False, "consecutive_failures": 0},
+                    "fact_consolidation": {"stalled": False, "consecutive_failures": 0},
+                },
+            },
+        }
+        health = {
+            **_healthy_gateway(),
+            "version": "0.7.0",
+            "api_version": 3,
+            "config": {
+                "llm_backends": [{"url": "http://localhost:4000", "weight": 1.0}],
+                "embed_max_chars": 24000,
+            },
+        }
+        with patch("sm_telemetry_monitor.system_health.get_health", return_value=health):
+            snap = system_health_snapshot()
+        self.assertEqual(snap["version"], "0.7.0")
+        self.assertEqual(snap["api_version"], 3)
+        self.assertTrue(snap["config"]["present"])
+        self.assertEqual(snap["config"]["backend_count"], 1)
 
 
 class LlmPoolTests(unittest.TestCase):
