@@ -47,7 +47,7 @@ COORDINATOR_URL=http://localhost:8888
 
 ```bash
 curl -s http://localhost:8888/health | head -c 200
-./scripts/agent-status.sh            # one-shot: gateway, doctor, unit, dashboard
+./scripts/agent-status.sh            # gateway, doctor, unit, dashboard + GitHub updates
 # or: ./scripts/check-env.sh         # full doctor report
 ./scripts/run-loop.sh --serve --interval 600
 ```
@@ -63,7 +63,9 @@ Open **http://127.0.0.1:8765/**
 **Persist as a user service** (optional): `./scripts/install-systemd-user.sh` then  
 `systemctl --user restart shared-memory-monitor.service`.
 
-**Upgrade later:** `./scripts/agent-upgrade.sh` (pull + `uv sync` + restart unit + status).
+**Check for updates / upgrade:** `./scripts/agent-status.sh` reports whether
+`origin/main` or a newer GitHub release tag is ahead; then
+`./scripts/agent-upgrade.sh` (pull + `uv sync` + restart unit + status).
 
 ---
 

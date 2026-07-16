@@ -6,6 +6,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-07-16
+
+### Added
+
+- **`agent-status.sh` GitHub update check** — probes `origin` with `git ls-remote`
+  (no local ref rewrite): reports `behind_branch`, `behind_release` / latest
+  `vX.Y.Z` tag, `updates_available`, and an `upgrade_cmd`. Human output shows a
+  **github:** line; `--offline` skips the network. Exit **1** when ready but
+  updates are available (`overall: ready_updates`) so agents can auto-upgrade.
+- **`agent-upgrade.sh`** runs a status pre-check (including GitHub) before pull.
+
+### Changed
+
+- **AGENTS.md** / **README** document the update-check loop.
+
 ## [0.5.2] - 2026-07-16
 
 Agent-operable quick start: a coding agent can install, verify, run, and upgrade the
@@ -557,7 +572,8 @@ and `GET /memory/telemetry` already expose — no new data path.
 - `.env` and `.grok/` gitignored; doctor never prints credential values
 - Error sanitization for tokens and connection strings
 
-[Unreleased]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/compare/v0.5.2...main
+[Unreleased]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/compare/v0.5.3...main
+[0.5.3]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.5.3
 [0.5.2]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.5.2
 [0.5.1]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.5.1
 [0.5.0]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.5.0

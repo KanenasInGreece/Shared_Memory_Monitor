@@ -43,16 +43,19 @@ about to be) running on a reachable host — usually the same machine.
 
 | Script | Purpose |
 |--------|---------|
-| `./scripts/agent-status.sh` | One-shot health: git, deps, `.env`, gateway, doctor, unit, dashboard HTTP |
+| `./scripts/agent-status.sh` | One-shot health **and GitHub update check** (`git ls-remote` origin): git, package, gateway, doctor, unit, dashboard; `updates.updates_available` + `next` upgrade command |
 | `./scripts/agent-status.sh --json` | Same as machine-readable JSON (no secrets) |
-| `./scripts/agent-upgrade.sh` | `git pull` + `uv sync` + restart unit (if installed) + status |
+| `./scripts/agent-status.sh --offline` | Skip origin/GitHub probe (local-only) |
+| `./scripts/agent-upgrade.sh` | Status pre-check → `git pull` + `uv sync` + restart unit (if installed) + status |
 | `./scripts/install.sh` | First-time: `uv sync`, create `.env` from example, run doctor |
 | `./scripts/install-systemd-user.sh` | Persist as `shared-memory-monitor.service` (user unit) |
 | `./scripts/check-env.sh` | Full doctor report (human or `--json`) |
 | `./scripts/run-loop.sh --serve --interval 600` | Foreground poll + dashboard (dev) |
 
-Exit codes for `agent-status.sh`: **0** ready, **1** partial (logs/optional panels),
-**2** not ready (missing token, gateway down, etc.).
+Exit codes for `agent-status.sh`: **0** ready (and up to date with origin when
+checked), **1** partial **or** ready but **updates available** on GitHub, **2** not
+ready (missing token, gateway down, etc.). Agents should treat exit **1** with
+`updates.updates_available: true` as “run `./scripts/agent-upgrade.sh`”.
 
 ---
 
@@ -162,9 +165,13 @@ for the user's setup (logs optional if remote).
 ### Status (always start here)
 
 ```bash
-./scripts/agent-status.sh
-./scripts/agent-status.sh --json
+./scripts/agent-status.sh              # includes GitHub update check via origin
+./scripts/agent-status.sh --json       # updates.behind_branch / behind_release / upgrade_cmd
+./scripts/agent-status.sh --offline    # no network
 ```
+
+Update detection uses `git ls-remote` against `origin` (does not rewrite local refs):
+compares `HEAD` to `origin/<branch>` and the package version to the newest `vX.Y.Z` tag.
 
 ### Restart after `.env` or code change
 

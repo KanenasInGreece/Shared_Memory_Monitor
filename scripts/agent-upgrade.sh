@@ -39,6 +39,13 @@ if [[ -n "$(git status --porcelain)" ]]; then
   exit 2
 fi
 
+echo "==> Pre-check (GitHub / origin)"
+if [[ -x ./scripts/agent-status.sh ]]; then
+  # Non-fatal: shows whether origin/main or a newer release tag is ahead
+  ./scripts/agent-status.sh || true
+  echo ""
+fi
+
 echo "==> Fetch origin"
 git fetch origin --tags
 

@@ -1,28 +1,52 @@
 #!/usr/bin/env bash
 # One-shot operator status for coding agents and humans — no secrets printed.
-# Exit: 0 ready | 1 partial (optional panels) | 2 not ready | 3 usage/tool error
+# Queries GitHub (origin) via git ls-remote for available updates (unless --offline).
+# Exit: 0 ready | 1 partial (optional panels or updates available) | 2 not ready | 3 usage
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 JSON=0
-if [[ "${1:-}" == "--json" ]]; then
-  JSON=1
-elif [[ -n "${1:-}" ]]; then
-  echo "Usage: $0 [--json]" >&2
-  exit 3
-fi
+OFFLINE=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --json) JSON=1; shift ;;
+    --offline) OFFLINE=1; shift ;;
+    -h|--help)
+      echo "Usage: $0 [--json] [--offline]"
+      echo "  --json     machine-readable JSON (no secrets)"
+      echo "  --offline  skip GitHub/origin update check (git ls-remote)"
+      exit 0
+      ;;
+    *)
+      echo "Usage: $0 [--json] [--offline]" >&2
+      exit 3
+      ;;
+  esac
+done
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
 git_branch=""
 git_head=""
+git_head_full=""
 git_dirty=0
+git_remote="origin"
+git_default_branch="main"
 if have git && git rev-parse --git-dir >/dev/null 2>&1; then
   git_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
   git_head="$(git rev-parse --short HEAD 2>/dev/null || true)"
+  git_head_full="$(git rev-parse HEAD 2>/dev/null || true)"
   if [[ -n "$(git status --porcelain 2>/dev/null || true)" ]]; then
     git_dirty=1
+  fi
+  # Prefer tracking remote/branch when set
+  upstream="$(git rev-parse --abbrev-ref '@{upstream}' 2>/dev/null || true)"
+  if [[ -n "$upstream" && "$upstream" == */* ]]; then
+    git_remote="${upstream%%/*}"
+    git_default_branch="${upstream#*/}"
+  elif [[ -n "$git_branch" && "$git_branch" != "HEAD" ]]; then
+    git_default_branch="$git_branch"
   fi
 fi
 
@@ -69,7 +93,9 @@ fi
 
 doctor_tmp="$(mktemp)"
 doctor_exit=2
-cleanup() { rm -f "$doctor_tmp"; }
+updates_tmp="$(mktemp)"
+echo '{}' >"$updates_tmp"
+cleanup() { rm -f "$doctor_tmp" "$updates_tmp" "${status_tmp:-}"; }
 trap cleanup EXIT
 
 if have uv; then
@@ -82,6 +108,113 @@ if have uv; then
   fi
 else
   echo '{}' >"$doctor_tmp"
+fi
+
+# ── GitHub / origin update check (git ls-remote — no local ref rewrite) ─────
+if [[ "$OFFLINE" -eq 0 ]] && have git && git rev-parse --git-dir >/dev/null 2>&1 \
+   && git remote get-url "$git_remote" >/dev/null 2>&1; then
+  set +e
+  # Bound network wait; never fail the whole status if GitHub is unreachable
+  ls_out="$(GIT_TERMINAL_PROMPT=0 git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=8 \
+    ls-remote "$git_remote" "refs/heads/${git_default_branch}" "refs/tags/*" 2>/dev/null)"
+  ls_rc=$?
+  set -e
+  if [[ $ls_rc -eq 0 && -n "$ls_out" ]]; then
+    REMOTE_LS="$ls_out" \
+    LOCAL_FULL="$git_head_full" \
+    LOCAL_SHORT="$git_head" \
+    LOCAL_PKG="$pkg_version" \
+    TRACK_BRANCH="$git_default_branch" \
+    REMOTE_NAME="$git_remote" \
+    python3 - <<'PY' >"$updates_tmp"
+import json, os, re, sys
+
+ls = os.environ.get("REMOTE_LS") or ""
+local = (os.environ.get("LOCAL_FULL") or "").strip()
+local_short = (os.environ.get("LOCAL_SHORT") or "").strip()
+local_pkg = (os.environ.get("LOCAL_PKG") or "").strip()
+branch = os.environ.get("TRACK_BRANCH") or "main"
+remote = os.environ.get("REMOTE_NAME") or "origin"
+
+branch_sha = None
+tags = []  # (version_tuple, tag_name, sha)
+for line in ls.splitlines():
+    parts = line.split()
+    if len(parts) < 2:
+        continue
+    sha, ref = parts[0], parts[1]
+    if ref == f"refs/heads/{branch}":
+        branch_sha = sha
+    m = re.match(r"refs/tags/(v?(\d+)\.(\d+)\.(\d+))$", ref)
+    if m:
+        tag = m.group(1)
+        ver = (int(m.group(2)), int(m.group(3)), int(m.group(4)))
+        tags.append((ver, tag, sha))
+
+tags.sort(key=lambda t: t[0])
+latest_tag = tags[-1] if tags else None
+
+behind_branch = None
+if branch_sha and local:
+    behind_branch = branch_sha != local
+
+def parse_pkg(s):
+    m = re.match(r"v?(\d+)\.(\d+)\.(\d+)", s or "")
+    if not m:
+        return None
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+
+local_ver = parse_pkg(local_pkg)
+behind_release = None
+latest_tag_name = latest_tag[1] if latest_tag else None
+latest_tag_sha = latest_tag[2] if latest_tag else None
+if latest_tag and local_ver is not None:
+    behind_release = latest_tag[0] > local_ver
+elif latest_tag and local:
+    # no package version — compare tip of latest tag to HEAD
+    behind_release = latest_tag_sha != local
+
+updates_available = bool(behind_branch or behind_release)
+
+out = {
+    "checked": True,
+    "remote": remote,
+    "branch": branch,
+    "remote_branch_sha": branch_sha[:12] if branch_sha else None,
+    "local_head": local_short or (local[:12] if local else None),
+    "behind_branch": behind_branch,
+    "latest_release_tag": latest_tag_name,
+    "latest_release_sha": latest_tag_sha[:12] if latest_tag_sha else None,
+    "local_package_version": local_pkg or None,
+    "behind_release": behind_release,
+    "updates_available": updates_available,
+    "error": None,
+}
+if updates_available:
+    bits = []
+    if behind_branch:
+        bits.append(f"{remote}/{branch} has commits not in HEAD")
+    if behind_release:
+        bits.append(f"newer release {latest_tag_name} (local package {local_pkg or 'unknown'})")
+    out["summary"] = "; ".join(bits)
+    out["upgrade_cmd"] = "./scripts/agent-upgrade.sh" + (
+        f" --ref {latest_tag_name}" if behind_release and latest_tag_name and not behind_branch else ""
+    )
+else:
+    out["summary"] = "up to date with origin" if branch_sha else "no remote branch tip"
+    out["upgrade_cmd"] = None
+
+print(json.dumps(out))
+PY
+  else
+    python3 -c 'import json; print(json.dumps({"checked": False, "updates_available": None, "error": "git ls-remote failed or timed out", "summary": "could not reach GitHub/origin"}))' >"$updates_tmp"
+  fi
+else
+  if [[ "$OFFLINE" -eq 1 ]]; then
+    python3 -c 'import json; print(json.dumps({"checked": False, "updates_available": None, "error": "offline", "summary": "update check skipped (--offline)"}))' >"$updates_tmp"
+  else
+    python3 -c 'import json; print(json.dumps({"checked": False, "updates_available": None, "error": "no git remote", "summary": "update check skipped"}))' >"$updates_tmp"
+  fi
 fi
 
 payload="$(
@@ -97,6 +230,7 @@ payload="$(
   DASH_OK="$dashboard_http" \
   DOC_EXIT="$doctor_exit" \
   DOC_JSON_PATH="$doctor_tmp" \
+  UPDATES_JSON_PATH="$updates_tmp" \
   python3 - <<'PY'
 import json, os
 
@@ -108,6 +242,7 @@ def jload(path):
         return {}
 
 doc = jload(os.environ["DOC_JSON_PATH"])
+updates = jload(os.environ["UPDATES_JSON_PATH"])
 conn = doc.get("connectivity") or {}
 coord = conn.get("coordinator") or {}
 features = {f.get("id"): f for f in (doc.get("features") or []) if isinstance(f, dict)}
@@ -120,6 +255,7 @@ out = {
         "head": os.environ.get("GIT_HEAD") or None,
         "dirty": os.environ.get("GIT_DIRTY") == "1",
     },
+    "updates": updates,
     "env_file_present": os.environ.get("ENV_EXISTS") == "1",
     "coordinator_url": os.environ.get("COORD_URL"),
     "gateway_http_ok": os.environ.get("GW_OK") == "1",
@@ -151,7 +287,13 @@ ready = (
     and (out["dashboard_http_ok"] or out["unit"] in ("active", "activating"))
 )
 partial = out["env_file_present"] and out["gateway_http_ok"] and out["doctor_exit"] in (0, 1)
-if ready:
+updates_avail = bool((updates or {}).get("updates_available"))
+
+# Health overall ignores updates; separate flag for agents. Exit code bumps to 1
+# when ready-but-stale so automation can react without treating it as hard fail.
+if ready and updates_avail:
+    out["overall"] = "ready_updates"
+elif ready:
     out["overall"] = "ready"
 elif partial:
     out["overall"] = "partial"
@@ -170,6 +312,10 @@ elif not out["dashboard_http_ok"] and out["unit"] not in ("active", "activating"
     out["next"] = "Start monitor: ./scripts/install-systemd-user.sh or ./scripts/run-loop.sh --serve --interval 600"
 elif out.get("api_compat") == "incompatible":
     out["next"] = "API version skew — upgrade monitor or gateway so api_version matches"
+elif updates_avail:
+    cmd = (updates or {}).get("upgrade_cmd") or "./scripts/agent-upgrade.sh"
+    summary = (updates or {}).get("summary") or "updates available on GitHub"
+    out["next"] = f"Update available ({summary}) — run: {cmd}"
 else:
     out["next"] = "OK — open " + out["dashboard_url"]
 
@@ -179,7 +325,6 @@ PY
 
 status_tmp="$(mktemp)"
 printf '%s\n' "$payload" >"$status_tmp"
-trap 'rm -f "$doctor_tmp" "$status_tmp"' EXIT
 
 if [[ "$JSON" -eq 1 ]]; then
   cat "$status_tmp"
@@ -194,6 +339,16 @@ print(f"  package:     {d.get('package_version')}")
 g = d.get("git") or {}
 dirty = " (dirty)" if g.get("dirty") else ""
 print(f"  git:         {g.get('branch')}@{g.get('head')}{dirty}")
+u = d.get("updates") or {}
+if u.get("checked"):
+    flag = "YES" if u.get("updates_available") else "no"
+    print(f"  github:      updates={flag}  ({u.get('summary') or '—'})")
+    if u.get("latest_release_tag"):
+        print(f"  latest tag:  {u.get('latest_release_tag')}")
+    if u.get("behind_branch"):
+        print(f"  origin:      {u.get('remote')}/{u.get('branch')} tip {u.get('remote_branch_sha')} ≠ HEAD")
+elif u.get("error"):
+    print(f"  github:      check skipped ({u.get('error')})")
 print(f"  .env:        {'present' if d.get('env_file_present') else 'MISSING'}")
 print(f"  coordinator: {d.get('coordinator_url')}")
 gw = "ok" if d.get("gateway_http_ok") else "DOWN"
@@ -214,6 +369,6 @@ fi
 overall="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("overall"))' "$status_tmp")"
 case "$overall" in
   ready) exit 0 ;;
-  partial) exit 1 ;;
+  ready_updates|partial) exit 1 ;;
   *) exit 2 ;;
 esac
