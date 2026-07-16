@@ -1,8 +1,8 @@
 # Shared Memory Monitor
 
-## See the dream cycle — without new data plumbing
+## Visualise what is happening to your shared memory framework
 
-**Shared Memory already knows how healthy it is.** The gateway publishes that as
+**Shared Memory already provides full telemetry** The gateway publishes that as
 `GET /health` and `GET /memory/telemetry` (plus read-only graph and framework
 logs). This sister project turns those **existing** signals into a live ops
 picture: backlog and REM/NREM pressure, consolidation liveness and coverage,
