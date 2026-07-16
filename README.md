@@ -19,6 +19,10 @@ first-write quality, graph shape, latency, topology, and audit trails — so you
 
 ## Quick start
 
+**Coding agents:** follow **[AGENTS.md](AGENTS.md)** (Part 1) — interview → install →
+wire `monitor:read` → verify with `./scripts/agent-status.sh` → start/upgrade.
+Humans can use the same scripts below.
+
 ```bash
 git clone https://github.com/KanenasInGreece/Shared_Memory_Monitor.git
 cd Shared_Memory_Monitor
@@ -43,8 +47,8 @@ COORDINATOR_URL=http://localhost:8888
 
 ```bash
 curl -s http://localhost:8888/health | head -c 200
-./scripts/check-env.sh               # expect: monitor token, telemetry ok, read_role ok
-                                     # also: api server=N client=N compat=ok
+./scripts/agent-status.sh            # one-shot: gateway, doctor, unit, dashboard
+# or: ./scripts/check-env.sh         # full doctor report
 ./scripts/run-loop.sh --serve --interval 600
 ```
 
@@ -59,12 +63,15 @@ Open **http://127.0.0.1:8765/**
 **Persist as a user service** (optional): `./scripts/install-systemd-user.sh` then  
 `systemctl --user restart shared-memory-monitor.service`.
 
+**Upgrade later:** `./scripts/agent-upgrade.sh` (pull + `uv sync` + restart unit + status).
+
 ---
 
 ## Contents
 
 - [See the dream cycle — without new data plumbing](#see-the-dream-cycle--without-new-data-plumbing)
 - [Quick start](#quick-start)
+- [AGENTS.md](AGENTS.md) — agent-operable install / status / upgrade
 - [What this is](#what-this-is)
 - [Screenshots](#screenshots)
 - [Prerequisites](#prerequisites)

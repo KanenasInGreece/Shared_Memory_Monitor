@@ -6,6 +6,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-07-16
+
+Agent-operable quick start: a coding agent can install, verify, run, and upgrade the
+monitor without a human walking every shell step.
+
+### Added
+
+- **`AGENTS.md`** (+ thin **`AGENT.md` pointer**) — Part 1 operate (interview → install →
+  `monitor:read` token → verify → start/systemd → day-2 runbooks) and Part 2 develop
+  (commands, architecture invariants). Same pattern as the framework agent playbook.
+- **`scripts/agent-status.sh`** — one-shot status (human or `--json`): git, package,
+  gateway HTTP, doctor/api compat, user unit, dashboard. Exit 0/1/2 = ready/partial/not
+  ready; prints a **next** action for agents. No secrets.
+- **`scripts/agent-upgrade.sh`** — `git pull` (or `--ref TAG`), `uv sync`, reinstall/
+  restart user unit if present, then `agent-status.sh`.
+
+### Changed
+
+- **README Quick start** — points agents at `AGENTS.md` and documents `agent-status` /
+  `agent-upgrade`.
+
 ## [0.5.1] - 2026-07-16
 
 Alignment with **live** framework gateway **v0.6.5 / api_version 2** (retro-as-record)
@@ -536,7 +557,8 @@ and `GET /memory/telemetry` already expose — no new data path.
 - `.env` and `.grok/` gitignored; doctor never prints credential values
 - Error sanitization for tokens and connection strings
 
-[Unreleased]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/compare/v0.5.1...main
+[Unreleased]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/compare/v0.5.2...main
+[0.5.2]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.5.2
 [0.5.1]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.5.1
 [0.5.0]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.5.0
 [0.4.13]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.4.13

@@ -53,6 +53,8 @@ Typical homelab layout:
 1. On the framework host, mint the `monitor` token (`generate_tokens.py`) and set `AGENT_ROLES=monitor:read` — see [framework SECURITY.md](https://github.com/KanenasInGreece/Shared_Memory/blob/main/SECURITY.md#agent-authentication--implemented-v035).
 2. Clone this repo, `cp .env.example .env`, set `AGENT_TOKEN` + `COORDINATOR_URL`.
 3. `./scripts/install.sh` then optional `./scripts/install-systemd-user.sh` for persistence.
+4. **Agents:** follow root [AGENTS.md](../AGENTS.md) Part 1; use `./scripts/agent-status.sh`
+   and `./scripts/agent-upgrade.sh` for check/update loops.
 
 ## What this repo is not
 
