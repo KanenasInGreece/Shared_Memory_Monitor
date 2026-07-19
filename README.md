@@ -14,7 +14,7 @@ first-write quality, graph shape, latency, topology, and audit trails — so you
 | **What you get** | Visual ops aid over **framework-owned** telemetry and logs |
 | **What you do not get** | A second metrics store, DB credentials, or write access to memory |
 | **Dashboard** | **http://127.0.0.1:8765/** |
-| **This release** | **v0.5.4** — **API v3** client · compatible with **Shared Memory Framework ≥ v0.7.0** |
+| **This release** | **v0.5.5** — **API v3** client · compatible with **Shared Memory Framework ≥ v0.7.0** · LLM pool panel |
 
 ---
 
@@ -99,7 +99,7 @@ Open **http://127.0.0.1:8765/**
 
 **Shared Memory Monitor** is a sister project to the framework — a read-only **view** over **gateway telemetry** and **framework logs**. It does not own memory stores, daemons, or a separate metrics API.
 
-**Compatibility (v0.5.4):** targets **Shared Memory Framework gateway v0.7.0** and advertises client wire contract **API v3** (`X-SM-Api-Version: 3`). Doctor/`./scripts/check-env.sh` should report `compat=ok` against a 0.7.0 gateway. Earlier monitor releases (0.5.1–0.5.3) spoke API v2 for framework 0.6.5.
+**Compatibility (v0.5.5):** targets **Shared Memory Framework gateway v0.7.0** and advertises client wire contract **API v3** (`X-SM-Api-Version: 3`). Doctor/`./scripts/check-env.sh` should report `compat=ok` against a 0.7.0 gateway. Earlier monitor releases (0.5.1–0.5.3) spoke API v2 for framework 0.6.5.
 
 | | Framework | Monitor (this repo) |
 |---|-----------|---------------------|
@@ -195,7 +195,7 @@ Live framework topology: agents → gateway; REM/NREM ↔ gateway; memory and in
 | `telemetry.compliance` | **Framework gateway v0.6.3+** — feeds **Schema conformance** (graph writes inside the agreed ontology). Older gateways omit it. |
 | `telemetry.latency` | **Framework gateway v0.6.3+** — feeds the **Throughput & latency** drawer (per-model enrichment model-floor vs queue-wait split; consolidation-cycle p50/p95). Older gateways omit it (drawer shows an unsupported note). |
 | `postgres.technical_docs_superseded` | Soft-superseded row count on Schema drawer meta (and poll cache). |
-| Client `X-SM-Api-Version` | Monitor **v0.5.4** advertises **api_version 3** — **compatible with Shared Memory Framework gateway ≥ v0.7.0**. `./scripts/check-env.sh` reports `server=N client=N compat=ok` when they match. |
+| Client `X-SM-Api-Version` | Monitor **v0.5.5** advertises **api_version 3** — **compatible with Shared Memory Framework gateway ≥ v0.7.0**. `./scripts/check-env.sh` reports `server=N client=N compat=ok` when they match. |
 | Python 3.11+ and [uv](https://docs.astral.sh/uv/) | `uv sync` / CLI |
 
 ### Local logs (required for `/logs` and diagram flows; same host as gateway in practice)
@@ -520,13 +520,13 @@ Regenerate screenshots: `./scripts/capture-screenshots.sh` (Playwright; monitor 
 | Doc | Topic |
 |-----|-------|
 | [SISTER_PROJECT.md](docs/SISTER_PROJECT.md) | Framework boundary |
-| [CHANGELOG.md](CHANGELOG.md) | Releases (current: **v0.5.4** · API **3** · framework **0.7.0**) |
+| [CHANGELOG.md](CHANGELOG.md) | Releases (current: **v0.5.5** · API **3** · framework **0.7.0**) |
 | [SECURITY.md](SECURITY.md) | Secrets policy |
 
 ```bash
 ./scripts/pre-publish-check.sh && ./scripts/publish.sh
 # release: tag must match pyproject / __init__ / CHANGELOG
-# gh release create v0.5.4 --title "v0.5.4" --notes-file …
+# gh release create v0.5.5 --title "v0.5.5" --notes-file …
 ```
 
 ---

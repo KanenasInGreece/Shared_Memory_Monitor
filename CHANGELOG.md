@@ -6,6 +6,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-07-19
+
+**Compatible with Shared Memory Framework gateway ≥ v0.7.0 · wire contract API v3.**
+
+Surfaces multi-backend LLM pool telemetry already on `GET /health` so operators
+can see which card is inferring, how load is routed, and hung-call age — still
+a pure visual aid (no new data path).
+
+### Compatibility
+
+| Monitor | Framework gateway | Client `X-SM-Api-Version` |
+|---------|-------------------|--------------------------|
+| **0.5.5** | **≥ 0.7.0** | **3** |
+| 0.5.4 | ≥ 0.7.0 | 3 |
+| 0.5.1–0.5.3 | 0.6.5 (retro-as-record) | 2 |
+
 ### Added
 
 - **LLM pool panel (Infrastructure)** — when the gateway emits multi-backend
