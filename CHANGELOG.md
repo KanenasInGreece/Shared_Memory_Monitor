@@ -6,6 +6,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **LLM pool panel (Infrastructure)** — when the gateway emits multi-backend
+  `/health.llm_pool` + `llm_backends`, the Status sidebar shows per-backend
+  chips (host:port, busy/free/down, in-flight, routed %, weight, fails,
+  cooldown) plus a summary line (busy/free/up, GPU busy state). Still
+  read-only from gateway health — no direct GPU or DB access.
+- **Oldest in-flight age** — `llm_oldest_inflight_age_s` on `/api/health` and
+  in the pool summary / LLM caption (wedge visibility on single- and
+  multi-backend installs).
+- **Live affinity** — `llm_affinity` hit/miss/hot-prefix counters (multi-backend
+  runtime map) under the pool panel; static knobs remain on the config hover.
+- **Wedge suspect** — `llm_suspect_wedged` labels surface as warn on the LLM
+  tile caption and pool line when the gateway flags hung generation.
+- **Latency drawer** — REM per-model **p95** service/wait times and
+  `max_batch_size` when present on `telemetry.latency.rem_ms.by_model` (bars
+  still use p50 anchors).
+
+### Changed
+
+- LLM tile captions name **which backend(s)** are inferring (labels from the
+  pool map) and include oldest-in-flight age when the gateway reports it.
+
 ## [0.5.4] - 2026-07-16
 
 **Compatible with Shared Memory Framework gateway v0.7.0 · wire contract API v3.**

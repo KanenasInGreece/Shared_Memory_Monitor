@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Shared Memory Monitor</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<link rel="stylesheet" href="/static/theme.css?v=49">
+<link rel="stylesheet" href="/static/theme.css?v=50">
 </head>
 <body data-bar-meta="dashboard">
 
@@ -129,6 +129,13 @@
               <div class="health-item unknown" data-key="rem_daemon"><div class="n">—</div><div class="l">REM</div></div>
             </div>
             <div class="hint sidebar-hint" id="system-hint"></div>
+            <!-- LLM pool detail: only from /health.llm_pool · affinity · oldest inflight (no invented metrics) -->
+            <div id="llm-pool-panel" class="pool-panel" hidden>
+              <div class="section-title section-title-tight">LLM pool</div>
+              <div class="pool-line" id="llm-pool-line" aria-live="polite"></div>
+              <div class="pool-backends" id="llm-pool-backends" role="list"></div>
+              <div class="hint pool-affinity" id="llm-pool-affinity" hidden></div>
+            </div>
           </div>
         </div>
 
@@ -889,7 +896,17 @@ function renderLatency(L) {
         const cf = m.contention_frac ?? 0;
         const badgeWarn = m.contention_pct != null && m.contention_pct >= 30;
         const badge = m.contention_pct != null ? `<span class="lat-badge${badgeWarn ? " warn" : ""}">${m.contention_pct}% wait</span>` : "";
-        const lown = m.low_n ? `<span class="lat-lown">n=${m.n ?? "?"} · few samples</span>` : (m.n != null ? `<span class="lat-n">n=${m.n}</span>` : "");
+        const extras = [];
+        if (m.n != null) extras.push(m.low_n ? `n=${m.n} · few samples` : `n=${m.n}`);
+        if (m.max_batch_size != null) extras.push(`batch≤${m.max_batch_size}`);
+        const lown = extras.length
+          ? `<span class="${m.low_n ? "lat-lown" : "lat-n"}">${esc(extras.join(" · "))}</span>`
+          : "";
+        const p95bits = [];
+        if (m.service_ms_p95 != null) p95bits.push(`model p95 ${fmtMs(m.service_ms_p95)}`);
+        if (m.contention_ms_p95 != null) p95bits.push(`wait p95 ${fmtMs(m.contention_ms_p95)}`);
+        const p95 = p95bits.length
+          ? `<div class="lat-bar-p95">${esc(p95bits.join(" · "))}</div>` : "";
         return `<div class="lat-bar-row${m.low_n ? " lat-dim" : ""}">
             <div class="lat-bar-head"><span class="lat-model">${esc(m.model)}</span>${badge}</div>
             <div class="lat-bar" role="img" aria-label="model compute ${fmtMs(m.service_ms)}, queue wait ${fmtMs(m.contention_ms)}">
@@ -897,6 +914,7 @@ function renderLatency(L) {
               <span class="lat-seg lat-seg-contention" style="width:${cf}%"></span>
             </div>
             <div class="lat-bar-legend"><span class="lat-key lat-key-service">model ${fmtMs(m.service_ms)}</span><span class="lat-key lat-key-contention">wait ${fmtMs(m.contention_ms)}</span>${lown}</div>
+            ${p95}
           </div>`;
       }).join("");
     }
@@ -1039,12 +1057,115 @@ function gatewayConfigHint(H) {
   return bits.join(" · ");
 }
 
+function fmtInflightAge(s) {
+  if (s == null || s < 0) return null;
+  if (s < 1) return "<1s";
+  if (s < 60) return `${Math.round(s)}s`;
+  const m = Math.floor(s / 60), r = Math.round(s % 60);
+  if (m < 60) return r ? `${m}m ${r}s` : `${m}m`;
+  const h = Math.floor(m / 60), mm = m % 60;
+  return mm ? `${h}h ${mm}m` : `${h}h`;
+}
+
+function renderLlmPool(H) {
+  // Surfaces only fields the gateway already emits on /health (pool maps, oldest
+  // in-flight age, live affinity, wedge list). Hidden when none of those exist.
+  const panel = document.getElementById("llm-pool-panel");
+  const line = document.getElementById("llm-pool-line");
+  const list = document.getElementById("llm-pool-backends");
+  const affEl = document.getElementById("llm-pool-affinity");
+  if (!panel || !line || !list) return;
+
+  const pool = H?.llm_pool;
+  const age = H?.llm_oldest_inflight_age_s;
+  const wedged = H?.llm_suspect_wedged || [];
+  const aff = H?.llm_affinity_live;
+  const hasPool = !!(pool && pool.backends && pool.backends.length);
+  const hasAge = age != null;
+  const hasAff = !!(aff && (aff.hits != null || aff.misses != null || aff.hit_rate != null
+    || (aff.hot_prefixes && aff.hot_prefixes.length)));
+  const hasWedge = Array.isArray(wedged) && wedged.length > 0;
+
+  if (!hasPool && !hasAge && !hasAff && !hasWedge) {
+    panel.hidden = true;
+    list.innerHTML = "";
+    line.textContent = "";
+    if (affEl) { affEl.hidden = true; affEl.textContent = ""; }
+    return;
+  }
+  panel.hidden = false;
+
+  const bits = [];
+  if (hasPool) {
+    bits.push(`${pool.busy}/${pool.total} inferring`);
+    bits.push(`${pool.free} free`);
+    bits.push(`${pool.up}/${pool.total} up`);
+  }
+  if (hasAge) {
+    const ageTxt = fmtInflightAge(age);
+    bits.push(`oldest ${ageTxt}`);
+  }
+  if (H?.inference_busy) bits.push(`GPU ${H.inference_busy}`);
+  if (hasWedge) bits.push(`wedge: ${wedged.join(", ")}`);
+  line.textContent = bits.join(" · ");
+  line.className = "pool-line" + (hasWedge ? " warn" : "");
+
+  if (hasPool) {
+    list.innerHTML = pool.backends.map(b => {
+      const st = (b.status === "ok") ? (b.inflight > 0 ? "busy" : (b.available ? "free" : "held"))
+               : (b.status === "unknown" ? "unknown" : "down");
+      const stateClass = st === "busy" ? "busy" : st === "free" ? "free"
+                       : st === "down" ? "down" : st === "held" ? "held" : "unknown";
+      const meta = [];
+      if (b.inflight != null) meta.push(`in-flight ${b.inflight}`);
+      if (b.routed_pct != null) meta.push(`${b.routed_pct}% routed`);
+      else if (b.routed != null) meta.push(`routed ${b.routed}`);
+      if (b.weight != null) meta.push(`w=${b.weight}`);
+      if (b.fails) meta.push(`${b.fails} fail${b.fails === 1 ? "" : "s"}`);
+      if (b.cooldown > 0) meta.push(`cooldown ${Math.round(b.cooldown)}s`);
+      if (b.reserved) meta.push("reserved");
+      const title = [b.url, b.status, ...meta].filter(Boolean).join(" · ");
+      return `<div class="pool-chip ${stateClass}" role="listitem" title="${esc(title)}">
+          <span class="pool-chip-label">${esc(b.label)}</span>
+          <span class="pool-chip-state">${esc(st)}</span>
+          <span class="pool-chip-meta">${esc(meta.join(" · "))}</span>
+        </div>`;
+    }).join("");
+  } else {
+    list.innerHTML = "";
+  }
+
+  if (affEl) {
+    if (hasAff) {
+      const parts = [];
+      if (aff.hit_rate != null) {
+        const pct = Math.round(Number(aff.hit_rate) * 1000) / 10;
+        parts.push(`affinity hit ${pct}%`);
+      }
+      if (aff.hits != null || aff.misses != null) {
+        parts.push(`${aff.hits ?? 0} hit / ${aff.misses ?? 0} miss`);
+      }
+      if (aff.hot_prefixes && aff.hot_prefixes.length) {
+        const tops = aff.hot_prefixes.slice(0, 3).map(p =>
+          `${p.prefix}→${p.backend || "?"}${p.hits != null ? `×${p.hits}` : ""}`);
+        parts.push(`hot ${tops.join(", ")}`);
+      }
+      affEl.hidden = false;
+      affEl.textContent = parts.join(" · ");
+    } else {
+      affEl.hidden = true;
+      affEl.textContent = "";
+    }
+  }
+}
+
 function renderSystemHealth(H) {
   const status = H?.status || "unknown";
   consolidationStalled = !!(H?.consolidation?.tile?.stalled);
   updateSystemPill(status, H?.summary || "");
   renderBackup(H);
   renderConsolidation(H?.consolidation || null);
+  renderLlmPool(H);
 
   const byKey = Object.fromEntries((H?.components || []).map(c => [c.key, c]));
   document.querySelectorAll("#system-health-row .health-item").forEach(el => {

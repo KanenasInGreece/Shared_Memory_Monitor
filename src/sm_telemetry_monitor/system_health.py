@@ -59,6 +59,26 @@ def _inference_busy_state(raw: dict) -> str:
     return "unknown"
 
 
+def _age_caption(age_s: float | None) -> str | None:
+    """Human fragment for oldest in-flight age; None when not applicable."""
+    if age_s is None or age_s < 0:
+        return None
+    if age_s < 1:
+        return "oldest in-flight <1s"
+    if age_s < 60:
+        return f"oldest in-flight {int(age_s)}s"
+    m, s = divmod(int(age_s), 60)
+    if m < 60:
+        return f"oldest in-flight {m}m {s}s" if s else f"oldest in-flight {m}m"
+    h, m = divmod(m, 60)
+    return f"oldest in-flight {h}h {m}m"
+
+
+def _backend_label(url: str) -> str:
+    """Short host:port (or path tail) for chips — no scheme."""
+    return str(url).split("//", 1)[-1]
+
+
 def _llm_pool_summary(raw: dict) -> dict | None:
     """Multi-backend LLM pool state from /health.llm_pool + /health.llm_backends.
 
@@ -67,6 +87,10 @@ def _llm_pool_summary(raw: dict) -> dict | None:
     the tiles keep the nvtop-based semantics. Per-backend `inflight` is the
     truthful busy signal for each model — all LLM traffic flows through the
     gateway pool, and REM/NREM gate on a free slot, not on global GPU load.
+
+    Pass-through of weight / routed / routed_pct / fails is intentional: the
+    monitor never invents balance metrics; it only reshapes what /health already
+    reports so the UI can show which card is working and how load split.
     """
     pool = raw.get("llm_pool")
     if not isinstance(pool, dict) or not pool:
@@ -80,15 +104,39 @@ def _llm_pool_summary(raw: dict) -> dict | None:
         inflight = int(p.get("inflight") or 0)
         cooldown = float(p.get("cooldown") or 0.0)
         reserved = bool(p.get("reserved"))
+        weight = p.get("weight")
+        try:
+            weight_f = float(weight) if weight is not None else None
+        except (TypeError, ValueError):
+            weight_f = None
+        routed = p.get("routed")
+        try:
+            routed_i = int(routed) if routed is not None else None
+        except (TypeError, ValueError):
+            routed_i = None
+        routed_pct = p.get("routed_pct")
+        try:
+            routed_pct_f = float(routed_pct) if routed_pct is not None else None
+        except (TypeError, ValueError):
+            routed_pct_f = None
+        fails = p.get("fails")
+        try:
+            fails_i = int(fails) if fails is not None else None
+        except (TypeError, ValueError):
+            fails_i = None
         backends.append({
             "url": url,
             # short label for UI chips: strip scheme, keep host:port tail
-            "label": url.split("//", 1)[-1],
+            "label": _backend_label(url),
             "status": status,
             "inflight": inflight,
             "cooldown": cooldown,
             "reserved": reserved,
             "available": status == "ok" and inflight == 0 and cooldown <= 0 and not reserved,
+            "weight": weight_f,
+            "routed": routed_i,
+            "routed_pct": routed_pct_f,
+            "fails": fails_i,
         })
     if not backends:
         return None
@@ -98,6 +146,62 @@ def _llm_pool_summary(raw: dict) -> dict | None:
         "up": sum(1 for b in backends if b["status"] == "ok"),
         "busy": sum(1 for b in backends if b["inflight"] > 0),
         "free": sum(1 for b in backends if b["available"]),
+    }
+
+
+def _oldest_inflight_age_s(raw: dict) -> float | None:
+    """Seconds the oldest in-flight LLM call has been open — wedge visibility.
+
+    Present on single- and multi-backend gateways when any call is in flight.
+    Distinguishes a healthy long generation from a hung accept-thread (see
+    framework wedge probes + optional llm_suspect_wedged).
+    """
+    v = raw.get("llm_oldest_inflight_age_s")
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    return None
+
+
+def _suspect_wedged(raw: dict) -> list[str] | None:
+    """Backend labels the gateway flagged as suspect-wedged (optional list of URLs)."""
+    w = raw.get("llm_suspect_wedged")
+    if not isinstance(w, list) or not w:
+        return None
+    out = [_backend_label(u) for u in w if u]
+    return out or None
+
+
+def _llm_affinity_live(raw: dict) -> dict | None:
+    """Runtime cache-affinity counters from /health.llm_affinity (multi-backend).
+
+    Distinct from /health.config.llm_affinity (static knobs). Live block has
+    hits/misses/hit_rate and optional hot_prefixes map.
+    """
+    aff = raw.get("llm_affinity")
+    if not isinstance(aff, dict) or not aff:
+        return None
+    if not any(k in aff for k in ("hits", "misses", "hit_rate", "hot_prefixes")):
+        return None
+    hot_raw = aff.get("hot_prefixes")
+    prefixes: list[dict] = []
+    if isinstance(hot_raw, dict):
+        for key, val in hot_raw.items():
+            if not isinstance(val, dict):
+                continue
+            backend = val.get("backend") or ""
+            prefixes.append({
+                "prefix": str(key)[:12],
+                "backend": _backend_label(backend) if backend else "",
+                "url": str(backend) if backend else None,
+                "hits": val.get("hits"),
+            })
+    return {
+        "hits": aff.get("hits"),
+        "misses": aff.get("misses"),
+        "hit_rate": aff.get("hit_rate"),
+        "hot_prefixes": prefixes,
     }
 
 
@@ -282,10 +386,24 @@ def _workload_part(key: str, raw: dict, t: dict, *, nrem_stalled: bool = False,
                 return {"value": "unavailable", "state": "bad", "caption": "dream cycle blocked"}
             busy_n = llm_pool["busy"]
             down_n = n - llm_pool["up"]
+            age = _oldest_inflight_age_s(raw)
+            age_bit = _age_caption(age)
+            wedged = _suspect_wedged(raw)
             if busy_n > 0:
+                busy_labels = [
+                    b["label"] for b in llm_pool["backends"]
+                    if b.get("inflight", 0) > 0
+                ]
                 cap = f"{busy_n} of {n} backends inferring"
+                if busy_labels:
+                    cap += f" · {', '.join(busy_labels)}"
                 if down_n:
                     cap += f" · {down_n} down"
+                if age_bit:
+                    cap += f" · {age_bit}"
+                if wedged:
+                    cap += f" · wedge suspect: {', '.join(wedged)}"
+                    return {"value": f"busy {busy_n}/{n}", "state": "warn", "caption": cap}
                 return {"value": f"busy {busy_n}/{n}", "state": "warn" if down_n else "ok",
                         "caption": cap}
             if down_n:
@@ -302,6 +420,8 @@ def _workload_part(key: str, raw: dict, t: dict, *, nrem_stalled: bool = False,
         # Single backend: read load from nvtop first — it sees a user chatting
         # directly with :5000 (bypassing the gateway), which no daemon ledger or
         # cycle-in-flight signal can.
+        age_bit = _age_caption(_oldest_inflight_age_s(raw))
+        wedged = _suspect_wedged(raw)
         if st != "ok":
             # Probe says unreachable, but nvtop says the GPU is actively inferring:
             # that is back-pressure (probe saturated under load), NOT an outage —
@@ -312,14 +432,23 @@ def _workload_part(key: str, raw: dict, t: dict, *, nrem_stalled: bool = False,
                         "caption": "GPU busy · reachability probe saturated"}
             return {"value": "unavailable", "state": "bad", "caption": "dream cycle blocked"}
         if inference_busy == "busy":
-            return {"value": "busy", "state": "ok", "caption": "inference in flight · GPU busy"}
+            cap = "inference in flight · GPU busy"
+            if age_bit:
+                cap += f" · {age_bit}"
+            if wedged:
+                return {"value": "busy", "state": "warn",
+                        "caption": cap + f" · wedge suspect: {', '.join(wedged)}"}
+            return {"value": "busy", "state": "ok", "caption": cap}
         if inference_busy == "idle":
             return {"value": "idle", "state": "ok", "caption": "reachable · GPU idle"}
         # inference_busy == "unknown": nvtop absent / SLOT_AWARE=0 — fall back to a
         # dream cycle in flight (the only busy signal we can still trust), and
         # never assert "idle" we cannot observe.
         if llm_busy:
-            return {"value": "busy", "state": "ok", "caption": "dream-cycle inference in flight"}
+            cap = "dream-cycle inference in flight"
+            if age_bit:
+                cap += f" · {age_bit}"
+            return {"value": "busy", "state": "ok", "caption": cap}
         return {"value": "ready", "state": "ok", "caption": "reachable · load unknown"}
 
     if key == "rem_daemon":
@@ -595,6 +724,10 @@ def system_health_snapshot() -> dict:
             "components": [],
             "backup": _backup_part(raw, reachable=False, last=last_backup),
             "consolidation": consolidation,
+            "llm_pool": None,
+            "llm_oldest_inflight_age_s": None,
+            "llm_suspect_wedged": None,
+            "llm_affinity_live": None,
             "error": sanitize_error(raw.get("error")) or "gateway unreachable",
         }
 
@@ -622,6 +755,9 @@ def system_health_snapshot() -> dict:
         "telemetry_at": telemetry_at,
         "inference_busy": inference_busy,
         "llm_pool": llm_pool,
+        "llm_oldest_inflight_age_s": _oldest_inflight_age_s(raw),
+        "llm_suspect_wedged": _suspect_wedged(raw),
+        "llm_affinity_live": _llm_affinity_live(raw),
         "version": raw.get("version"),
         "api_version": raw.get("api_version"),
         "config": gateway_config,

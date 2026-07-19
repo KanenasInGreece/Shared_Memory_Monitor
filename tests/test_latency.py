@@ -66,6 +66,27 @@ class LatencyRemTests(unittest.TestCase):
         self.assertEqual(m["contention_ms"], 290)
         self.assertEqual(m["contention_pct"], 48)     # 290 / 600
         self.assertTrue(m["low_n"])                   # n=6 < 10
+        self.assertEqual(m["service_ms_p95"], 900)
+        self.assertIsNone(m["contention_ms_p95"])     # p95 omitted on that field
+
+    def test_p95_and_max_batch_passthrough(self):
+        snap = latency_from_payload(_payload({
+            "rem_ms": {"by_model": [
+                {
+                    "model": "gemma-4-12B-it-Q4_K_M.gguf",
+                    "n": 2,
+                    "max_batch_size": 2,
+                    "service_ms": {"p50": 1100.0, "p95": 2200.0},
+                    "contention_ms": {"p50": 90.0, "p95": 120.0},
+                },
+            ]},
+        }))
+        m = snap["rem"]["models"][0]
+        self.assertEqual(m["service_ms"], 1100.0)
+        self.assertEqual(m["service_ms_p95"], 2200.0)
+        self.assertEqual(m["contention_ms_p95"], 120.0)
+        self.assertEqual(m["max_batch_size"], 2)
+        self.assertEqual(m["service_frac"], 92)       # 1100 / 1190
 
     def test_chip_promoted_above_threshold(self):
         snap = latency_from_payload(_payload({

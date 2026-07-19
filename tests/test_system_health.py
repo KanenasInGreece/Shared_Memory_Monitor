@@ -322,6 +322,15 @@ class LlmPoolTests(unittest.TestCase):
         self.assertEqual(pool["up"], 2)
         self.assertEqual(pool["busy"], 1)
         self.assertEqual(pool["free"], 1)
+        # Full /health.llm_pool pass-through for the pool panel (no invented stats).
+        by_label = {b["label"]: b for b in pool["backends"]}
+        self.assertEqual(by_label["localhost:5000"]["inflight"], 1)
+        self.assertEqual(by_label["localhost:5000"]["routed"], 38)
+        self.assertEqual(by_label["localhost:5000"]["routed_pct"], 88.4)
+        self.assertEqual(by_label["localhost:5000"]["fails"], 2)
+        self.assertEqual(by_label["localhost:5000"]["weight"], 1.0)
+        self.assertFalse(by_label["localhost:5000"]["available"])
+        self.assertTrue(by_label["localhost:4000"]["available"])
 
     def test_single_backend_health_has_no_pool(self):
         self.assertIsNone(_llm_pool_summary(_healthy_gateway()))
@@ -330,6 +339,7 @@ class LlmPoolTests(unittest.TestCase):
         w, _ = self._llm_workload(_pool_gateway(inflight4000=2))
         self.assertEqual(w["value"], "busy 1/2")
         self.assertEqual(w["state"], "ok")
+        self.assertIn("localhost:4000", w["caption"])
 
     def test_pool_idle_gpu_idle(self):
         w, _ = self._llm_workload(_pool_gateway())
@@ -396,6 +406,70 @@ class LlmPoolTests(unittest.TestCase):
         self.assertEqual(snap["llm_pool"]["busy"], 1)
         llm = next(c for c in snap["components"] if c["key"] == "llm")
         self.assertEqual(llm["workload"]["value"], "busy 1/2")
+
+    def test_snapshot_exposes_age_affinity_wedge(self):
+        payload = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "insight": {"stalled": False, "consecutive_failures": 0},
+                    "fact_consolidation": {"stalled": False, "consecutive_failures": 0},
+                },
+            },
+        }
+        health = {
+            **_pool_gateway(inflight4000=1),
+            "llm_oldest_inflight_age_s": 125.4,
+            "llm_suspect_wedged": ["http://localhost:4000"],
+            "llm_affinity": {
+                "hits": 3,
+                "misses": 1,
+                "hit_rate": 0.75,
+                "hot_prefixes": {
+                    "abc123ef": {"backend": "http://localhost:4000", "hits": 3},
+                },
+            },
+        }
+        with patch("sm_telemetry_monitor.system_health.get_telemetry",
+                   return_value=payload), \
+             patch("sm_telemetry_monitor.system_health.live_summary",
+                   return_value={"latest": {}}), \
+             patch("sm_telemetry_monitor.system_health.get_health", return_value=health):
+            snap = system_health_snapshot()
+        self.assertEqual(snap["llm_oldest_inflight_age_s"], 125.4)
+        self.assertEqual(snap["llm_suspect_wedged"], ["localhost:4000"])
+        aff = snap["llm_affinity_live"]
+        self.assertEqual(aff["hits"], 3)
+        self.assertEqual(aff["hit_rate"], 0.75)
+        self.assertEqual(aff["hot_prefixes"][0]["backend"], "localhost:4000")
+        llm = next(c for c in snap["components"] if c["key"] == "llm")
+        self.assertEqual(llm["state"], "warn")  # wedge suspect elevates
+        self.assertIn("oldest in-flight 2m", llm["workload"]["caption"])
+        self.assertIn("wedge suspect", llm["workload"]["caption"])
+
+    def test_single_backend_still_exposes_oldest_age(self):
+        payload = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "insight": {"stalled": False, "consecutive_failures": 0},
+                    "fact_consolidation": {"stalled": False, "consecutive_failures": 0},
+                },
+            },
+        }
+        health = {**_healthy_gateway(), "inference_busy": "busy",
+                  "llm_oldest_inflight_age_s": 45.0}
+        with patch("sm_telemetry_monitor.system_health.get_telemetry",
+                   return_value=payload), \
+             patch("sm_telemetry_monitor.system_health.live_summary",
+                   return_value={"latest": {}}), \
+             patch("sm_telemetry_monitor.system_health.get_health", return_value=health):
+            snap = system_health_snapshot()
+        self.assertEqual(snap["llm_oldest_inflight_age_s"], 45.0)
+        self.assertIsNone(snap["llm_pool"])
+        self.assertIsNone(snap["llm_affinity_live"])
+        llm = next(c for c in snap["components"] if c["key"] == "llm")
+        self.assertIn("oldest in-flight 45s", llm["workload"]["caption"])
 
 
 class RemDrainSignalTests(unittest.TestCase):

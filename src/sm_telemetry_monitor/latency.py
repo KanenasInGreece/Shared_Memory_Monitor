@@ -50,6 +50,13 @@ def _pct(num: float | int | None, den: float | int | None) -> int | None:
     return round(100 * num / den)
 
 
+def _p95(value: float | int | dict | None) -> float | int | None:
+    """Optional p95 from a percentile dict; None when absent or scalar-only."""
+    if isinstance(value, dict):
+        return value.get("p95")
+    return None
+
+
 def _rem_by_model(rem_ms: dict | None) -> tuple[list[dict], int | None]:
     """Per-model REM service/contention split + the worst contention share."""
     rem = rem_ms if isinstance(rem_ms, dict) else {}
@@ -61,6 +68,8 @@ def _rem_by_model(rem_ms: dict | None) -> tuple[list[dict], int | None]:
         name = entry.get("model") or entry.get("backend") or entry.get("name") or "?"
         service = _anchor(entry.get("service_ms"))
         contention = _anchor(entry.get("contention_ms"))
+        service_p95 = _p95(entry.get("service_ms"))
+        contention_p95 = _p95(entry.get("contention_ms"))
         total = None
         if service is not None or contention is not None:
             total = (service or 0) + (contention or 0)
@@ -74,13 +83,17 @@ def _rem_by_model(rem_ms: dict | None) -> tuple[list[dict], int | None]:
             "model": name,
             "service_ms": service,
             "contention_ms": contention,
+            "service_ms_p95": service_p95,
+            "contention_ms_p95": contention_p95,
             "total_ms": total,
             # Bar-segment widths (0–100) so the client draws the split without
             # re-deriving proportions; None total → no bar, just the empty note.
+            # Fractions use the p50 (typical) anchors — p95 is shown as text only.
             "service_frac": _pct(service, total),
             "contention_frac": contention_pct,
             "contention_pct": contention_pct,
             "n": entry.get("n"),
+            "max_batch_size": entry.get("max_batch_size"),
             "low_n": isinstance(entry.get("n"), int) and entry.get("n") < _MIN_SAMPLES,
         })
     return models, max_contention_pct
