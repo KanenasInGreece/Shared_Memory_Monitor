@@ -6,6 +6,33 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-20
+
+**Compatible with Shared Memory Framework gateway ≥ v0.7.0 · wire contract API v3.**
+Verified against a live gateway upgraded to 0.8.1 during this release — wire
+contract unchanged (`api_version` stays **3** on both sides).
+
+Surfaces two more fields already on `GET /memory/telemetry` that framework
+decisions landed the same day (819, 838, 840, 842) — still a pure visual aid,
+no new data path.
+
+### Added
+
+- **REM reliability · stranded records** (decision 819) — the overloaded
+  `rem_attempts` counter was split into `rem_pickups` (rotation, never charged)
+  and `rem_attempts` (failure charging only), exposing a previously-invisible
+  case: records picked up repeatedly, never succeeded, never blamed. New band
+  in the Consolidation drawer shows `telemetry.neo4j.rem_dead_lettered` /
+  `rem_failing` / `rem_max_attempts`, labelled explicitly as the safety net
+  working as designed — a nonzero count is not a regression.
+- **Deferred/Idle (24h) per cycle** (decision 842) — the shared idle clock was
+  split by consumer (hygiene sweep vs. consolidation cycle) with reasoned-default
+  timer values the framework calls explicitly **unproven**; a retrospective is
+  "deliberately owed" once per-type run/deferral/idle telemetry accumulates over
+  a full load cycle. New column in the by-cycle table surfaces
+  `deferred_24h` / `idle_24h`, labelled **provisional** so a single day's numbers
+  don't read as a verdict.
+
 ## [0.5.6] - 2026-07-20
 
 **Compatible with Shared Memory Framework gateway ≥ v0.7.0 · wire contract API v3.**
@@ -19,7 +46,8 @@ a pure visual aid (no new data path).
 
 | Monitor | Framework gateway | Client `X-SM-Api-Version` |
 |---------|-------------------|--------------------------|
-| **0.5.6** | **≥ 0.7.0** | **3** |
+| **0.7.0** | **≥ 0.7.0** (verified against 0.8.1) | **3** |
+| 0.5.6 | ≥ 0.7.0 | 3 |
 | 0.5.5 | ≥ 0.7.0 | 3 |
 | 0.5.4 | ≥ 0.7.0 | 3 |
 | 0.5.1–0.5.3 | 0.6.5 (retro-as-record) | 2 |

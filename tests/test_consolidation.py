@@ -604,6 +604,77 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         self.assertIsNone(insight["cycle_seconds_avg"])
         self.assertIsNone(insight["folds_24h_display"])
 
+    def test_idle_deferred_24h_surfaced(self):
+        # Decision 842 (provisional): per-consumer idle clock split. Verify the
+        # cycle carries deferred/idle counts and the provisional note is present.
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "fact_consolidation": {
+                        "last_outcome": "completed",
+                        "stalled": False,
+                        "runs_24h": 41,
+                        "deferred_24h": 0,
+                        "idle_24h": 0,
+                    },
+                    "insight": {
+                        "last_outcome": "crashed",
+                        "stalled": False,
+                        "runs_24h": 10,
+                        "deferred_24h": 7,
+                        "idle_24h": 2,
+                    },
+                },
+            },
+        }
+        snap = consolidation_from_payload(health, telemetry)
+        fact = next(c for c in snap["cycles"] if c["key"] == "fact_consolidation")
+        insight = next(c for c in snap["cycles"] if c["key"] == "insight")
+        self.assertEqual(fact["deferred_24h"], 0)
+        self.assertEqual(fact["idle_24h"], 0)
+        self.assertEqual(fact["idle_deferred_24h_display"], "0/0")
+        self.assertEqual(insight["deferred_24h"], 7)
+        self.assertEqual(insight["idle_24h"], 2)
+        self.assertEqual(insight["idle_deferred_24h_display"], "7/2")
+        self.assertIn("842", snap["idle_deferred_note"])
+
+    def test_idle_deferred_24h_missing_on_old_gateway(self):
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {"insight": {"last_outcome": "completed", "stalled": False}},
+            },
+        }
+        insight = consolidation_from_payload(health, telemetry)["cycles"][0]
+        self.assertIsNone(insight["deferred_24h"])
+        self.assertIsNone(insight["idle_24h"])
+        self.assertIsNone(insight["idle_deferred_24h_display"])
+
+    def test_rem_reliability_computed(self):
+        # Decision 819: rem_attempts split into rem_pickups/rem_attempts; the
+        # gateway now reports the previously-invisible stranded-record signal.
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "neo4j": {"rem_dead_lettered": 0, "rem_failing": 5, "rem_max_attempts": 5},
+            },
+        }
+        rr = consolidation_from_payload(health, telemetry)["rem_reliability"]
+        self.assertTrue(rr["present"])
+        self.assertEqual(rr["dead_lettered"], 0)
+        self.assertEqual(rr["failing"], 5)
+        self.assertEqual(rr["max_attempts"], 5)
+
+    def test_rem_reliability_missing_on_old_gateway(self):
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        rr = consolidation_from_payload(health, {"status": "success", "telemetry": {}})["rem_reliability"]
+        self.assertFalse(rr["present"])
+        self.assertIsNone(rr["dead_lettered"])
+
     def test_stale_signal(self):
         health = {
             "status": "ok",

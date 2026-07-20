@@ -14,7 +14,7 @@ first-write quality, graph shape, latency, topology, and audit trails — so you
 | **What you get** | Visual ops aid over **framework-owned** telemetry and logs |
 | **What you do not get** | A second metrics store, DB credentials, or write access to memory |
 | **Dashboard** | **http://127.0.0.1:8765/** |
-| **This release** | **v0.5.6** — **API v3** client · compatible with **Shared Memory Framework ≥ v0.7.0** · per-cycle consolidation telemetry |
+| **This release** | **v0.7.0** — **API v3** client · compatible with **Shared Memory Framework ≥ v0.7.0** · REM reliability + per-cycle deferred/idle telemetry |
 
 ---
 
@@ -99,7 +99,7 @@ Open **http://127.0.0.1:8765/**
 
 **Shared Memory Monitor** is a sister project to the framework — a read-only **view** over **gateway telemetry** and **framework logs**. It does not own memory stores, daemons, or a separate metrics API.
 
-**Compatibility (v0.5.6):** targets **Shared Memory Framework gateway v0.7.0+** and advertises client wire contract **API v3** (`X-SM-Api-Version: 3`). Doctor/`./scripts/check-env.sh` should report `compat=ok` against a 0.7.0 gateway. Earlier monitor releases (0.5.1–0.5.3) spoke API v2 for framework 0.6.5.
+**Compatibility (v0.7.0):** targets **Shared Memory Framework gateway v0.7.0+** and advertises client wire contract **API v3** (`X-SM-Api-Version: 3`). Doctor/`./scripts/check-env.sh` should report `compat=ok` against a 0.7.0 gateway. Earlier monitor releases (0.5.1–0.5.3) spoke API v2 for framework 0.6.5.
 
 | | Framework | Monitor (this repo) |
 |---|-----------|---------------------|
@@ -151,7 +151,8 @@ Opens from **Drill-down → Consolidation**. The drawer reads the gateway's cons
 - **Liveness** — health verdict, last outcome, time since the last successful fold **with cycle type**, stalled type list, last active cycle, and the stall threshold. The Status tile names which type(s) are stalled (`Stalled [fact consolidation]`) because the gateway ORs stall across types — one healthy cycle can leave the headline red while a sibling is still folding. A deferred cycle with an **explicit** empty eligible census reads as **idle**; unknown eligibility keeps the deferred reason (e.g. pool busy). The only red state is a genuine stall.
 - **Coverage** (output side) — from the `telemetry.neo4j` fact census: REM-processed facts, how many are consolidated (count and %), and how many still await a fold. **Consolidations by type** lists the summaries produced — insights, thematic, community — with any superseded count.
 - **Graph health · entity resolution** (input side, gateway v0.6.0+; v0.6.1 semantics) — from `telemetry.entity_graph`: total entities, the **Mentioned** share (entities with live fact/decision mentions — the ones that can seed a fold), the **Structural only** share (entities holding graph edges but no live mention), **Orphans** (truly dangling degree-0 nodes — a hygiene defect, flagged when nonzero), **Singletons**, and the alias layer (**Alias edges** · groups · alias coverage · **largest alias group**) written by the v0.6.1 entity-resolution alias-writer. The counts include entities from records still awaiting REM — REM is the stage that builds an entity's relationships — so an **Awaiting REM** figure is shown and the fragmentation share reads as an upper bound until REM catches up.
-- **By cycle** — insight and fact-consolidation rows with outcome, last success, eligible clusters, oldest wait, last error, and **24h activity** (runs, average cycle seconds, folds succeeded/attempted). Insight empty runs and fact-consolidation folds differ by orders of magnitude in cost — read the per-type row, not only the headline.
+- **REM reliability · stranded records** (gateway ≥0.7.x, decision 819) — from `telemetry.neo4j`: **Dead-lettered** (records retired at the retry cap) and **Failing** (still accumulating chargeable failures but not yet retired — the "stranded record" case: picked up repeatedly, never succeeded, never blamed, previously invisible), plus the **Retry cap**. A nonzero count is the safety net working as designed, not a regression — labelled explicitly so it doesn't read as a new fault.
+- **By cycle** — insight and fact-consolidation rows with outcome, last success, eligible clusters, oldest wait, last error, **24h activity** (runs, average cycle seconds, folds succeeded/attempted), and **Deferred/Idle (24h)** (decision 842, **provisional**: the per-consumer idle-clock split's timer values are reasoned defaults, not measured optima — a retrospective is owed once a full load cycle of this data accumulates). Insight empty runs and fact-consolidation folds differ by orders of magnitude in cost — read the per-type row, not only the headline.
 
 ![Consolidation health — liveness, fact coverage %, graph-health entity resolution, per-cycle table](docs/images/consolidation.png)
 
@@ -195,7 +196,7 @@ Live framework topology: agents → gateway; REM/NREM ↔ gateway; memory and in
 | `telemetry.compliance` | **Framework gateway v0.6.3+** — feeds **Schema conformance** (graph writes inside the agreed ontology). Older gateways omit it. |
 | `telemetry.latency` | **Framework gateway v0.6.3+** — feeds the **Throughput & latency** drawer (per-model enrichment model-floor vs queue-wait split; consolidation-cycle p50/p95). Older gateways omit it (drawer shows an unsupported note). |
 | `postgres.technical_docs_superseded` | Soft-superseded row count on Schema drawer meta (and poll cache). |
-| Client `X-SM-Api-Version` | Monitor **v0.5.6** advertises **api_version 3** — **compatible with Shared Memory Framework gateway ≥ v0.7.0**. `./scripts/check-env.sh` reports `server=N client=N compat=ok` when they match. |
+| Client `X-SM-Api-Version` | Monitor **v0.7.0** advertises **api_version 3** — **compatible with Shared Memory Framework gateway ≥ v0.7.0**. `./scripts/check-env.sh` reports `server=N client=N compat=ok` when they match. |
 | Python 3.11+ and [uv](https://docs.astral.sh/uv/) | `uv sync` / CLI |
 
 ### Local logs (required for `/logs` and diagram flows; same host as gateway in practice)
@@ -310,8 +311,10 @@ Consolidation drawer fields:
 | **Graph health** — alias edges · groups · coverage · largest group | `alias_edges` · `alias_components` · `alias_covered_entities` · `largest_alias_component` — the v0.6.1 entity-resolution alias layer |
 | **Graph health** — top hub degree | Highest entity degree in `entity_graph.top_hubs` |
 | **Graph health** — awaiting REM | `facts_rem_pending + decisions_rem_pending` — pre-REM entities inflate the fragmentation share; shown as a caveat, not a verdict |
+| **REM reliability** — dead-lettered · failing · retry cap | `telemetry.neo4j.rem_dead_lettered` / `rem_failing` / `rem_max_attempts` (gateway ≥0.7.x, decision 819) — the "stranded record" signal split off the old overloaded `rem_attempts` counter |
 | **By cycle → Eligible** | `eligible_clusters` — clusters awaiting a fold (a count, not a ratio) |
 | **By cycle → Oldest wait** | `eligible_oldest_age_seconds` — age of the oldest cluster still waiting |
+| **By cycle → Deferred/Idle (24h)** | `deferred_24h` / `idle_24h` (gateway ≥0.7.x, decision 842, **provisional** — see note in drawer) |
 
 Main charts: backlog over time, throughput, cumulative cleared, tier-3 growth & errors, raw samples table.
 
@@ -453,10 +456,12 @@ Requires a framework gateway that exposes `telemetry.consolidation` and a cached
 | `/health` | `consolidation.fresh` | `false` → show **signal stale**; do not trust `stalled` |
 | `/health` | `consolidation.last_outcome` | `completed` \| `crashed` \| `deferred` \| null |
 | `/health` | `consolidation.last_success_cycle_type` | Which cycle produced the last success age |
-| `telemetry.consolidation` | `insight` / `fact_consolidation` | Per-cycle outcome, in-flight, failures, `last_error`, coverage, **24h** `runs_24h` / `cycle_seconds_avg` / folds |
+| `telemetry.consolidation` | `insight` / `fact_consolidation` | Per-cycle outcome, in-flight, failures, `last_error`, coverage, **24h** `runs_24h` / `cycle_seconds_avg` / folds / `deferred_24h` / `idle_24h` |
 | `telemetry.consolidation` | `last_active_cycle_type` | Most recently started cycle type |
 | `telemetry.consolidation.*.backlog` | `eligible_clusters` | Clusters awaiting a fold — **not** the same as `telemetry.nrem` density cycles |
+| `telemetry.consolidation.*.deferred_24h` / `idle_24h` (gateway ≥0.7.x, decision 842) | per-cycle 24h counts | **Provisional** — the per-consumer idle-clock split's timer values are reasoned defaults; judge only after a full load cycle accumulates |
 | `telemetry.entity_graph` (gateway v0.6.0+) | `entities_total` · `orphan_entities` · `unmentioned_entities` · `singleton_entities` · `alias_edges` · `alias_components` · `alias_covered_entities` · `largest_alias_component` · `top_hubs` | **Graph health** — input-side fragmentation and the alias layer; v0.6.1 corrected orphans, added unmentioned + alias KPIs (largest group included in monitor v0.5.4) |
+| `telemetry.neo4j` (gateway ≥0.7.x, decision 819) | `rem_dead_lettered` · `rem_failing` · `rem_max_attempts` | **REM reliability** — stranded-record signal split off the old overloaded `rem_attempts` counter |
 
 `decision_cycles > 0` with `eligible_clusters = 0` is normal (the cluster fails the strict insight gate) — not a stall.
 
@@ -523,13 +528,13 @@ Regenerate screenshots: `./scripts/capture-screenshots.sh` (Playwright; monitor 
 | Doc | Topic |
 |-----|-------|
 | [SISTER_PROJECT.md](docs/SISTER_PROJECT.md) | Framework boundary |
-| [CHANGELOG.md](CHANGELOG.md) | Releases (current: **v0.5.6** · API **3** · framework **≥0.7.0**) |
+| [CHANGELOG.md](CHANGELOG.md) | Releases (current: **v0.7.0** · API **3** · framework **≥0.7.0**) |
 | [SECURITY.md](SECURITY.md) | Secrets policy |
 
 ```bash
 ./scripts/pre-publish-check.sh && ./scripts/publish.sh
 # release: tag must match pyproject / __init__ / CHANGELOG
-# gh release create v0.5.6 --title "v0.5.6" --notes-file …
+# gh release create v0.7.0 --title "v0.7.0" --notes-file …
 ```
 
 ---

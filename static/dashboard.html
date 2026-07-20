@@ -211,6 +211,9 @@
         <div class="section-title section-title-tight" id="consolidation-graph-head" hidden>Graph health · entity resolution</div>
         <div class="consolidation-summary" id="consolidation-graph" hidden></div>
         <p class="consolidation-note" id="consolidation-graph-note" hidden></p>
+        <div class="section-title section-title-tight" id="consolidation-rem-head" hidden>REM reliability · stranded records</div>
+        <div class="consolidation-summary" id="consolidation-rem" hidden></div>
+        <p class="consolidation-note" id="consolidation-rem-note" hidden></p>
         <div class="schema-table-card">
           <h4>By cycle</h4>
           <div class="schema-table-scroll">
@@ -221,6 +224,7 @@
                 <th title="Completed runs in the last 24h">Runs/24h</th>
                 <th title="Average duration of completed runs (24h)">Avg</th>
                 <th title="Folds succeeded / attempted in the last 24h">Folds</th>
+                <th title="Decision 842 provisional — deferred (back-pressure skip) / idle (no eligible work) in the last 24h">Deferred/Idle (24h)</th>
                 <th>Status</th>
               </tr></thead>
               <tbody></tbody>
@@ -748,6 +752,36 @@ function renderConsolidationDrilldown(C) {
     }
   }
 
+  // REM reliability (decision 819): dead-lettered/failing counts are the
+  // previously-invisible "stranded record" signal — surfacing them is the
+  // safety net working as designed, not a new fault. Framed explicitly so a
+  // nonzero count doesn't read as "broken".
+  const rr = C?.rem_reliability || {};
+  const rrBox = document.getElementById("consolidation-rem");
+  const rrHead = document.getElementById("consolidation-rem-head");
+  const rrNote = document.getElementById("consolidation-rem-note");
+  if (rrBox && rrHead) {
+    if (rr.present) {
+      const kpis = [];
+      if (rr.dead_lettered != null) kpis.push(["Dead-lettered", String(rr.dead_lettered), rr.dead_lettered > 0]);
+      if (rr.failing != null) kpis.push(["Failing (not yet retired)", String(rr.failing), rr.failing > 0]);
+      if (rr.max_attempts != null) kpis.push(["Retry cap", String(rr.max_attempts)]);
+      rrHead.hidden = false;
+      rrBox.hidden = false;
+      rrBox.innerHTML = kpis.map(([k, v, warn]) =>
+        `<div class="consolidation-kpi${warn ? " warn" : ""}"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`).join("");
+      if (rrNote) {
+        rrNote.hidden = false;
+        rrNote.textContent = C?.rem_reliability_note || "";
+      }
+    } else {
+      rrHead.hidden = true;
+      rrBox.hidden = true;
+      rrBox.innerHTML = "";
+      if (rrNote) rrNote.hidden = true;
+    }
+  }
+
   const cycles = C?.cycles || [];
   tbody.innerHTML = cycles.length
     ? cycles.map(c => {
@@ -766,6 +800,7 @@ function renderConsolidationDrilldown(C) {
         const runs = c.runs_24h == null ? "—" : String(c.runs_24h);
         const avg = c.cycle_seconds_avg_human || "—";
         const folds = c.folds_24h_display || "—";
+        const idleDeferred = c.idle_deferred_24h_display || "—";
         return `<tr class="consolidation-row-${c.state || "unknown"}">` +
           `<td>${esc(c.label)}</td>` +
           `<td>${esc(outcome || "—")}${err ? `<div class="consolidation-err">${esc(err)}</div>` : ""}</td>` +
@@ -777,9 +812,10 @@ function renderConsolidationDrilldown(C) {
           `<td>${esc(runs)}</td>` +
           `<td>${esc(avg)}</td>` +
           `<td>${esc(folds)}</td>` +
+          `<td>${esc(idleDeferred)}</td>` +
           `<td>${esc(status)}</td></tr>`;
       }).join("")
-    : `<tr class="schema-row-empty"><td colspan="11">No consolidation cycle data</td></tr>`;
+    : `<tr class="schema-row-empty"><td colspan="12">No consolidation cycle data</td></tr>`;
 
   const nd = C?.nrem_density || {};
   if (note) {
@@ -789,6 +825,7 @@ function renderConsolidationDrilldown(C) {
     }
     if (nd.note) bits.push(nd.note);
     if (C?.activity_note) bits.push(C.activity_note);
+    if (C?.idle_deferred_note) bits.push(C.idle_deferred_note);
     note.textContent = bits.join(" — ");
   }
 }

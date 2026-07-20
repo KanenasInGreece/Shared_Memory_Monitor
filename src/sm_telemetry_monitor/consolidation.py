@@ -32,6 +32,31 @@ _CYCLE_ACTIVITY_NOTE = (
     "fact consolidation are not comparable by queue depth alone"
 )
 
+# Deferred/idle 24h counts (gateway ≥0.7.x, decision 842): the shared idle clock
+# was split per-consumer with reasoned-default timer values the framework calls
+# explicitly UNPROVEN — a retrospective is "deliberately owed" and must be judged
+# against this data (does the sweep still run under load, does the deferral rate
+# fall), not against argument. Label it provisional so a single day's numbers
+# don't read as a verdict before a full load cycle accumulates.
+_IDLE_DEFERRED_NOTE = (
+    "Decision 842 provisional — timer values (60s eligibility recheck, 15s pool "
+    "probe, 900s idle, 3x backstop) are reasoned defaults, not measured optima; "
+    "a retrospective is owed once a full load cycle of this data accumulates"
+)
+
+# REM reliability (gateway ≥0.7.x, decision 819): the overloaded rem_attempts
+# counter was split into rem_pickups (rotation, never charged) and rem_attempts
+# (failure charging only) so a backend outage can never dead-letter a healthy
+# record. dead_lettered/failing are the previously-invisible "stranded record"
+# signal — picked up repeatedly, never succeeded, never blamed — surfacing by
+# design, not evidence of a new fault.
+_REM_RELIABILITY_NOTE = (
+    "Stranded records, now visible by design (decision 819) — dead-lettered hit "
+    "the retry cap and were retired; failing are still accumulating chargeable "
+    "failures but not yet retired. A nonzero count is the safety net doing its "
+    "job, not a regression"
+)
+
 
 def cycle_type_label(key: str | None) -> str | None:
     """Human label for a consolidation cycle type key."""
@@ -350,6 +375,29 @@ def _schema_conformance(compliance: dict | None) -> dict:
     }
 
 
+def _rem_reliability(neo4j: dict | None) -> dict:
+    """REM processing reliability — separate from queue backlog.
+
+    ``facts_rem_pending`` (see ``_graph_health``) answers "how much work is
+    waiting"; this answers "is the worker actually retiring what it picks up".
+    Sourced from ``telemetry.neo4j`` (gateway ≥0.7.x, decision 819): the
+    dead-letter cap is now keyed on ``rem_attempts`` alone, so a pool/backend
+    outage can never retire a healthy record — ``failing`` is the count still
+    accumulating chargeable failures without having reached that cap yet.
+    """
+    nj = neo4j if isinstance(neo4j, dict) else {}
+    dead_lettered = nj.get("rem_dead_lettered")
+    failing = nj.get("rem_failing")
+    max_attempts = nj.get("rem_max_attempts")
+    present = dead_lettered is not None or failing is not None or max_attempts is not None
+    return {
+        "present": present,
+        "dead_lettered": dead_lettered,
+        "failing": failing,
+        "max_attempts": max_attempts,
+    }
+
+
 def _cycle_state(cycle: dict) -> str:
     if cycle.get("stalled"):
         return "bad"
@@ -467,6 +515,16 @@ def _normalize_cycle(key: str, raw: dict | None) -> dict:
     folds_display = _format_folds(folds_ok, folds_try)
     cycle_avg_human = _format_cycle_seconds_avg(cycle_avg)
 
+    deferred_24h = _num_or_none(raw.get("deferred_24h"))
+    if isinstance(deferred_24h, float):
+        deferred_24h = int(deferred_24h)
+    idle_24h = _num_or_none(raw.get("idle_24h"))
+    if isinstance(idle_24h, float):
+        idle_24h = int(idle_24h)
+    idle_deferred_display = None
+    if deferred_24h is not None or idle_24h is not None:
+        idle_deferred_display = f"{deferred_24h if deferred_24h is not None else 0}/{idle_24h if idle_24h is not None else 0}"
+
     cycle = {
         "key": key,
         "label": _CYCLE_LABELS.get(key, key.replace("_", " ").title()),
@@ -491,6 +549,11 @@ def _normalize_cycle(key: str, raw: dict | None) -> dict:
         "folds_succeeded_24h": folds_ok,
         "folds_attempted_24h": folds_try,
         "folds_24h_display": folds_display,
+        # Decision 842 (provisional — see _IDLE_DEFERRED_NOTE): per-consumer idle
+        # clock split. deferred = back-pressure skip, idle = no eligible work.
+        "deferred_24h": deferred_24h,
+        "idle_24h": idle_24h,
+        "idle_deferred_24h_display": idle_deferred_display,
     }
     cycle["state"] = _cycle_state(cycle)
     return cycle
@@ -759,11 +822,14 @@ def consolidation_from_payload(
         "schema_conformance": _schema_conformance(compliance),
         "coverage": _fact_coverage(neo4j_census, summaries_by_kind),
         "graph_health": _graph_health(entity_graph, neo4j_census),
+        "rem_reliability": _rem_reliability(neo4j_census),
         "nrem_density": {
             **nrem_density,
             "note": _NREM_DENSITY_NOTE,
         },
         "activity_note": _CYCLE_ACTIVITY_NOTE,
+        "idle_deferred_note": _IDLE_DEFERRED_NOTE,
+        "rem_reliability_note": _REM_RELIABILITY_NOTE,
         "error": sanitize_error(health.get("error")) if not reachable else None,
     }
 
