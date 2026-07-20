@@ -6,6 +6,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-07-20
+
+**Compatible with Shared Memory Framework gateway ≥ v0.7.0 · wire contract API v3.**
+No wire-contract change — both fields were already arriving on `GET /memory/telemetry`
+(live-diffed against a running 0.8.1 gateway) but the monitor never read them.
+
+### Added
+
+- **Live NREM density-gate thresholds** — the Consolidation drawer's density-gate
+  note named cycle counts but not the gate itself; it now reads
+  `telemetry.nrem.fact_threshold` / `decision_threshold` off the wire
+  (`NREM density gate: 5 fact / 2 decision cycles (gate: ≥5 facts or ≥2
+  decisions per domain, live)`) instead of only the monitor's local constants,
+  so the copy can't silently drift if the framework retunes the gate.
+- **In-flight cycle running time** — `telemetry.consolidation.<type>.last_started`
+  was fetched and discarded; the by-cycle table now shows `yes (running 3m)`
+  for a cycle actually mid-run instead of a flat `yes`/`—`.
+
 ## [0.7.0] - 2026-07-20
 
 **Compatible with Shared Memory Framework gateway ≥ v0.7.0 · wire contract API v3.**

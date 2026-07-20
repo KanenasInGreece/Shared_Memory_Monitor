@@ -675,6 +675,70 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         self.assertFalse(rr["present"])
         self.assertIsNone(rr["dead_lettered"])
 
+    def test_in_flight_reports_running_duration(self):
+        # last_started only means "still running" while in_flight — surface how
+        # long, rather than a flat yes/no (gateway carries this but the monitor
+        # never read it).
+        from datetime import datetime, timedelta, timezone
+
+        started = (datetime.now(timezone.utc) - timedelta(minutes=3, seconds=5)).isoformat()
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "insight": {
+                        "last_outcome": "completed",
+                        "in_flight": True,
+                        "last_started": started,
+                        "consecutive_failures": 0,
+                    },
+                },
+            },
+        }
+        snap = consolidation_from_payload(health, telemetry)
+        cycle = next(c for c in snap["cycles"] if c["key"] == "insight")
+        self.assertTrue(cycle["in_flight"])
+        self.assertIsNotNone(cycle["running_seconds"])
+        self.assertGreater(cycle["running_seconds"], 180)
+        self.assertEqual(cycle["running_human"], "3.1m")
+
+    def test_last_started_ignored_when_not_in_flight(self):
+        # A completed cycle's last_started is the *previous* run — must not be
+        # read as "still running".
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "insight": {
+                        "last_outcome": "completed",
+                        "in_flight": False,
+                        "last_started": "2026-01-01T00:00:00+00:00",
+                        "consecutive_failures": 0,
+                    },
+                },
+            },
+        }
+        snap = consolidation_from_payload(health, telemetry)
+        cycle = next(c for c in snap["cycles"] if c["key"] == "insight")
+        self.assertIsNone(cycle["running_seconds"])
+        self.assertIsNone(cycle["running_human"])
+
+    def test_nrem_density_thresholds_pass_through(self):
+        # Live gate thresholds (telemetry.nrem.fact_threshold/decision_threshold)
+        # flow to the frontend note instead of only being assumed client-side.
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "nrem": {"fact_cycles": 3, "decision_cycles": 1, "fact_threshold": 5, "decision_threshold": 2},
+            },
+        }
+        snap = consolidation_from_payload(health, telemetry)
+        self.assertEqual(snap["nrem_density"]["fact_threshold"], 5)
+        self.assertEqual(snap["nrem_density"]["decision_threshold"], 2)
+
     def test_stale_signal(self):
         health = {
             "status": "ok",

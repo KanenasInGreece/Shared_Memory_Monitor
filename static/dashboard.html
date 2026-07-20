@@ -805,7 +805,7 @@ function renderConsolidationDrilldown(C) {
           `<td>${esc(c.label)}</td>` +
           `<td>${esc(outcome || "—")}${err ? `<div class="consolidation-err">${esc(err)}</div>` : ""}</td>` +
           `<td>${esc(c.last_success_age_human || "—")}</td>` +
-          `<td>${c.in_flight ? "yes" : "—"}</td>` +
+          `<td>${c.in_flight ? (c.running_human ? `yes (running ${esc(c.running_human)})` : "yes") : "—"}</td>` +
           `<td>${c.consecutive_failures || 0}</td>` +
           `<td>${esc(eligText)}</td>` +
           `<td>${esc(c.eligible_oldest_age_human || "—")}</td>` +
@@ -821,7 +821,10 @@ function renderConsolidationDrilldown(C) {
   if (note) {
     const bits = [];
     if (nd.fact_cycles != null || nd.decision_cycles != null) {
-      bits.push(`NREM density gate: ${nd.fact_cycles ?? 0} fact / ${nd.decision_cycles ?? 0} decision cycles`);
+      const gate = (nd.fact_threshold != null || nd.decision_threshold != null)
+        ? ` (gate: ≥${nd.fact_threshold ?? "?"} facts or ≥${nd.decision_threshold ?? "?"} decisions per domain, live)`
+        : "";
+      bits.push(`NREM density gate: ${nd.fact_cycles ?? 0} fact / ${nd.decision_cycles ?? 0} decision cycles${gate}`);
     }
     if (nd.note) bits.push(nd.note);
     if (C?.activity_note) bits.push(C.activity_note);

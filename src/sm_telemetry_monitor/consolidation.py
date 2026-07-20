@@ -525,6 +525,24 @@ def _normalize_cycle(key: str, raw: dict | None) -> dict:
     if deferred_24h is not None or idle_24h is not None:
         idle_deferred_display = f"{deferred_24h if deferred_24h is not None else 0}/{idle_24h if idle_24h is not None else 0}"
 
+    # last_started: how long the current in-flight cycle has been running.
+    # Only meaningful while in_flight — a completed cycle's last_started is
+    # stale (the previous run) and would misreport as still-running.
+    running_seconds = None
+    running_human = None
+    if raw.get("in_flight") and raw.get("last_started"):
+        try:
+            started = datetime.fromisoformat(str(raw["last_started"]))
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            running_seconds = (datetime.now(timezone.utc) - started).total_seconds()
+        except (TypeError, ValueError):
+            running_seconds = None
+        if running_seconds is not None and running_seconds >= 0:
+            running_human = _format_cycle_seconds_avg(running_seconds)
+        else:
+            running_seconds = None
+
     cycle = {
         "key": key,
         "label": _CYCLE_LABELS.get(key, key.replace("_", " ").title()),
@@ -535,6 +553,8 @@ def _normalize_cycle(key: str, raw: dict | None) -> dict:
         "last_success_age_seconds": age,
         "last_success_age_human": humanize_age(age) if age is not None else "—",
         "in_flight": bool(raw.get("in_flight")),
+        "running_seconds": running_seconds,
+        "running_human": running_human,
         "consecutive_failures": int(raw.get("consecutive_failures") or 0),
         "backlog": backlog,
         "eligible_clusters": raw.get("eligible_clusters"),
