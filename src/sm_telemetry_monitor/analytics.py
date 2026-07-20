@@ -191,10 +191,17 @@ def story_summary(rows: list[dict]) -> dict:
         headline = "Consolidation signal stale"
         detail = "Cached /health consolidation snapshot is outdated — do not trust stalled."
     elif cons_stalled:
-        headline = "Consolidation stalled — eligible backlog not folding"
+        stalled_types = latest.get("consolidation_stalled_types")
+        type_bit = f" [{stalled_types.replace('_', ' ')}]" if stalled_types else ""
+        headline = f"Consolidation stalled{type_bit} — eligible backlog not folding"
+        last_ok = latest.get("consolidation_last_success_cycle_type")
+        last_ok_bit = (
+            f" Last success cycle: {str(last_ok).replace('_', ' ')}." if last_ok else ""
+        )
         detail = (
-            f"Last outcome: {cons_outcome or 'unknown'}. "
-            "Check gateway journal for CRASHED or deferring lines."
+            f"Last outcome: {cons_outcome or 'unknown'}.{last_ok_bit} "
+            "Check gateway journal for CRASHED or deferring lines; read per-cycle "
+            "rows in the Consolidation drawer (OR'd headline can mislead)."
         )
     elif backlog == 0:
         headline = "Dream cycle caught up"

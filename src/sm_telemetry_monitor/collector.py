@@ -69,12 +69,32 @@ def flatten_snapshot(payload: dict, collected_at: datetime, health: dict) -> dic
         row["consolidation_stalled"] = bool(health_cons.get("stalled", cons_t.get("stalled")))
         row["consolidation_fresh"] = health_cons.get("fresh")
         row["consolidation_last_outcome"] = health_cons.get("last_outcome") or cons_t.get("last_outcome")
+        stalled_types = health_cons.get("stalled_types")
+        if stalled_types is None:
+            stalled_types = cons_t.get("stalled_types")
+        if isinstance(stalled_types, list) and stalled_types:
+            row["consolidation_stalled_types"] = ",".join(str(x) for x in stalled_types if x is not None)
+        last_ok_type = health_cons.get("last_success_cycle_type") or cons_t.get(
+            "last_success_cycle_type"
+        )
+        if last_ok_type:
+            row["consolidation_last_success_cycle_type"] = str(last_ok_type)
         insight = cons_t.get("insight") if isinstance(cons_t.get("insight"), dict) else {}
         fact = cons_t.get("fact_consolidation") if isinstance(cons_t.get("fact_consolidation"), dict) else {}
         row["consolidation_insight_backlog"] = insight.get("backlog", insight.get("eligible_clusters"))
         row["consolidation_fact_backlog"] = fact.get("backlog", fact.get("eligible_clusters"))
         row["consolidation_insight_failures"] = insight.get("consecutive_failures")
         row["consolidation_fact_failures"] = fact.get("consecutive_failures")
+        # Per-type 24h activity (gateway ≥0.7.x) — useful for historical charts later
+        for prefix, block in (("insight", insight), ("fact", fact)):
+            if block.get("runs_24h") is not None:
+                row[f"consolidation_{prefix}_runs_24h"] = block.get("runs_24h")
+            if block.get("cycle_seconds_avg") is not None:
+                row[f"consolidation_{prefix}_cycle_seconds_avg"] = block.get("cycle_seconds_avg")
+            if block.get("folds_succeeded_24h") is not None:
+                row[f"consolidation_{prefix}_folds_ok_24h"] = block.get("folds_succeeded_24h")
+            if block.get("folds_attempted_24h") is not None:
+                row[f"consolidation_{prefix}_folds_try_24h"] = block.get("folds_attempted_24h")
     return row
 
 

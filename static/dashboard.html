@@ -217,7 +217,11 @@
             <table id="consolidation-cycles">
               <thead><tr>
                 <th>Cycle</th><th>Outcome</th><th>Last success</th><th>In flight</th>
-                <th>Failures</th><th>Eligible</th><th>Oldest wait</th><th>Status</th>
+                <th>Failures</th><th>Eligible</th><th>Oldest wait</th>
+                <th title="Completed runs in the last 24h">Runs/24h</th>
+                <th title="Average duration of completed runs (24h)">Avg</th>
+                <th title="Folds succeeded / attempted in the last 24h">Folds</th>
+                <th>Status</th>
               </tr></thead>
               <tbody></tbody>
             </table>
@@ -468,10 +472,18 @@ function renderConsolidation(C) {
   val.textContent = tile.value || "—";
   if (cap) cap.textContent = tile.caption || "—";
   if (stale) stale.hidden = tile.fresh !== false;
+  const stalledList = (tile.stalled_types_short || []).join(", ");
   card.title = [
-    tile.stalled ? "stalled — actionable backlog" : null,
+    tile.stalled
+      ? (stalledList ? `stalled on ${stalledList}` : "stalled — actionable backlog")
+      : null,
     tile.fresh === false ? "signal degraded" : null,
     tile.last_outcome && `outcome: ${tile.last_outcome}`,
+    tile.last_success_cycle_type_short
+      && tile.last_success_age_human
+      && `last success: ${tile.last_success_age_human} (${tile.last_success_cycle_type_short})`,
+    tile.last_active_cycle_type_short
+      && `last active: ${tile.last_active_cycle_type_short}`,
   ].filter(Boolean).join(" · ");
 }
 
@@ -611,12 +623,26 @@ function renderConsolidationDrilldown(C) {
   const stallH = rollup.stall_threshold_seconds
     ? `${Math.round(rollup.stall_threshold_seconds / 60)} min threshold`
     : "—";
+  // Name which cycle type produced the last success / is stalled — the OR'd
+  // headline alone is misleading when one type folds while a sibling is idle.
+  const successV = tile.last_success_age_human
+    ? (tile.last_success_cycle_type_short
+      ? `${tile.last_success_age_human} (${tile.last_success_cycle_type_short})`
+      : tile.last_success_age_human)
+    : null;
+  const stalledTypes = (tile.stalled_types_short || rollup.stalled_types_short || []).join(", ");
   // "Last success" is omitted when no timestamp exists (rather than "never") —
   // Coverage below shows that consolidation has produced output.
   summary.innerHTML = [
     `<div class="consolidation-kpi ${consolidationCardClass(tile.state)}"><span class="k">Health</span><span class="v">${esc(tile.value || "—")}</span></div>`,
     `<div class="consolidation-kpi"><span class="k">Outcome</span><span class="v">${esc(tile.last_outcome || "—")}</span></div>`,
-    tile.last_success_age_human ? `<div class="consolidation-kpi"><span class="k">Last success</span><span class="v">${esc(tile.last_success_age_human)}</span></div>` : "",
+    successV ? `<div class="consolidation-kpi"><span class="k">Last success</span><span class="v">${esc(successV)}</span></div>` : "",
+    stalledTypes
+      ? `<div class="consolidation-kpi ${tile.stalled ? "bad" : ""}"><span class="k">Stalled types</span><span class="v">${esc(stalledTypes)}</span></div>`
+      : "",
+    (tile.last_active_cycle_type_short || rollup.last_active_cycle_type_short)
+      ? `<div class="consolidation-kpi"><span class="k">Last active</span><span class="v">${esc(tile.last_active_cycle_type_short || rollup.last_active_cycle_type_short)}</span></div>`
+      : "",
     `<div class="consolidation-kpi"><span class="k">Stall threshold</span><span class="v">${esc(stallH)}</span></div>`,
     tile.fresh === false ? `<div class="consolidation-kpi warn"><span class="k">Signal</span><span class="v">stale</span></div>` : "",
   ].join("");
@@ -737,6 +763,9 @@ function renderConsolidationDrilldown(C) {
           : c.state === "warn" ? "warn"
           : outcome === "deferred" ? "deferred"
           : "ok";
+        const runs = c.runs_24h == null ? "—" : String(c.runs_24h);
+        const avg = c.cycle_seconds_avg_human || "—";
+        const folds = c.folds_24h_display || "—";
         return `<tr class="consolidation-row-${c.state || "unknown"}">` +
           `<td>${esc(c.label)}</td>` +
           `<td>${esc(outcome || "—")}${err ? `<div class="consolidation-err">${esc(err)}</div>` : ""}</td>` +
@@ -745,9 +774,12 @@ function renderConsolidationDrilldown(C) {
           `<td>${c.consecutive_failures || 0}</td>` +
           `<td>${esc(eligText)}</td>` +
           `<td>${esc(c.eligible_oldest_age_human || "—")}</td>` +
+          `<td>${esc(runs)}</td>` +
+          `<td>${esc(avg)}</td>` +
+          `<td>${esc(folds)}</td>` +
           `<td>${esc(status)}</td></tr>`;
       }).join("")
-    : `<tr class="schema-row-empty"><td colspan="8">No consolidation cycle data</td></tr>`;
+    : `<tr class="schema-row-empty"><td colspan="11">No consolidation cycle data</td></tr>`;
 
   const nd = C?.nrem_density || {};
   if (note) {
@@ -756,6 +788,7 @@ function renderConsolidationDrilldown(C) {
       bits.push(`NREM density gate: ${nd.fact_cycles ?? 0} fact / ${nd.decision_cycles ?? 0} decision cycles`);
     }
     if (nd.note) bits.push(nd.note);
+    if (C?.activity_note) bits.push(C.activity_note);
     note.textContent = bits.join(" — ");
   }
 }

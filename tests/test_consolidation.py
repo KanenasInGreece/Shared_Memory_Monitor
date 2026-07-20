@@ -497,6 +497,113 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         self.assertEqual(snap["tile"]["state"], "bad")
         self.assertEqual(snap["tile"]["value"], "Stalled")
 
+    def test_per_cycle_type_telemetry(self):
+        # Framework decision 834 / fact 835: OR'd stall + per-type 24h activity.
+        # Headline must name which type is stalled and which produced last success.
+        health = {
+            "status": "ok",
+            "consolidation": {
+                "stalled": True,
+                "fresh": True,
+                "last_outcome": "completed",
+                "last_success_age_seconds": 15451,
+                "last_success_cycle_type": "fact_consolidation",
+                "stalled_types": ["fact_consolidation"],
+            },
+        }
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "stall_threshold_seconds": 9000,
+                    "stalled": True,
+                    "stalled_types": ["fact_consolidation"],
+                    "last_success_age_seconds": 15451,
+                    "last_success_cycle_type": "fact_consolidation",
+                    "last_outcome": "completed",
+                    "last_active_cycle_type": "fact_consolidation",
+                    "insight": {
+                        "last_outcome": "completed",
+                        "last_success_age_seconds": 459554,
+                        "stalled": False,
+                        "eligible_clusters": 0,
+                        "runs_24h": 16,
+                        "cycle_seconds_avg": 0.1,
+                        "folds_succeeded_24h": 0,
+                        "folds_attempted_24h": 0,
+                    },
+                    "fact_consolidation": {
+                        "last_outcome": "completed",
+                        "last_success_age_seconds": 15451,
+                        "stalled": True,
+                        "backlog": 5,
+                        "runs_24h": 39,
+                        "cycle_seconds_avg": 192.4,
+                        "folds_succeeded_24h": 17,
+                        "folds_attempted_24h": 69,
+                    },
+                },
+            },
+        }
+        snap = consolidation_from_payload(health, telemetry)
+        tile = snap["tile"]
+        self.assertEqual(tile["state"], "bad")
+        self.assertEqual(tile["value"], "Stalled [fact consolidation]")
+        self.assertEqual(tile["stalled_types"], ["fact_consolidation"])
+        self.assertEqual(tile["last_success_cycle_type"], "fact_consolidation")
+        self.assertEqual(tile["last_active_cycle_type"], "fact_consolidation")
+        self.assertIn("fact consolidation", tile["caption"])
+        self.assertIn("success", tile["caption"])
+
+        insight = next(c for c in snap["cycles"] if c["key"] == "insight")
+        fact = next(c for c in snap["cycles"] if c["key"] == "fact_consolidation")
+        self.assertEqual(insight["runs_24h"], 16)
+        self.assertEqual(insight["cycle_seconds_avg"], 0.1)
+        self.assertEqual(insight["cycle_seconds_avg_human"], "0.1s")
+        self.assertEqual(insight["folds_24h_display"], "0/0")
+        self.assertFalse(insight["stalled"])
+        self.assertEqual(fact["runs_24h"], 39)
+        self.assertEqual(fact["cycle_seconds_avg_human"], "3.2m")
+        self.assertEqual(fact["folds_24h_display"], "17/69")
+        self.assertTrue(fact["stalled"])
+        self.assertEqual(snap["rollup"]["stalled_types_short"], ["fact consolidation"])
+        self.assertTrue(snap["activity_note"])
+
+    def test_stalled_types_derived_from_cycles_when_missing(self):
+        # Older gateways may OR stall without stalled_types — derive from cycles.
+        health = {
+            "status": "ok",
+            "consolidation": {"stalled": True, "fresh": True, "last_outcome": "completed"},
+        }
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "stalled": True,
+                    "insight": {"stalled": False, "last_outcome": "completed"},
+                    "fact_consolidation": {"stalled": True, "last_outcome": "completed"},
+                },
+            },
+        }
+        tile = consolidation_from_payload(health, telemetry)["tile"]
+        self.assertEqual(tile["stalled_types"], ["fact_consolidation"])
+        self.assertEqual(tile["value"], "Stalled [fact consolidation]")
+
+    def test_cycle_activity_missing_on_old_gateway(self):
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "insight": {"last_outcome": "completed", "stalled": False},
+                },
+            },
+        }
+        insight = consolidation_from_payload(health, telemetry)["cycles"][0]
+        self.assertIsNone(insight["runs_24h"])
+        self.assertIsNone(insight["cycle_seconds_avg"])
+        self.assertIsNone(insight["folds_24h_display"])
+
     def test_stale_signal(self):
         health = {
             "status": "ok",

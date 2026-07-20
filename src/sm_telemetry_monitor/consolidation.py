@@ -12,10 +12,55 @@ _CYCLE_LABELS = {
     "fact_consolidation": "Fact consolidation",
 }
 
+# Compact labels for tile/headline chips (matches framework status CLI keys,
+# humanised slightly so the Status sidebar stays readable).
+_CYCLE_SHORT = {
+    "insight": "insight",
+    "fact_consolidation": "fact consolidation",
+}
+
 _NREM_DENSITY_NOTE = (
     "telemetry.nrem counts density-gate cycles; consolidation.backlog counts "
     "strict-gate eligible clusters — do not conflate"
 )
+
+# Per-cycle 24h activity (gateway ≥0.7.x, decision 834 / fact 835): separate
+# cycle types have three-order-of-magnitude cost differences; a single
+# whole-cycle timer cannot price either of them.
+_CYCLE_ACTIVITY_NOTE = (
+    "Runs/avg/folds are per cycle type over 24h of completed runs — insight and "
+    "fact consolidation are not comparable by queue depth alone"
+)
+
+
+def cycle_type_label(key: str | None) -> str | None:
+    """Human label for a consolidation cycle type key."""
+    if not key:
+        return None
+    k = str(key)
+    return _CYCLE_LABELS.get(k, k.replace("_", " ").title())
+
+
+def cycle_type_short(key: str | None) -> str | None:
+    """Short label for headline chips (e.g. stalled [fact consolidation])."""
+    if not key:
+        return None
+    k = str(key)
+    return _CYCLE_SHORT.get(k, k.replace("_", " "))
+
+
+def format_cycle_types(keys: list | None) -> list[str]:
+    """Deduped short labels for a list of cycle-type keys."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in keys or []:
+        if raw is None:
+            continue
+        short = cycle_type_short(str(raw))
+        if short and short not in seen:
+            seen.add(short)
+            out.append(short)
+    return out
 
 # telemetry.consolidation[.cycle].last_deferred_reason — why a cycle deferred
 # instead of folding. All are benign back-pressure, not failures (ADR-018).
@@ -319,6 +364,52 @@ def _cycle_state(cycle: dict) -> str:
     return "ok"
 
 
+def _num_or_none(value) -> int | float | None:
+    if value is None:
+        return None
+    try:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return value
+        s = str(value).strip()
+        if not s:
+            return None
+        if "." in s:
+            return float(s)
+        return int(s)
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_cycle_seconds_avg(seconds: int | float | None) -> str | None:
+    if seconds is None:
+        return None
+    try:
+        v = float(seconds)
+    except (TypeError, ValueError):
+        return None
+    if v < 0:
+        return None
+    if v < 10:
+        return f"{v:.1f}s"
+    if v < 60:
+        return f"{v:.0f}s"
+    if v < 3600:
+        return f"{v / 60:.1f}m"
+    return f"{v / 3600:.1f}h"
+
+
+def _format_folds(succeeded: int | None, attempted: int | None) -> str | None:
+    if succeeded is None and attempted is None:
+        return None
+    s = succeeded if succeeded is not None else 0
+    a = attempted if attempted is not None else 0
+    return f"{s}/{a}"
+
+
 def _normalize_cycle(key: str, raw: dict | None) -> dict:
     raw = raw if isinstance(raw, dict) else {}
     err = raw.get("last_error")
@@ -363,6 +454,19 @@ def _normalize_cycle(key: str, raw: dict | None) -> dict:
     else:
         outcome_display = outcome
 
+    runs_24h = _num_or_none(raw.get("runs_24h"))
+    if isinstance(runs_24h, float):
+        runs_24h = int(runs_24h)
+    cycle_avg = _num_or_none(raw.get("cycle_seconds_avg"))
+    folds_ok = _num_or_none(raw.get("folds_succeeded_24h"))
+    if isinstance(folds_ok, float):
+        folds_ok = int(folds_ok)
+    folds_try = _num_or_none(raw.get("folds_attempted_24h"))
+    if isinstance(folds_try, float):
+        folds_try = int(folds_try)
+    folds_display = _format_folds(folds_ok, folds_try)
+    cycle_avg_human = _format_cycle_seconds_avg(cycle_avg)
+
     cycle = {
         "key": key,
         "label": _CYCLE_LABELS.get(key, key.replace("_", " ").title()),
@@ -380,6 +484,13 @@ def _normalize_cycle(key: str, raw: dict | None) -> dict:
         "eligible_oldest_age_human": humanize_age(raw.get("eligible_oldest_age_seconds")),
         "stalled": bool(raw.get("stalled")),
         "last_error": last_error,
+        # 24h activity (gateway ≥0.7.x) — omit-friendly on older rollups
+        "runs_24h": runs_24h,
+        "cycle_seconds_avg": cycle_avg,
+        "cycle_seconds_avg_human": cycle_avg_human,
+        "folds_succeeded_24h": folds_ok,
+        "folds_attempted_24h": folds_try,
+        "folds_24h_display": folds_display,
     }
     cycle["state"] = _cycle_state(cycle)
     return cycle
@@ -399,13 +510,24 @@ def _tile_state(*, stalled: bool, fresh: bool, reachable: bool, cycles: list[dic
     return "ok"
 
 
-def _tile_value(*, stalled: bool, fresh: bool, reachable: bool, last_outcome: str | None,
-                defer_reason: str | None = None) -> str:
+def _tile_value(
+    *,
+    stalled: bool,
+    fresh: bool,
+    reachable: bool,
+    last_outcome: str | None,
+    defer_reason: str | None = None,
+    stalled_types_short: list[str] | None = None,
+) -> str:
     if not reachable:
         return "—"
     if fresh is False:
         return "Signal stale"
     if stalled:
+        # Name which cycle type(s) are stalled — the OR'd headline alone is
+        # misleading when one type folds while a sibling sits idle (fact 828).
+        if stalled_types_short:
+            return f"Stalled [{', '.join(stalled_types_short)}]"
         return "Stalled"
     if last_outcome == "deferred":
         reason = humanize_defer_reason(defer_reason)
@@ -423,6 +545,8 @@ def _tile_caption(
     last_outcome: str | None,
     age_human: str | None,
     stalled: bool,
+    last_success_type_short: str | None = None,
+    stalled_types_short: list[str] | None = None,
 ) -> str:
     if fresh is False:
         return "cached snapshot stale — do not trust stalled"
@@ -430,11 +554,17 @@ def _tile_caption(
     if last_outcome:
         bits.append(f"last {last_outcome}")
     if age_human and age_human != "—":
-        bits.append(f"success {age_human}")
+        if last_success_type_short:
+            bits.append(f"success {age_human} ({last_success_type_short})")
+        else:
+            bits.append(f"success {age_human}")
     elif last_outcome == "completed":
         bits.append("caught up")
     if stalled:
-        bits.append("actionable backlog")
+        if stalled_types_short:
+            bits.append(f"actionable backlog on {', '.join(stalled_types_short)}")
+        else:
+            bits.append("actionable backlog")
     return " · ".join(bits) if bits else "consolidation signal"
 
 
@@ -493,6 +623,8 @@ def consolidation_from_payload(
     ]
 
     stalled = bool(health_cons.get("stalled"))
+    if not stalled and rollup:
+        stalled = bool(rollup.get("stalled"))
     fresh = health_cons.get("fresh")
     if fresh is None and reachable:
         fresh = True
@@ -507,6 +639,46 @@ def consolidation_from_payload(
             if c.get("last_outcome") == "deferred" and c.get("last_deferred_reason"):
                 defer_reason = c["last_deferred_reason"]
                 break
+
+    # Which cycle type(s) drive the OR'd stall / last-success headline.
+    # Prefer /health (cached, always present when fresh) then telemetry rollup,
+    # then derive stalled_types from per-cycle flags on older gateways.
+    stalled_types_raw = health_cons.get("stalled_types")
+    if stalled_types_raw is None:
+        stalled_types_raw = rollup.get("stalled_types")
+    if stalled_types_raw is None and stalled:
+        stalled_types_raw = [c["key"] for c in cycles if c.get("stalled")]
+    if not isinstance(stalled_types_raw, list):
+        stalled_types_raw = []
+    stalled_types = [str(x) for x in stalled_types_raw if x is not None]
+    stalled_types_short = format_cycle_types(stalled_types)
+
+    last_success_cycle_type = (
+        health_cons.get("last_success_cycle_type")
+        or rollup.get("last_success_cycle_type")
+    )
+    last_active_cycle_type = rollup.get("last_active_cycle_type")
+    # If gateway omits last_success_cycle_type, attribute the freshest age we
+    # use for the tile so the caption still names a type when possible.
+    if not last_success_cycle_type:
+        best_key = None
+        best_age = None
+        for c in cycles:
+            a = c.get("last_success_age_seconds")
+            if a is None:
+                continue
+            try:
+                ai = int(a)
+            except (TypeError, ValueError):
+                continue
+            if best_age is None or ai < best_age:
+                best_age = ai
+                best_key = c.get("key")
+        last_success_cycle_type = best_key
+
+    last_success_type_short = cycle_type_short(last_success_cycle_type)
+    last_active_type_short = cycle_type_short(last_active_cycle_type)
+
     age = health_cons.get("last_success_age_seconds")
     if age is None:
         age = rollup.get("last_success_age_seconds")
@@ -547,6 +719,7 @@ def consolidation_from_payload(
                 reachable=reachable,
                 last_outcome=last_outcome,
                 defer_reason=defer_reason,
+                stalled_types_short=stalled_types_short,
             ),
             "stalled": stalled,
             "fresh": fresh,
@@ -554,17 +727,31 @@ def consolidation_from_payload(
             "last_deferred_reason": defer_reason,
             "last_success_age_seconds": age,
             "last_success_age_human": age_human,
+            "stalled_types": stalled_types,
+            "stalled_types_short": stalled_types_short,
+            "last_success_cycle_type": last_success_cycle_type,
+            "last_success_cycle_type_short": last_success_type_short,
+            "last_active_cycle_type": last_active_cycle_type,
+            "last_active_cycle_type_short": last_active_type_short,
             "caption": _tile_caption(
                 fresh=fresh is not False,
                 last_outcome=last_outcome,
                 age_human=age_human,
                 stalled=stalled,
+                last_success_type_short=last_success_type_short,
+                stalled_types_short=stalled_types_short,
             ),
         },
         "rollup": {
             "stalled": bool(rollup.get("stalled", stalled)),
+            "stalled_types": stalled_types,
+            "stalled_types_short": stalled_types_short,
             "last_outcome": rollup.get("last_outcome", last_outcome),
             "last_success_age_seconds": rollup.get("last_success_age_seconds", age),
+            "last_success_cycle_type": last_success_cycle_type,
+            "last_success_cycle_type_short": last_success_type_short,
+            "last_active_cycle_type": last_active_cycle_type,
+            "last_active_cycle_type_short": last_active_type_short,
             "stall_threshold_seconds": rollup.get("stall_threshold_seconds"),
         },
         "cycles": cycles,
@@ -576,6 +763,7 @@ def consolidation_from_payload(
             **nrem_density,
             "note": _NREM_DENSITY_NOTE,
         },
+        "activity_note": _CYCLE_ACTIVITY_NOTE,
         "error": sanitize_error(health.get("error")) if not reachable else None,
     }
 

@@ -6,6 +6,40 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-07-20
+
+**Compatible with Shared Memory Framework gateway ≥ v0.7.0 · wire contract API v3.**
+
+Surfaces per-cycle-type consolidation telemetry already on
+`GET /health.consolidation` and `telemetry.consolidation` so operators can tell
+*which* dream-cycle type is stalled and whether it is actually folding — still
+a pure visual aid (no new data path).
+
+### Compatibility
+
+| Monitor | Framework gateway | Client `X-SM-Api-Version` |
+|---------|-------------------|--------------------------|
+| **0.5.6** | **≥ 0.7.0** | **3** |
+| 0.5.5 | ≥ 0.7.0 | 3 |
+| 0.5.4 | ≥ 0.7.0 | 3 |
+| 0.5.1–0.5.3 | 0.6.5 (retro-as-record) | 2 |
+
+### Added
+
+- **Per-cycle-type consolidation telemetry** (framework gateway ≥0.7.x, decision
+  834 / facts 828–835) — surfaces fields already on `GET /health.consolidation`
+  and `telemetry.consolidation` without a new data path:
+  - **Sidebar tile** — stalled headline names which type(s) are stuck
+    (`Stalled [fact consolidation]`); caption tags last success with its cycle
+    type (`success 4h ago (fact consolidation)`).
+  - **Liveness KPIs** — stalled types, last success *(with type)*, last active
+    cycle type. Fixes the OR'd-headline trap where one healthy cycle made the
+    whole surface look dead for days while another type was still folding.
+  - **By-cycle table** — `runs_24h`, avg cycle seconds, folds succeeded/attempted
+    over 24h (insight empty runs vs fact-consolidation cost differ by ~1000×).
+  - Poll cache stores stalled types + per-type 24h activity for the hero
+    headline; Status summary says `consolidation stalled [fact consolidation]`.
+
 ## [0.5.5] - 2026-07-19
 
 **Compatible with Shared Memory Framework gateway ≥ v0.7.0 · wire contract API v3.**

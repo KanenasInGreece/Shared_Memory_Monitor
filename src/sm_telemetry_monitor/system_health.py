@@ -550,6 +550,9 @@ def _status_summary(
     if tile.get("fresh") is False:
         return "consolidation signal stale"
     if tile.get("stalled"):
+        types = tile.get("stalled_types_short") or []
+        if types:
+            return f"consolidation stalled [{', '.join(types)}]"
         return "consolidation stalled"
     if status == "ok":
         return "all processes up"
