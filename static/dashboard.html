@@ -356,6 +356,18 @@ let consolidationDrawerGen = 0;
 const C = {rem:"#8bb4d9",nrem:"#b0b0b0",dec:"#3fb950",fail:"#f85149",sum:"#9a9a9a",cum:"#7a8a9a",warn:"#e3b341"};
 const CHART = {grid:"#4a4a4a",text:"#c9c9c9",textBright:"#f4f4f4"};
 
+/** Consolidation drawer KPI cells. tone: true|"warn"|"bad"|"ok"|"instrument"|falsy */
+function consolidationKpiHtml(rows) {
+  return (rows || []).map(([k, v, tone]) => {
+    let cls = "";
+    if (tone === true || tone === "warn") cls = " warn";
+    else if (tone === "bad") cls = " bad";
+    else if (tone === "ok") cls = " ok";
+    else if (tone === "instrument") cls = " instrument";
+    return `<div class="consolidation-kpi${cls}"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`;
+  }).join("");
+}
+
 document.getElementById("ranges").innerHTML = RANGES.map(r =>
   `<button data-r="${r}" class="${r===curRange?"active":""}">${r}</button>`).join("");
 document.getElementById("ranges").onclick = e => {
@@ -522,8 +534,6 @@ function renderFirstWriteQuality(C) {
   // Fields the write path actively asks for should be near-universal; a low fill
   // rate means elicitation isn't landing, so flag it as the actionable signal.
   const lowFill = p => p != null && p < 50;
-  const kpiHtml = rows => rows.map(([k, v, warn]) =>
-    `<div class="consolidation-kpi${warn ? " warn" : ""}"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`).join("");
 
   // Completeness — spine.facts is the framework's non-decision bucket (facts +
   // retrospectives + other types after retro-as-record / API v2), not "facts only".
@@ -546,7 +556,7 @@ function renderFirstWriteQuality(C) {
     }
   }
   document.getElementById("consolidation-fwq-complete").innerHTML =
-    comp.length ? kpiHtml(comp) : `<div class="consolidation-kpi"><span class="k">Completeness</span><span class="v">no data</span></div>`;
+    comp.length ? consolidationKpiHtml(comp) : `<div class="consolidation-kpi"><span class="k">Completeness</span><span class="v">no data</span></div>`;
 
   // Schema growth — emergent (captured-but-unadopted) metadata keys
   const emHead = document.getElementById("consolidation-fwq-emergent-head");
@@ -556,7 +566,7 @@ function renderFirstWriteQuality(C) {
     emHead.hidden = false; emBox.hidden = false;
     const rows = [["Keys not yet in schema", String(q.emergent_count)]];
     em.slice(0, 4).forEach(f => rows.push([f.key, `${f.n} records`]));
-    emBox.innerHTML = kpiHtml(rows);
+    emBox.innerHTML = consolidationKpiHtml(rows);
   } else {
     emHead.hidden = true; emBox.hidden = true; emBox.innerHTML = "";
   }
@@ -587,7 +597,7 @@ function renderFirstWriteQuality(C) {
       integ.push(["Off-vocabulary writes", bits.join(" · ") || "present", true]);
     }
   }
-  document.getElementById("consolidation-fwq-integrity").innerHTML = kpiHtml(integ);
+  document.getElementById("consolidation-fwq-integrity").innerHTML = consolidationKpiHtml(integ);
 
   // Note — explain the story + name the off-vocabulary offenders when present
   const note = document.getElementById("consolidation-fwq-note");
@@ -725,15 +735,19 @@ function renderConsolidationDrilldown(C) {
       const pct = p => (p == null ? "—" : `${p}%`);
       const kpis = [];
       if (gh.entities_total != null) kpis.push(["Entities (all)", String(gh.entities_total)]);
-      // Gateway ≥0.8.6: genuine MENTIONS census — correct alias-coverage base.
+      // Gateway ≥0.8.6: genuine MENTIONS is primary — do not also show Mentioned
+      // with the same integer (they are the same census when genuine is present).
       if (gh.genuinely_referenced_entities != null) {
-        kpis.push(["Genuinely referenced", String(gh.genuinely_referenced_entities)]);
+        const share = gh.mentioned_pct != null ? ` · ${pct(gh.mentioned_pct)} of all` : "";
+        kpis.push(["Genuinely referenced", `${gh.genuinely_referenced_entities}${share}`]);
+      } else if (gh.mentioned_pct != null) {
+        // Pre-0.8.6 residual: total − orphans − unmentioned.
+        kpis.push(["Mentioned", `${gh.mentioned_entities} · ${pct(gh.mentioned_pct)}`]);
       }
-      if (gh.mentioned_pct != null) kpis.push(["Mentioned", `${gh.mentioned_entities} · ${pct(gh.mentioned_pct)}`]);
       if (gh.unmentioned_entities != null) kpis.push(["Structural only", `${gh.unmentioned_entities} · ${pct(gh.unmentioned_pct)}`]);
       // Orphans are truly dangling (degree 0) since gateway v0.6.1 — a hygiene
       // defect expected to stay at zero, so any nonzero count is flagged.
-      if (gh.orphan_entities != null) kpis.push(["Orphans", `${gh.orphan_entities} · ${pct(gh.orphan_pct)}`, gh.orphan_entities > 0]);
+      if (gh.orphan_entities != null) kpis.push(["Orphans", `${gh.orphan_entities} · ${pct(gh.orphan_pct)}`, "warn"]);
       if (gh.singleton_entities != null) kpis.push(["Singletons", `${gh.singleton_entities} · ${pct(gh.singleton_pct)}`]);
       if (gh.max_hub_degree != null) kpis.push(["Top hub degree", String(gh.max_hub_degree)]);
       if (gh.alias_edges != null) {
@@ -755,18 +769,17 @@ function renderConsolidationDrilldown(C) {
       // fragmentation share — show the backlog as explicit context, flagged warn.
       if (gh.rem_pending) {
         const fp = gh.rem_pending_facts || 0, dp = gh.rem_pending_decisions || 0;
-        kpis.push(["Awaiting REM", `${fp} facts · ${dp} decisions`, true]);
+        kpis.push(["Awaiting REM", `${fp} facts · ${dp} decisions`, "warn"]);
       }
       ghHead.hidden = false;
       ghBox.hidden = false;
-      ghBox.innerHTML = kpis.map(([k, v, warn]) =>
-        `<div class="consolidation-kpi${warn ? " warn" : ""}"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`).join("");
+      ghBox.innerHTML = consolidationKpiHtml(kpis);
       if (ghNote) {
         ghNote.hidden = false;
-        ghNote.textContent = "Input-side quality: mentioned entities carry live fact/decision mentions and can seed consolidation clusters; structural-only entities hold graph edges (typed relations, summary links) but no live mention. Orphans are dangling nodes with no relationships at all — expected zero. Alias edges group surface-form variants of one concept (entity-resolution layer), keeping fragmented mentions foldable." +
+        ghNote.textContent = "Input-side quality: structural-only entities hold graph edges (typed relations, summary links) but no live mention. Orphans are dangling nodes with no relationships at all — expected zero. Alias edges group surface-form variants of one concept (entity-resolution layer), keeping fragmented mentions foldable." +
           (gh.genuinely_referenced_entities != null
-            ? " Entities (all) includes Decision provenance free-text; genuinely referenced is the MENTIONS-only census and the correct alias-coverage denominator (gateway ≥0.8.6)."
-            : "") +
+            ? " Genuinely referenced is the MENTIONS-only census (gateway ≥0.8.6) and the correct alias-coverage denominator; Entities (all) still includes Decision provenance free-text. The pre-0.8.6 “Mentioned” residual is omitted when genuine is present (same count)."
+            : " Mentioned is residual total − orphans − unmentioned (pre-0.8.6 gateways).") +
           (gh.rem_pending ? " Counts include entities from records still awaiting REM (relationships are built during REM), so the fragmentation share is an upper bound until REM catches up." : "") +
           (gh.alias_edges === 0 ? " No alias edges yet — the alias-writer sweep hasn't run on this gateway." : "");
       }
@@ -778,8 +791,8 @@ function renderConsolidationDrilldown(C) {
     }
   }
 
-  // REM reliability: stranded (decision 819) + fairness (gateway ≥0.8.6 / fact 895 · decision 894).
-  // Nonzero stranded = safety net working; fairness zeros can be honest dormancy.
+  // REM reliability: stranded (decision 819) = safety-net warn; fairness
+  // (fact 895 · decision 894) = instrument tone (path-live / dormancy).
   const rr = C?.rem_reliability || {};
   const rrBox = document.getElementById("consolidation-rem");
   const rrHead = document.getElementById("consolidation-rem-head");
@@ -787,19 +800,23 @@ function renderConsolidationDrilldown(C) {
   if (rrBox && rrHead) {
     if (rr.present) {
       const kpis = [];
-      if (rr.dead_lettered != null) kpis.push(["Dead-lettered", String(rr.dead_lettered), rr.dead_lettered > 0]);
-      if (rr.failing != null) kpis.push(["Failing (not yet retired)", String(rr.failing), rr.failing > 0]);
+      if (rr.dead_lettered != null) {
+        kpis.push(["Dead-lettered", String(rr.dead_lettered), rr.dead_lettered > 0 ? "warn" : null]);
+      }
+      if (rr.failing != null) {
+        kpis.push(["Failing (not yet retired)", String(rr.failing), rr.failing > 0 ? "warn" : null]);
+      }
       if (rr.max_attempts != null) kpis.push(["Retry cap", String(rr.max_attempts)]);
+      // Fairness gauges: always instrument tone when present (including 0).
       if (rr.passed_over_total != null) {
-        kpis.push(["Passed over (yield)", String(rr.passed_over_total), rr.passed_over_total > 0]);
+        kpis.push(["Passed over (yield)", String(rr.passed_over_total), "instrument"]);
       }
       if (rr.starved_pending != null) {
-        kpis.push(["Starved pending", String(rr.starved_pending), rr.starved_pending > 0]);
+        kpis.push(["Starved pending", String(rr.starved_pending), "instrument"]);
       }
       rrHead.hidden = false;
       rrBox.hidden = false;
-      rrBox.innerHTML = kpis.map(([k, v, warn]) =>
-        `<div class="consolidation-kpi${warn ? " warn" : ""}"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`).join("");
+      rrBox.innerHTML = consolidationKpiHtml(kpis);
       if (rrNote) {
         rrNote.hidden = false;
         rrNote.textContent = C?.rem_reliability_note || "";
@@ -1036,7 +1053,7 @@ function renderLatency(L) {
         ["Typical cycle (median)", fmtSecs(nrem.p50_seconds)],
         [`Slowest seen (p95)${nsuffix}`, fmtSecs(nrem.p95_seconds), nrem.spread != null && nrem.spread >= 3],
       ];
-      nremBox.innerHTML = rows.map(([k, v, warn]) => `<div class="consolidation-kpi${warn ? " warn" : ""}"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`).join("");
+      nremBox.innerHTML = consolidationKpiHtml(rows);
     }
   }
   if (nremNote) {

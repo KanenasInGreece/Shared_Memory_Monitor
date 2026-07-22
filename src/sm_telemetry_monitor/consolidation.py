@@ -50,10 +50,12 @@ _IDLE_DEFERRED_NOTE = (
 _REM_RELIABILITY_NOTE = (
     "Stranded records (decision 819) — dead-lettered hit the retry cap; failing "
     "are still accumulating chargeable failures but not yet retired. A nonzero "
-    "count is the safety net doing its job, not a regression. Fairness (gateway "
-    "≥0.8.6) — passed-over solos skipped by a yield-to-NREM; starved are at the "
-    "promotion threshold waiting for an unconditional solo drain. Zeros with a "
-    "thin backlog are honest dormancy, not a broken metric"
+    "count is the safety net doing its job, not a regression (warn styling). "
+    "Fairness (gateway ≥0.8.6, decision 894) — passed-over solos skipped by a "
+    "yield-to-NREM; starved are at the promotion threshold waiting for an "
+    "unconditional solo drain. Shown as instrument counters (not faults): "
+    "zeros with a thin backlog are honest dormancy; nonzero means the path is "
+    "live for before/after measurement"
 )
 
 

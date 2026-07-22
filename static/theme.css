@@ -519,6 +519,23 @@ body.consolidation-open { overflow: hidden; }
 .consolidation-kpi.ok .v { color: var(--ok-bright); }
 .consolidation-kpi.warn .v { color: var(--warn-bright); }
 .consolidation-kpi.bad .v { color: var(--bad-bright); }
+/* Instrument counters (fairness / experiment gauges): path-live data, not faults. */
+.consolidation-kpi.instrument {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--border) 55%, #6b8cae);
+  background: color-mix(in srgb, var(--card-inset) 88%, #6b8cae);
+}
+.consolidation-kpi.instrument .k::after {
+  content: " · instrument";
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: 0.85;
+}
+.consolidation-kpi.instrument .v {
+  font-weight: 600;
+  color: var(--text);
+}
 .consolidation-note {
   font-size: .72rem;
   color: var(--muted);
@@ -1007,6 +1024,7 @@ body.schema-open { overflow: hidden; }
   background: var(--card-inset);
 }
 
+/* === Dashboard hierarchy (v0.7.2+) — status first, compact trends === */
 .chart-primary canvas { max-height: 180px; }
 
 /* Hero vs Status pills name different signals (chromebook-claude fact 872). */
@@ -1026,7 +1044,7 @@ body.schema-open { overflow: hidden; }
   line-height: 1;
 }
 
-/* Secondary trends: history under the status deck, not competing for first paint. */
+/* Trends disclosure: secondary series collapsed so quiet systems don't dominate scroll. */
 .trends-more {
   margin: 0 0 .7rem;
   padding: 0;

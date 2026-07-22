@@ -6,6 +6,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-07-22
+
+**Compatible with Shared Memory Framework gateway ≥ v0.8.6 for new fields · wire
+contract API v3 unchanged.** Post-review polish on the 0.7.2 drawer (Cloe consult
+aligned).
+
+### Changed
+
+- **Graph health KPI de-dupe** — when `genuinely_referenced_entities` is present,
+  show that census only (with % of all); omit the redundant **Mentioned** cell
+  (same integer). Pre-0.8.6 gateways still show residual **Mentioned**.
+- **REM fairness instrument tone** — `passed_over` / `starved_pending` use
+  dashed/slate **instrument** styling (path-live / dormancy), not amber warn
+  shared with dead-lettered/failing safety-net KPIs.
+- **Consolidation KPI helper** — shared `consolidationKpiHtml` for drawer tones
+  (`warn` / `bad` / `ok` / `instrument`); trends CSS remains in `theme.css`
+  under a dated section comment (no second stylesheet).
+
 ## [0.7.2] - 2026-07-22
 
 **Compatible with Shared Memory Framework gateway ≥ v0.8.6 for new fields · wire
