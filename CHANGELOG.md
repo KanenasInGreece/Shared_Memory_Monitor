@@ -6,6 +6,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-07-22
+
+**Compatible with Shared Memory Framework gateway ≥ v0.8.6 for new fields · wire
+contract API v3 unchanged.** Fields degrade cleanly on older gateways.
+
+### Added
+
+- **Genuinely referenced entities** (framework 0.8.6 / fact 895, decision 890
+  refined via retro 893) — Consolidation drawer Graph health reads
+  `telemetry.entity_graph.genuinely_referenced_entities` (MENTIONS-only census).
+  **Alias coverage** uses that denominator when present
+  (`alias_covered / genuinely_referenced`) instead of the mixed `entities_total`
+  population (~54% Decision provenance free-text). `entities_total` stays on
+  screen as "Entities (all)".
+- **REM fairness gauges** (framework 0.8.6 / fact 895, decision 894) — same
+  drawer band now shows `neo4j.rem_passed_over_total` and `rem_starved_pending`
+  (batch-vs-solo yield fairness / starved sub-queue). Zeros under a thin backlog
+  are honest dormancy (path not exercised), not a broken metric.
+
+### Changed
+
+- **Pipeline vs Components pills** (chromebook-claude fact 872) — hero pill is
+  labelled **Pipeline** (backlog narrative + coarse health); Status pill is
+  **Components** (daemon/service stall heuristics). Tooltips state they are
+  different signals so OK+WARN in one viewport no longer reads as a bug.
+- **Trend hierarchy** — Status deck remains the primary operator surface; only
+  **Backlog over time** stays always-visible. Throughput, cumulative, and tier-3
+  growth sit under a collapsed **More trends** disclosure (Chart.js resizes on
+  open). Compact chart heights reclaim first-paint real estate for live status.
+  Throughput y-axis polish deferred.
+
 ## [0.7.1] - 2026-07-20
 
 **Compatible with Shared Memory Framework gateway ≥ v0.7.0 · wire contract API v3.**

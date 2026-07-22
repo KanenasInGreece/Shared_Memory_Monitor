@@ -41,14 +41,20 @@
             <h2 id="hero-headline">Loading…</h2>
             <p id="hero-detail"></p>
           </div>
-          <span class="pill ok" id="hero-pill">—</span>
+          <div class="pill-stack" title="Pipeline story: backlog narrative + coarse health (outbox / consolidation / dream depth). Distinct from Status · components.">
+            <span class="pill-label">Pipeline</span>
+            <span class="pill ok" id="hero-pill">—</span>
+          </div>
         </div>
       </section>
 
       <section class="status-deck" aria-label="Live status">
         <div class="sidebar-head">
-          <span class="sidebar-title">Status</span>
-          <span class="pill ok" id="sidebar-system-pill" title="">—</span>
+          <span class="sidebar-title">Status · components</span>
+          <div class="pill-stack" title="Component health: gateway, embedder, rem/nrem daemons, stall heuristics (e.g. pool free but backlog not draining). Distinct from Pipeline pill above.">
+            <span class="pill-label">Components</span>
+            <span class="pill ok" id="sidebar-system-pill" title="">—</span>
+          </div>
         </div>
 
         <div class="status-deck-block">
@@ -142,24 +148,34 @@
         <div class="sidebar-footer" id="sidebar-meta">—</div>
       </section>
 
+      <!-- Status deck is the primary signal (now). Trends are history — keep
+           one always-visible backlog chart, fold secondary series so quiet
+           systems don't spend most of the viewport on flat lines. -->
       <div class="chart-card chart-primary">
         <h3>Backlog over time</h3>
         <canvas id="backlog"></canvas>
       </div>
 
-      <div class="g2">
-        <div class="chart-card"><h3>Throughput</h3><canvas id="throughput"></canvas></div>
-        <div class="chart-card"><h3>Cumulative cleared</h3><canvas id="cumulative"></canvas></div>
-      </div>
-
-      <div class="chart-card">
-        <h3>Tier-3 growth &amp; errors</h3>
-        <canvas id="growth"></canvas>
-      </div>
+      <details class="trends-more" id="trends-more">
+        <summary>
+          <span class="trends-more-title">More trends</span>
+          <span class="trends-more-hint">throughput · cumulative · tier-3 growth</span>
+        </summary>
+        <div class="trends-more-body">
+          <div class="g2">
+            <div class="chart-card chart-compact"><h3>Throughput</h3><canvas id="throughput"></canvas></div>
+            <div class="chart-card chart-compact"><h3>Cumulative cleared</h3><canvas id="cumulative"></canvas></div>
+          </div>
+          <div class="chart-card chart-compact">
+            <h3>Tier-3 growth &amp; errors</h3>
+            <canvas id="growth"></canvas>
+          </div>
+        </div>
+      </details>
 
       <div class="chart-card samples-panel">
         <h3>Raw samples</h3>
-        <div class="samples-scroll">
+        <div class="samples-scroll samples-scroll-sm">
           <table id="table"><thead><tr>
             <th>Time</th><th>Backlog</th><th>REM</th><th>NREM cycles</th><th>Summaries</th><th>Failed</th>
           </tr></thead><tbody></tbody></table>
@@ -211,7 +227,7 @@
         <div class="section-title section-title-tight" id="consolidation-graph-head" hidden>Graph health · entity resolution</div>
         <div class="consolidation-summary" id="consolidation-graph" hidden></div>
         <p class="consolidation-note" id="consolidation-graph-note" hidden></p>
-        <div class="section-title section-title-tight" id="consolidation-rem-head" hidden>REM reliability · stranded records</div>
+        <div class="section-title section-title-tight" id="consolidation-rem-head" hidden>REM reliability · stranded &amp; fairness</div>
         <div class="consolidation-summary" id="consolidation-rem" hidden></div>
         <p class="consolidation-note" id="consolidation-rem-note" hidden></p>
         <div class="schema-table-card">
@@ -708,7 +724,11 @@ function renderConsolidationDrilldown(C) {
     if (gh.present) {
       const pct = p => (p == null ? "—" : `${p}%`);
       const kpis = [];
-      if (gh.entities_total != null) kpis.push(["Entities", String(gh.entities_total)]);
+      if (gh.entities_total != null) kpis.push(["Entities (all)", String(gh.entities_total)]);
+      // Gateway ≥0.8.6: genuine MENTIONS census — correct alias-coverage base.
+      if (gh.genuinely_referenced_entities != null) {
+        kpis.push(["Genuinely referenced", String(gh.genuinely_referenced_entities)]);
+      }
       if (gh.mentioned_pct != null) kpis.push(["Mentioned", `${gh.mentioned_entities} · ${pct(gh.mentioned_pct)}`]);
       if (gh.unmentioned_entities != null) kpis.push(["Structural only", `${gh.unmentioned_entities} · ${pct(gh.unmentioned_pct)}`]);
       // Orphans are truly dangling (degree 0) since gateway v0.6.1 — a hygiene
@@ -721,7 +741,10 @@ function renderConsolidationDrilldown(C) {
         kpis.push(["Alias edges", `${gh.alias_edges}${comps}`]);
       }
       if (gh.alias_coverage_pct != null && gh.alias_edges > 0) {
-        kpis.push(["Alias coverage", `${gh.alias_covered_entities} · ${pct(gh.alias_coverage_pct)}`]);
+        const covLabel = gh.alias_coverage_uses_genuine
+          ? "Alias coverage (of genuine)"
+          : "Alias coverage";
+        kpis.push([covLabel, `${gh.alias_covered_entities} · ${pct(gh.alias_coverage_pct)}`]);
       }
       // Largest WCC component after alias merges — how far a single concept
       // cluster has grown (entity-resolution quality signal, gateway v0.6.1+).
@@ -741,6 +764,9 @@ function renderConsolidationDrilldown(C) {
       if (ghNote) {
         ghNote.hidden = false;
         ghNote.textContent = "Input-side quality: mentioned entities carry live fact/decision mentions and can seed consolidation clusters; structural-only entities hold graph edges (typed relations, summary links) but no live mention. Orphans are dangling nodes with no relationships at all — expected zero. Alias edges group surface-form variants of one concept (entity-resolution layer), keeping fragmented mentions foldable." +
+          (gh.genuinely_referenced_entities != null
+            ? " Entities (all) includes Decision provenance free-text; genuinely referenced is the MENTIONS-only census and the correct alias-coverage denominator (gateway ≥0.8.6)."
+            : "") +
           (gh.rem_pending ? " Counts include entities from records still awaiting REM (relationships are built during REM), so the fragmentation share is an upper bound until REM catches up." : "") +
           (gh.alias_edges === 0 ? " No alias edges yet — the alias-writer sweep hasn't run on this gateway." : "");
       }
@@ -752,10 +778,8 @@ function renderConsolidationDrilldown(C) {
     }
   }
 
-  // REM reliability (decision 819): dead-lettered/failing counts are the
-  // previously-invisible "stranded record" signal — surfacing them is the
-  // safety net working as designed, not a new fault. Framed explicitly so a
-  // nonzero count doesn't read as "broken".
+  // REM reliability: stranded (decision 819) + fairness (gateway ≥0.8.6 / fact 895 · decision 894).
+  // Nonzero stranded = safety net working; fairness zeros can be honest dormancy.
   const rr = C?.rem_reliability || {};
   const rrBox = document.getElementById("consolidation-rem");
   const rrHead = document.getElementById("consolidation-rem-head");
@@ -766,6 +790,12 @@ function renderConsolidationDrilldown(C) {
       if (rr.dead_lettered != null) kpis.push(["Dead-lettered", String(rr.dead_lettered), rr.dead_lettered > 0]);
       if (rr.failing != null) kpis.push(["Failing (not yet retired)", String(rr.failing), rr.failing > 0]);
       if (rr.max_attempts != null) kpis.push(["Retry cap", String(rr.max_attempts)]);
+      if (rr.passed_over_total != null) {
+        kpis.push(["Passed over (yield)", String(rr.passed_over_total), rr.passed_over_total > 0]);
+      }
+      if (rr.starved_pending != null) {
+        kpis.push(["Starved pending", String(rr.starved_pending), rr.starved_pending > 0]);
+      }
       rrHead.hidden = false;
       rrBox.hidden = false;
       rrBox.innerHTML = kpis.map(([k, v, warn]) =>
@@ -1664,6 +1694,15 @@ function markSchemaCaptureReady() {
 fetch("/api/meta").then(r=>r.json()).then(m=>{
   if (m.neo4j_browser_url) document.getElementById("neo4j-link").href = m.neo4j_browser_url;
 }).catch(()=>{});
+
+// Chart.js inside a closed <details> paints at zero width — resize on open.
+document.getElementById("trends-more")?.addEventListener("toggle", (ev) => {
+  if (!ev.target.open) return;
+  requestAnimationFrame(() => {
+    ["throughput", "cumulative", "growth"].forEach((id) => charts[id]?.resize());
+  });
+});
+
 loadSummary();
 loadSystemHealth();
 loadLatencyChip();

@@ -1007,7 +1007,81 @@ body.schema-open { overflow: hidden; }
   background: var(--card-inset);
 }
 
-.chart-primary canvas { max-height: 280px; }
+.chart-primary canvas { max-height: 180px; }
+
+/* Hero vs Status pills name different signals (chromebook-claude fact 872). */
+.pill-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: .2rem;
+  flex-shrink: 0;
+}
+.pill-label {
+  font-size: .58rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+  line-height: 1;
+}
+
+/* Secondary trends: history under the status deck, not competing for first paint. */
+.trends-more {
+  margin: 0 0 .7rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--card);
+  box-shadow: var(--shadow-panel);
+}
+.trends-more > summary {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: .35rem .75rem;
+  cursor: pointer;
+  padding: .55rem .75rem;
+  color: var(--muted);
+  font-size: .76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  user-select: none;
+}
+.trends-more > summary::-webkit-details-marker { display: none; }
+.trends-more > summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: .15rem;
+  transition: transform .12s ease;
+  color: var(--muted);
+}
+.trends-more[open] > summary::before { transform: rotate(90deg); }
+.trends-more > summary:hover { color: var(--text); }
+.trends-more-title { color: inherit; }
+.trends-more-hint {
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: .72rem;
+  color: var(--muted);
+  opacity: .9;
+}
+.trends-more-body {
+  padding: 0 .75rem .65rem;
+  border-top: 1px solid var(--border-dark);
+}
+.trends-more-body .chart-card {
+  box-shadow: none;
+  margin-bottom: .55rem;
+}
+.trends-more-body .chart-card:last-child { margin-bottom: 0; }
+.chart-compact {
+  padding: .55rem .65rem;
+}
+.chart-compact canvas { max-height: 140px; }
 
 .samples-panel { margin-bottom: 0; }
 .samples-scroll {
@@ -1291,7 +1365,7 @@ body.schema-open { overflow: hidden; }
   gap: .7rem;
 }
 @media (max-width: 800px) { .g2 { grid-template-columns: 1fr; } }
-canvas { max-height: 220px; }
+canvas { max-height: 180px; }
 
 details { margin-top: .45rem; }
 details summary {

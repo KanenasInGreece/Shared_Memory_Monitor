@@ -284,6 +284,8 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         gh = consolidation_from_payload(health, telemetry)["graph_health"]
         self.assertTrue(gh["present"])
         self.assertEqual(gh["entities_total"], 2385)
+        self.assertIsNone(gh["genuinely_referenced_entities"])
+        self.assertFalse(gh["alias_coverage_uses_genuine"])
         self.assertEqual(gh["orphan_entities"], 0)
         self.assertEqual(gh["orphan_pct"], 0)
         self.assertEqual(gh["unmentioned_entities"], 1384)
@@ -302,6 +304,36 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         self.assertTrue(gh["rem_pending"])
         self.assertEqual(gh["rem_pending_facts"], 50)
         self.assertEqual(gh["rem_pending_decisions"], 32)
+
+    def test_graph_health_genuinely_referenced_alias_denominator(self):
+        # Gateway ≥0.8.6 fact 895 (decision 890): alias coverage uses
+        # genuinely_referenced, not the mixed entities_total population.
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "entity_graph": {
+                    "entities_total": 4141,
+                    "genuinely_referenced_entities": 1885,
+                    "orphan_entities": 0,
+                    "unmentioned_entities": 2256,
+                    "singleton_entities": 1193,
+                    "alias_edges": 2323,
+                    "alias_covered_entities": 1389,
+                    "alias_components": 415,
+                    "largest_alias_component": 76,
+                    "top_hubs": [],
+                },
+            },
+        }
+        gh = consolidation_from_payload(health, telemetry)["graph_health"]
+        self.assertEqual(gh["genuinely_referenced_entities"], 1885)
+        self.assertEqual(gh["mentioned_entities"], 1885)
+        self.assertTrue(gh["alias_coverage_uses_genuine"])
+        # 1389/1885 ≈ 73.7% → round to 74 with _pct int rounding
+        self.assertEqual(gh["alias_coverage_pct"], round(100 * 1389 / 1885))
+        # Must not use entities_total (1389/4141 ≈ 33%)
+        self.assertNotEqual(gh["alias_coverage_pct"], round(100 * 1389 / 4141))
 
     def test_graph_health_pre_061_gateway_degrades(self):
         # Gateways below 0.6.1 omit unmentioned_entities/alias_components — the
@@ -668,12 +700,35 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         self.assertEqual(rr["dead_lettered"], 0)
         self.assertEqual(rr["failing"], 5)
         self.assertEqual(rr["max_attempts"], 5)
+        self.assertIsNone(rr["passed_over_total"])
+        self.assertIsNone(rr["starved_pending"])
+
+    def test_rem_reliability_fairness_086(self):
+        # Fact 895 / decision 894 / gateway 0.8.6: batch-vs-solo fairness gauges.
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "neo4j": {
+                    "rem_dead_lettered": 0,
+                    "rem_failing": 0,
+                    "rem_max_attempts": 5,
+                    "rem_passed_over_total": 12,
+                    "rem_starved_pending": 2,
+                },
+            },
+        }
+        rr = consolidation_from_payload(health, telemetry)["rem_reliability"]
+        self.assertTrue(rr["present"])
+        self.assertEqual(rr["passed_over_total"], 12)
+        self.assertEqual(rr["starved_pending"], 2)
 
     def test_rem_reliability_missing_on_old_gateway(self):
         health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
         rr = consolidation_from_payload(health, {"status": "success", "telemetry": {}})["rem_reliability"]
         self.assertFalse(rr["present"])
         self.assertIsNone(rr["dead_lettered"])
+        self.assertIsNone(rr["passed_over_total"])
 
     def test_in_flight_reports_running_duration(self):
         # last_started only means "still running" while in_flight — surface how

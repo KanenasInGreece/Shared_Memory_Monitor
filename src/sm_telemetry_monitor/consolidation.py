@@ -44,17 +44,16 @@ _IDLE_DEFERRED_NOTE = (
     "a retrospective is owed once a full load cycle of this data accumulates"
 )
 
-# REM reliability (gateway ≥0.7.x, decision 819): the overloaded rem_attempts
-# counter was split into rem_pickups (rotation, never charged) and rem_attempts
-# (failure charging only) so a backend outage can never dead-letter a healthy
-# record. dead_lettered/failing are the previously-invisible "stranded record"
-# signal — picked up repeatedly, never succeeded, never blamed — surfacing by
-# design, not evidence of a new fault.
+# REM reliability (gateway ≥0.7.x, decision 819; fairness ≥0.8.6, fact 895 /
+# decision 894): rem_attempts split into rem_pickups (rotation) vs rem_attempts
+# (failure charge); rem_passed_over / rem_starved_pending = scheduler fairness.
 _REM_RELIABILITY_NOTE = (
-    "Stranded records, now visible by design (decision 819) — dead-lettered hit "
-    "the retry cap and were retired; failing are still accumulating chargeable "
-    "failures but not yet retired. A nonzero count is the safety net doing its "
-    "job, not a regression"
+    "Stranded records (decision 819) — dead-lettered hit the retry cap; failing "
+    "are still accumulating chargeable failures but not yet retired. A nonzero "
+    "count is the safety net doing its job, not a regression. Fairness (gateway "
+    "≥0.8.6) — passed-over solos skipped by a yield-to-NREM; starved are at the "
+    "promotion threshold waiting for an unconditional solo drain. Zeros with a "
+    "thin backlog are honest dormancy, not a broken metric"
 )
 
 
@@ -213,6 +212,14 @@ def _graph_health(entity_graph: dict | None, neo4j: dict | None = None) -> dict:
     ``rem_pending_facts`` / ``rem_pending_decisions`` and flag ``rem_pending`` so
     the operator reads those counts as an *upper bound* on true fragmentation
     until REM catches up — never as a settled quality verdict.
+
+    **Gateway ≥0.8.6 — genuinely referenced (fact 895; decision 890 refined via
+    retro 893 / fact 892).** ``entities_total`` is a mixed population: Decision
+    provenance free-text targets (CONSIDERED/REJECTED/…) land as :Entity nodes
+    but are not named entities eligible for alias resolution.
+    ``genuinely_referenced_entities`` counts only nodes with ≥1 non-superseded
+    MENTIONS. Alias coverage uses that denominator when present;
+    ``entities_total`` stays on screen for the full census.
     """
     eg = entity_graph if isinstance(entity_graph, dict) else {}
     census = neo4j if isinstance(neo4j, dict) else {}
@@ -222,6 +229,7 @@ def _graph_health(entity_graph: dict | None, neo4j: dict | None = None) -> dict:
     singletons = eg.get("singleton_entities")
     alias_edges = eg.get("alias_edges")
     alias_covered = eg.get("alias_covered_entities")
+    genuinely_ref = eg.get("genuinely_referenced_entities")
 
     hubs = []
     for h in eg.get("top_hubs") or []:
@@ -229,10 +237,19 @@ def _graph_health(entity_graph: dict | None, neo4j: dict | None = None) -> dict:
             hubs.append({"name": h.get("name"), "degree": h.get("degree")})
 
     # Entities carrying at least one live fact/decision MENTIONS — the share
-    # that can actually seed a consolidation cluster.
+    # that can actually seed a consolidation cluster. Prefer the gateway's
+    # explicit census (0.8.6+) when present; else residual total − orphans −
+    # unmentioned (pre-0.8.6).
     mentioned = None
-    if isinstance(total, int) and isinstance(orphans, int) and isinstance(unmentioned, int):
+    if isinstance(genuinely_ref, int):
+        mentioned = genuinely_ref
+    elif isinstance(total, int) and isinstance(orphans, int) and isinstance(unmentioned, int):
         mentioned = max(total - orphans - unmentioned, 0)
+
+    # Alias coverage denominator: genuinely_referenced when present (fact 895);
+    # fall back to entities_total on older gateways.
+    alias_den = genuinely_ref if isinstance(genuinely_ref, int) else total
+    alias_coverage_uses_genuine = isinstance(genuinely_ref, int)
 
     rem_pending_facts = census.get("facts_rem_pending")
     rem_pending_decisions = census.get("decisions_rem_pending")
@@ -244,6 +261,7 @@ def _graph_health(entity_graph: dict | None, neo4j: dict | None = None) -> dict:
     return {
         "present": present,
         "entities_total": total,
+        "genuinely_referenced_entities": genuinely_ref,
         "orphan_entities": orphans,
         "orphan_pct": _pct(orphans, total),
         "unmentioned_entities": unmentioned,
@@ -256,7 +274,8 @@ def _graph_health(entity_graph: dict | None, neo4j: dict | None = None) -> dict:
         "alias_components": eg.get("alias_components"),
         "largest_alias_component": eg.get("largest_alias_component"),
         "alias_covered_entities": alias_covered,
-        "alias_coverage_pct": _pct(alias_covered, total),
+        "alias_coverage_pct": _pct(alias_covered, alias_den),
+        "alias_coverage_uses_genuine": alias_coverage_uses_genuine,
         "max_hub_degree": hubs[0]["degree"] if hubs and hubs[0].get("degree") is not None else None,
         "top_hubs": hubs[:5],
         # REM-pending context: unmentioned/singleton counts overstate true
@@ -384,17 +403,29 @@ def _rem_reliability(neo4j: dict | None) -> dict:
     dead-letter cap is now keyed on ``rem_attempts`` alone, so a pool/backend
     outage can never retire a healthy record — ``failing`` is the count still
     accumulating chargeable failures without having reached that cap yet.
+
+    Gateway ≥0.8.6 adds fairness gauges (fact 895, decision 894):
+    ``rem_passed_over_total`` (solos skipped by a yield-to-NREM) and
+    ``rem_starved_pending`` (records at the promotion threshold / sub-queue).
+    Both may legitimately stay 0 under a thin backlog (path not exercised).
     """
     nj = neo4j if isinstance(neo4j, dict) else {}
     dead_lettered = nj.get("rem_dead_lettered")
     failing = nj.get("rem_failing")
     max_attempts = nj.get("rem_max_attempts")
-    present = dead_lettered is not None or failing is not None or max_attempts is not None
+    passed_over = nj.get("rem_passed_over_total")
+    starved_pending = nj.get("rem_starved_pending")
+    present = any(
+        v is not None
+        for v in (dead_lettered, failing, max_attempts, passed_over, starved_pending)
+    )
     return {
         "present": present,
         "dead_lettered": dead_lettered,
         "failing": failing,
         "max_attempts": max_attempts,
+        "passed_over_total": passed_over,
+        "starved_pending": starved_pending,
     }
 
 
