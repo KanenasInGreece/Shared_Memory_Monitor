@@ -1,5 +1,7 @@
 # Shared Memory Monitor
 
+![Shared Memory Monitor — main dashboard (Gateway health, status deck, infrastructure, backlog)](docs/images/dashboard.png)
+
 ## Visualise what is happening to your shared memory framework
 
 **Shared Memory already provides full telemetry** The gateway publishes that as
@@ -14,7 +16,7 @@ first-write quality, graph shape, latency, topology, and audit trails — so you
 | **What you get** | Visual ops aid over **framework-owned** telemetry and logs |
 | **What you do not get** | A second metrics store, DB credentials, or write access to memory |
 | **Dashboard** | **http://127.0.0.1:8765/** |
-| **This release** | **v0.7.7** — **API v3** client · framework **≥ v0.7.0** (wire) · full Status + **diagram** LLM pool on **≥ v0.8.9** (**local/external** placement) |
+| **This release** | **v0.7.8** — **API v3** client · framework **≥ v0.7.0** (wire) · full Status + **diagram** LLM pool on **≥ v0.8.9** (**local/external** placement) |
 
 ---
 
@@ -99,7 +101,7 @@ Open **http://127.0.0.1:8765/**
 
 **Shared Memory Monitor** is a sister project to the framework — a read-only **view** over **gateway telemetry** and **framework logs**. It does not own memory stores, daemons, or a separate metrics API.
 
-**Compatibility (v0.7.7):** wire contract **API v3** (`X-SM-Api-Version: 3`) against **Shared Memory Framework gateway ≥ v0.7.0** — `./scripts/check-env.sh` / `agent-status.sh` should report `compat=ok`. For the full ops picture (Status + **diagram** LLM pool with **local** vs **external** badges, consolidation graph health + REM fairness instruments, latency drawer), run **gateway ≥ v0.8.9**; older gateways stay compatible and simply omit missing fields. Doctor prints which telemetry panels and placement signals are present.
+**Compatibility (v0.7.8):** wire contract **API v3** (`X-SM-Api-Version: 3`) against **Shared Memory Framework gateway ≥ v0.7.0** — `./scripts/check-env.sh` / `agent-status.sh` should report `compat=ok`. For the full ops picture (Status + **diagram** LLM pool with **local** vs **external** badges, consolidation graph health + REM fairness instruments, latency drawer), run **gateway ≥ v0.8.9**; older gateways stay compatible and simply omit missing fields. Doctor prints which telemetry panels and placement signals are present.
 
 | | Framework | Monitor (this repo) |
 |---|-----------|---------------------|
@@ -141,11 +143,13 @@ Captured from a running monitor (`./scripts/capture-screenshots.sh`).
 
 ### Monitor (`/`)
 
+*(Same frame as the hero image under the title — recaptured with current UI.)*
+
 A full-width **status deck** above the charts, in three labelled rows — **Drill-down** (Consolidation, Throughput & latency, Schema breakdown), **Backlog & queues** (Dream backlog, REM / NREM split, Pipeline queues), and Backup / **Infrastructure** (component grid + **LLM pool** when the gateway has more than one backend) — followed by backlog charts. All from gateway telemetry (cached polls + live `GET /health`). Range selector (`1h`–`all`) filters the local poll cache.
 
 On **gateway ≥0.8.9**, the Infrastructure hint includes the non-secret config summary (e.g. `Gateway 0.8.9 · API 3 · 2 LLM backends · local · embed 24k`), and each pool chip badges **local** or **external** from `has_credential` (optional `model` override appears in the chip meta). No API keys ever appear.
 
-![Monitor — status deck, infrastructure, LLM pool local badges, backlog charts](docs/images/dashboard.png)
+![Monitor — Gateway health, status deck, infrastructure, LLM pool, backlog charts](docs/images/dashboard.png)
 
 ### Consolidation health (side drawer)
 
@@ -200,7 +204,7 @@ Live framework topology: agents → gateway; REM/NREM ↔ gateway; memory and in
 | `telemetry.compliance` | **Framework gateway v0.6.3+** — feeds **Schema conformance** (graph writes inside the agreed ontology). Older gateways omit it. |
 | `telemetry.latency` | **Framework gateway v0.6.3+** — feeds the **Throughput & latency** drawer (per-model enrichment model-floor vs queue-wait split; consolidation-cycle p50/p95). Older gateways omit it (drawer shows an unsupported note). |
 | `postgres.technical_docs_superseded` | Soft-superseded row count on Schema drawer meta (and poll cache). |
-| Client `X-SM-Api-Version` | Monitor **v0.7.7** advertises **api_version 3** — compatible with **framework ≥ v0.7.0**; full panel set + LLM placement on **≥ v0.8.9**. `./scripts/check-env.sh` reports `server=N client=N compat=ok` and which telemetry panels / placement signals are present. |
+| Client `X-SM-Api-Version` | Monitor **v0.7.8** advertises **api_version 3** — compatible with **framework ≥ v0.7.0**; full panel set + LLM placement on **≥ v0.8.9**. `./scripts/check-env.sh` reports `server=N client=N compat=ok` and which telemetry panels / placement signals are present. |
 | Python 3.11+ and [uv](https://docs.astral.sh/uv/) | `uv sync` / CLI |
 
 ### Local logs (required for `/logs` and diagram flows; same host as gateway in practice)
@@ -536,13 +540,13 @@ Regenerate screenshots: `./scripts/capture-screenshots.sh` (Playwright; monitor 
 | Doc | Topic |
 |-----|-------|
 | [SISTER_PROJECT.md](docs/SISTER_PROJECT.md) | Framework boundary |
-| [CHANGELOG.md](CHANGELOG.md) | Releases (current: **v0.7.7** · API **3** · framework **≥0.7.0** wire · **≥0.8.9** full panels) |
+| [CHANGELOG.md](CHANGELOG.md) | Releases (current: **v0.7.8** · API **3** · framework **≥0.7.0** wire · **≥0.8.9** full panels) |
 | [SECURITY.md](SECURITY.md) | Secrets policy |
 
 ```bash
 ./scripts/pre-publish-check.sh && ./scripts/publish.sh
 # release: tag must match pyproject / __init__ / CHANGELOG
-# gh release create v0.7.7 --title "v0.7.7" --notes-file …
+# gh release create v0.7.8 --title "v0.7.8" --notes-file …
 ```
 
 ---

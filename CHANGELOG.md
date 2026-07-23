@@ -6,6 +6,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.8] - 2026-07-23
+
+**Docs / project-page impact.** Current main-page screenshot under the README title.
+
+### Changed
+
+- **README hero** — recaptured `docs/images/dashboard.png` (Gateway health OK,
+  status deck, infrastructure, LLM pool, backlog) and placed it **directly under
+  the title**, before the intro text. Screenshots section notes the same frame.
+- Other README gallery images (diagram, logs, consolidation, schema) refreshed
+  from the live monitor in the same capture pass.
+
 ## [0.7.7] - 2026-07-23
 
 **Compatible with Shared Memory Framework gateway ≥ v0.8.9 for new fields · wire
