@@ -219,16 +219,18 @@
             <span class="arch-layer-title">Inference backends</span>
             <span class="arch-layer-badge unknown" id="layer-inference-badge">—</span>
           </div>
-          <p class="arch-layer-note">Proxied by gateway — Docker / external services, not gateway processes</p>
+          <p class="arch-layer-note">Proxied by gateway — local llama.cpp and external/paid APIs are pool members, not gateway processes</p>
           <div class="arch-inference-grid">
             <div class="arch-node arch-node-svc arch-node-llm unknown" id="node-llm" data-node="llm">
               <span class="arch-port" data-port="logic" title="Gateway logic proxy"></span>
               <div class="arch-node-head">
-                <span class="arch-node-title">Reasoning LLM</span>
+                <span class="arch-node-title" id="node-llm-title">Reasoning LLM</span>
                 <span class="arch-node-state" id="node-llm-state">—</span>
               </div>
-              <div class="arch-node-sub">LM Studio · OpenAI-compatible · :5000</div>
+              <div class="arch-node-sub" id="node-llm-sub">OpenAI-compatible · pool via gateway</div>
               <div class="arch-node-metrics" id="node-llm-metrics"><span>—</span></div>
+              <!-- Filled from /api/diagram health.llm_pool + config.backends (placement ≥0.8.9) -->
+              <div class="arch-llm-backends" id="node-llm-backends" hidden></div>
             </div>
             <div class="arch-inference-svc-row">
               <div class="arch-node arch-node-svc unknown" id="node-embedder" data-node="embedder">
@@ -337,11 +339,122 @@ function setMetrics(id, parts) {
   ).join("") || "<span>—</span>";
 }
 
+function esc(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function setLayerBadge(id, state, text) {
   const el = document.getElementById(id);
   if (!el) return;
   el.className = "arch-layer-badge " + (state || "unknown");
   el.textContent = text || "—";
+}
+
+/** Backend rows for the Reasoning LLM card — pool first, else config.backends. */
+function llmBackendRows(health) {
+  const pool = health?.llm_pool;
+  if (pool?.backends?.length) {
+    return pool.backends.map(b => ({
+      label: b.label || b.url || "?",
+      url: b.url,
+      placement: b.placement || null,
+      model: b.model || null,
+      status: b.status || "unknown",
+      inflight: b.inflight,
+      available: b.available,
+      reserved: b.reserved,
+      cooldown: b.cooldown,
+    }));
+  }
+  const cfg = health?.config?.backends;
+  if (Array.isArray(cfg) && cfg.length) {
+    return cfg.map(b => ({
+      label: b.label || (b.url || "").split("//").pop() || "?",
+      url: b.url,
+      placement: b.placement || null,
+      model: b.model || null,
+      status: null,
+      inflight: null,
+      available: null,
+    }));
+  }
+  return [];
+}
+
+function renderLlmBackends(health, llmComponent, vis) {
+  const titleEl = document.getElementById("node-llm-title");
+  const subEl = document.getElementById("node-llm-sub");
+  const listEl = document.getElementById("node-llm-backends");
+  const rows = llmBackendRows(health);
+  const n = rows.length;
+  const nLocal = rows.filter(r => r.placement === "local").length;
+  const nExt = rows.filter(r => r.placement === "external").length;
+
+  if (titleEl) {
+    titleEl.textContent = n > 1 ? "Reasoning LLM pool" : "Reasoning LLM";
+  }
+
+  if (subEl) {
+    if (!n) {
+      subEl.textContent = "OpenAI-compatible · via gateway";
+    } else {
+      const bits = [`${n} backend${n === 1 ? "" : "s"}`];
+      if (nLocal || nExt) {
+        if (nLocal && nExt) bits.push(`${nLocal} local · ${nExt} external`);
+        else if (nExt) bits.push(nExt === n ? "external" : `${nExt} external`);
+        else bits.push(nLocal === n ? "local" : `${nLocal} local`);
+      }
+      if (health?.config?.summary) {
+        // keep short — model list is on chips
+      }
+      subEl.textContent = bits.join(" · ");
+    }
+  }
+
+  if (!listEl) return;
+  if (!n) {
+    listEl.hidden = true;
+    listEl.innerHTML = "";
+    return;
+  }
+  listEl.hidden = false;
+  listEl.innerHTML = rows.map(b => {
+    const place = b.placement === "external" || b.placement === "local" ? b.placement : null;
+    let chipState = "unknown";
+    if (b.status === "ok") {
+      chipState = (b.inflight > 0) ? "busy" : (b.available ? "free" : "held");
+    } else if (b.status && b.status !== "unknown") {
+      chipState = "down";
+    } else if (vis?.state === "active") {
+      chipState = "busy";
+    } else if (vis?.state === "ok" || vis?.state === "waiting") {
+      chipState = "free";
+    }
+    const meta = [];
+    if (place) meta.push(place);
+    if (b.model) meta.push(b.model);
+    if (b.inflight != null) meta.push(`in-flight ${b.inflight}`);
+    if (b.cooldown > 0) meta.push(`cooldown ${Math.round(b.cooldown)}s`);
+    if (b.reserved) meta.push("reserved");
+    const placeBadge = place
+      ? `<span class="arch-llm-place" title="${place === "external"
+          ? "credentialed external/paid API"
+          : "local backend (no credential)"}">${esc(place)}</span>`
+      : "";
+    const stLabel = chipState === "busy" ? "busy"
+      : chipState === "free" ? "free"
+      : chipState === "down" ? "down"
+      : chipState === "held" ? "held" : "—";
+    return `<div class="arch-llm-chip ${chipState}${place ? ` place-${place}` : ""}" title="${esc([b.url, place, b.model].filter(Boolean).join(" · "))}">
+      <span class="arch-llm-chip-label">${esc(b.label)}${placeBadge}</span>
+      <span class="arch-llm-chip-state">${esc(stLabel)}</span>
+      <span class="arch-llm-chip-meta">${esc(meta.join(" · "))}</span>
+    </div>`;
+  }).join("");
 }
 
 function deriveVisualState(c, { backlog, activeWhenBacklog } = {}) {
@@ -390,10 +503,28 @@ function renderGatewayNodes(health, latest) {
       vis.state = "active"; vis.label = "Dreaming";
     }
     setNodeState(document.getElementById(`node-${key}`), vis.state, vis.label);
-    setMetrics(`node-${key}-metrics`, [
-      { k: "Process", v: c?.process?.value || "—" },
-      { k: "Load", v: c?.workload?.value || "—", hot: vis.state === "active" || vis.state === "warn" },
-    ]);
+    if (key === "llm") {
+      const pool = health?.llm_pool;
+      const metricParts = [
+        { k: "Process", v: c?.process?.value || "—" },
+        { k: "Load", v: c?.workload?.value || "—", hot: vis.state === "active" || vis.state === "warn" },
+      ];
+      if (pool && pool.total) {
+        metricParts.push({ k: "Pool", v: `${pool.busy || 0}/${pool.total} busy · ${pool.free ?? "—"} free`,
+          hot: (pool.busy || 0) > 0 });
+      }
+      if (health?.inference_busy && health.inference_busy !== "unknown") {
+        metricParts.push({ k: "GPU", v: health.inference_busy,
+          hot: health.inference_busy === "busy" });
+      }
+      setMetrics("node-llm-metrics", metricParts);
+      renderLlmBackends(health, c, vis);
+    } else {
+      setMetrics(`node-${key}-metrics`, [
+        { k: "Process", v: c?.process?.value || "—" },
+        { k: "Load", v: c?.workload?.value || "—", hot: vis.state === "active" || vis.state === "warn" },
+      ]);
+    }
   }
 
   const remQ = latest?.rem_backlog || 0;
@@ -429,9 +560,26 @@ function renderGatewayNodes(health, latest) {
     return rank[s] > rank[w] ? s : w;
   }, "ok");
   const llmBusy = (by.llm?.workload?.value || "").toLowerCase().includes("busy") || dream > 0;
+  const pool = health?.llm_pool;
+  const placeBits = [];
+  if (pool && (pool.local || pool.external)) {
+    if (pool.local) placeBits.push(`${pool.local} local`);
+    if (pool.external) placeBits.push(`${pool.external} external`);
+  } else {
+    const rows = llmBackendRows(health);
+    const nL = rows.filter(r => r.placement === "local").length;
+    const nE = rows.filter(r => r.placement === "external").length;
+    if (nL) placeBits.push(`${nL} local`);
+    if (nE) placeBits.push(`${nE} external`);
+  }
+  let infBadge = "Proxied";
+  if (infWorst === "bad") infBadge = "Unavailable";
+  else if (llmBusy) infBadge = placeBits.length ? `Dream load · ${placeBits.join(" · ")}` : "Dream cycle load";
+  else if (infWorst === "warn") infBadge = "Degraded";
+  else if (placeBits.length) infBadge = placeBits.join(" · ");
   setLayerBadge("layer-inference-badge",
     infWorst === "bad" ? "bad" : llmBusy ? "active" : infWorst === "warn" ? "warn" : "ok",
-    llmBusy ? "Dream cycle load" : (infWorst === "bad" ? "Unavailable" : "Proxied"));
+    infBadge);
 
   const pending = latest?.outbox_pending || 0;
   const failed = latest?.outbox_failed || 0;

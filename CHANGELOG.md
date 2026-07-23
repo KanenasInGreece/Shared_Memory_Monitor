@@ -6,6 +6,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Diagram LLM pool** — `/diagram` Reasoning LLM card lists multi-backend pool
+  members from `/api/diagram` → `health.llm_pool` + `config.backends`, with
+  **local** / **external** placement badges and optional model (gateway ≥0.8.9).
+  Layer badge shows local/external mix; gateway→LLM flow still targets the pool
+  card (single proxy hop).
+
 ### Changed
 
 - **Install / doctor / agent docs** — `check-env` / doctor report modern telemetry

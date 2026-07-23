@@ -340,7 +340,7 @@ Main charts: backlog over time, throughput, cumulative cleared, tier-3 growth & 
 | **Agents** | `agent-audit.jsonl` |
 | **Gateway** | `GET /health` + telemetry backlog fields |
 | **Memory** | Telemetry postgres/neo4j counts |
-| **Inference** | `GET /health` embedder/reranker/llm blocks (pool multi-backend detail lives on the Monitor Status LLM pool panel, not as separate diagram cards) |
+| **Inference** | Embedder / reranker from `GET /health`; **Reasoning LLM pool** card lists backends from `llm_pool` + `config.llm_backends` with **local/external** placement badges (≥0.8.9) |
 
 **Legend:** OK · Active · Waiting · Backlog · Down — flows Write (red) · Read (green) · Logic (blue).
 
