@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-07-23
+
+**Compatible with Shared Memory Framework gateway ≥ v0.8.9 for new fields · wire
+contract API v3 unchanged.** Diagram pool + install/doctor docs for current
+telemetry UX.
+
 ### Added
 
 - **Diagram LLM pool** — `/diagram` Reasoning LLM card lists multi-backend pool
@@ -20,8 +26,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   panels (`entity_graph`, `latency`, `spine`, `compliance`) and non-secret LLM
   placement (`has_credential` → local/external counts). `install.sh` and
   `install-systemd-user.sh` describe what a green doctor means on the dashboard;
-  README, `AGENTS.md`, sister contract, and `.env.example` aligned to **v0.7.4** /
-  framework **≥0.8.9** full UI (wire still **API 3** / ≥0.7.0).
+  README, `AGENTS.md`, sister contract, and `.env.example` aligned to full UI on
+  framework **≥0.8.9** (wire still **API 3** / ≥0.7.0).
+- **README screenshots** — dashboard + diagram recaptured for placement badges.
 
 ## [0.7.4] - 2026-07-23
 
@@ -808,7 +815,8 @@ and `GET /memory/telemetry` already expose — no new data path.
 - `.env` and `.grok/` gitignored; doctor never prints credential values
 - Error sanitization for tokens and connection strings
 
-[Unreleased]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/compare/v0.7.4...main
+[Unreleased]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/compare/v0.7.5...main
+[0.7.5]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.7.5
 [0.7.4]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.7.4
 [0.5.3]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.5.3
 [0.5.2]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.5.2
