@@ -6,6 +6,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-07-23
+
+**Compatible with Shared Memory Framework gateway ≥ v0.8.9 for new fields · wire
+contract API v3 unchanged.** Local vs external LLM placement on the ops UI.
+
+### Added
+
+- **Local vs external LLM placement** (framework ≥0.8.9) — pass-through of
+  non-secret `config.llm_backends[].has_credential` + optional `model` on
+  `/api/health` (config backends + pool chips joined by URL). Infrastructure
+  summary shows e.g. `2 LLM backends · 1 local · 1 external`; pool chips badge
+  **local** / **external** and surface the model override when set. Pre-0.8.9
+  gateways omit placement (no URL heuristics). Secrets never appear.
+
 ## [0.7.3] - 2026-07-22
 
 **Compatible with Shared Memory Framework gateway ≥ v0.8.6 for new fields · wire
@@ -777,7 +791,8 @@ and `GET /memory/telemetry` already expose — no new data path.
 - `.env` and `.grok/` gitignored; doctor never prints credential values
 - Error sanitization for tokens and connection strings
 
-[Unreleased]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/compare/v0.5.3...main
+[Unreleased]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/compare/v0.7.4...main
+[0.7.4]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.7.4
 [0.5.3]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.5.3
 [0.5.2]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.5.2
 [0.5.1]: https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.5.1

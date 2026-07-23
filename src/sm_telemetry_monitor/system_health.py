@@ -79,6 +79,51 @@ def _backend_label(url: str) -> str:
     return str(url).split("//", 1)[-1]
 
 
+def _backend_placement(has_credential) -> str | None:
+    """local vs external from non-secret has_credential (framework ≥0.8.9).
+
+    ``True`` means the gateway resolved a per-backend token_env (paid/cloud API
+    path). ``False`` means no credential — typical local llama.cpp. ``None`` when
+    the field is absent (pre-0.8.9 gateways); never invent placement from URL.
+    """
+    if has_credential is True:
+        return "external"
+    if has_credential is False:
+        return "local"
+    return None
+
+
+def _config_backend_index(raw: dict) -> dict[str, dict]:
+    """url → {has_credential, model, placement} from /health.config.llm_backends."""
+    cfg = raw.get("config")
+    if not isinstance(cfg, dict):
+        return {}
+    backends_raw = cfg.get("llm_backends")
+    if not isinstance(backends_raw, list):
+        return {}
+    out: dict[str, dict] = {}
+    for b in backends_raw:
+        if not isinstance(b, dict):
+            continue
+        url = b.get("url")
+        if not url:
+            continue
+        url_s = str(url).rstrip("/")
+        has_cred = b.get("has_credential")
+        if not isinstance(has_cred, bool):
+            has_cred = None
+        model = b.get("model")
+        model_s = str(model) if model not in (None, "") else None
+        out[url_s] = {
+            "has_credential": has_cred,
+            "model": model_s,
+            "placement": _backend_placement(has_cred),
+        }
+        # also index with trailing slash variants if gateway ever differs
+        out[str(url)] = out[url_s]
+    return out
+
+
 def _llm_pool_summary(raw: dict) -> dict | None:
     """Multi-backend LLM pool state from /health.llm_pool + /health.llm_backends.
 
@@ -91,11 +136,16 @@ def _llm_pool_summary(raw: dict) -> dict | None:
     Pass-through of weight / routed / routed_pct / fails is intentional: the
     monitor never invents balance metrics; it only reshapes what /health already
     reports so the UI can show which card is working and how load split.
+
+    When present (framework ≥0.8.9), ``has_credential`` / ``model`` from
+    ``config.llm_backends`` are joined by URL onto each pool chip so operators
+    can tell local hardware from external/paid APIs without reading secrets.
     """
     pool = raw.get("llm_pool")
     if not isinstance(pool, dict) or not pool:
         return None
     reach = raw.get("llm_backends") if isinstance(raw.get("llm_backends"), dict) else {}
+    meta_by_url = _config_backend_index(raw)
     backends = []
     for url, p in pool.items():
         if not isinstance(p, dict):
@@ -124,6 +174,7 @@ def _llm_pool_summary(raw: dict) -> dict | None:
             fails_i = int(fails) if fails is not None else None
         except (TypeError, ValueError):
             fails_i = None
+        meta = meta_by_url.get(str(url).rstrip("/")) or meta_by_url.get(str(url)) or {}
         backends.append({
             "url": url,
             # short label for UI chips: strip scheme, keep host:port tail
@@ -137,6 +188,9 @@ def _llm_pool_summary(raw: dict) -> dict | None:
             "routed": routed_i,
             "routed_pct": routed_pct_f,
             "fails": fails_i,
+            "has_credential": meta.get("has_credential"),
+            "model": meta.get("model"),
+            "placement": meta.get("placement"),
         })
     if not backends:
         return None
@@ -146,6 +200,8 @@ def _llm_pool_summary(raw: dict) -> dict | None:
         "up": sum(1 for b in backends if b["status"] == "ok"),
         "busy": sum(1 for b in backends if b["inflight"] > 0),
         "free": sum(1 for b in backends if b["available"]),
+        "local": sum(1 for b in backends if b.get("placement") == "local"),
+        "external": sum(1 for b in backends if b.get("placement") == "external"),
     }
 
 
@@ -213,6 +269,9 @@ def _gateway_config(raw: dict) -> dict | None:
     resolved backend list, pool-tuning knobs, affinity settings, and embed cap
     so the operator can inspect the live setup without reading gateway ``.env``.
     Secrets are never echoed by the gateway in this block.
+
+    Framework ≥0.8.9 adds per-backend ``has_credential`` (bool) and optional
+    ``model`` override — used only for local vs external visibility.
     """
     cfg = raw.get("config")
     if not isinstance(cfg, dict) or not cfg:
@@ -227,10 +286,18 @@ def _gateway_config(raw: dict) -> dict | None:
             url = b.get("url")
             if not url:
                 continue
+            has_cred = b.get("has_credential")
+            if not isinstance(has_cred, bool):
+                has_cred = None
+            model = b.get("model")
+            model_s = str(model) if model not in (None, "") else None
             backends.append({
                 "url": str(url),
                 "label": str(url).split("//", 1)[-1],
                 "weight": b.get("weight"),
+                "has_credential": has_cred,
+                "model": model_s,
+                "placement": _backend_placement(has_cred),
             })
 
     pool_tuning = cfg.get("llm_pool_tuning") if isinstance(cfg.get("llm_pool_tuning"), dict) else {}
@@ -241,9 +308,20 @@ def _gateway_config(raw: dict) -> dict | None:
     if n == 0 and not pool_tuning and not affinity and embed_max is None:
         return None
 
+    n_local = sum(1 for b in backends if b.get("placement") == "local")
+    n_external = sum(1 for b in backends if b.get("placement") == "external")
+
     bits: list[str] = []
     if n:
         bits.append(f"{n} LLM backend" + ("s" if n != 1 else ""))
+        # Placement mix only when the gateway reports has_credential (0.8.9+).
+        if n_local or n_external:
+            if n_local and n_external:
+                bits.append(f"{n_local} local · {n_external} external")
+            elif n_external:
+                bits.append(f"{n_external} external" if n_external != n else "external")
+            elif n_local:
+                bits.append(f"{n_local} local" if n_local != n else "local")
     if embed_max is not None:
         try:
             em = int(embed_max)
@@ -258,6 +336,8 @@ def _gateway_config(raw: dict) -> dict | None:
         "present": True,
         "backend_count": n,
         "backends": backends,
+        "local_count": n_local,
+        "external_count": n_external,
         "embed_max_chars": embed_max,
         "pool_tuning": {
             "fail_threshold": pool_tuning.get("fail_threshold"),

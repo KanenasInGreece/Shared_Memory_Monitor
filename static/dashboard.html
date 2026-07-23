@@ -1236,7 +1236,12 @@ function renderLlmPool(H) {
                : (b.status === "unknown" ? "unknown" : "down");
       const stateClass = st === "busy" ? "busy" : st === "free" ? "free"
                        : st === "down" ? "down" : st === "held" ? "held" : "unknown";
+      // placement from /health.config has_credential (framework ≥0.8.9) — never inferred
+      const place = b.placement === "external" || b.placement === "local" ? b.placement : null;
+      const placeClass = place ? ` place-${place}` : "";
       const meta = [];
+      if (place) meta.push(place);
+      if (b.model) meta.push(b.model);
       if (b.inflight != null) meta.push(`in-flight ${b.inflight}`);
       if (b.routed_pct != null) meta.push(`${b.routed_pct}% routed`);
       else if (b.routed != null) meta.push(`routed ${b.routed}`);
@@ -1244,9 +1249,13 @@ function renderLlmPool(H) {
       if (b.fails) meta.push(`${b.fails} fail${b.fails === 1 ? "" : "s"}`);
       if (b.cooldown > 0) meta.push(`cooldown ${Math.round(b.cooldown)}s`);
       if (b.reserved) meta.push("reserved");
-      const title = [b.url, b.status, ...meta].filter(Boolean).join(" · ");
-      return `<div class="pool-chip ${stateClass}" role="listitem" title="${esc(title)}">
-          <span class="pool-chip-label">${esc(b.label)}</span>
+      const titleBits = [b.url, b.status, place, b.model, ...meta.filter(m => m !== place && m !== b.model)];
+      const title = titleBits.filter(Boolean).join(" · ");
+      const placeBadge = place
+        ? `<span class="pool-chip-place" title="${place === "external" ? "credentialed external/paid API" : "local backend (no credential)"}">${esc(place)}</span>`
+        : "";
+      return `<div class="pool-chip ${stateClass}${placeClass}" role="listitem" title="${esc(title)}">
+          <span class="pool-chip-label">${esc(b.label)}${placeBadge}</span>
           <span class="pool-chip-state">${esc(st)}</span>
           <span class="pool-chip-meta">${esc(meta.join(" · "))}</span>
         </div>`;

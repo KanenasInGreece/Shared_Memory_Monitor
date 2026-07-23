@@ -643,6 +643,32 @@ body.consolidation-open { overflow: hidden; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+  min-width: 0;
+}
+.pool-chip-place {
+  flex: 0 0 auto;
+  font-weight: 700;
+  font-size: .58rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: .08rem .28rem;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+.pool-chip.place-local .pool-chip-place {
+  color: var(--ok-bright);
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--border));
+  background: color-mix(in srgb, var(--ok) 12%, var(--surface));
+}
+.pool-chip.place-external .pool-chip-place {
+  color: var(--warn-bright);
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
 }
 .pool-chip-state {
   font-weight: 700;

@@ -269,11 +269,59 @@ class GatewayConfigTests(unittest.TestCase):
         self.assertTrue(cfg["present"])
         self.assertEqual(cfg["backend_count"], 1)
         self.assertEqual(cfg["backends"][0]["label"], "localhost:4000")
+        self.assertIsNone(cfg["backends"][0]["has_credential"])
+        self.assertIsNone(cfg["backends"][0]["placement"])
         self.assertEqual(cfg["embed_max_chars"], 24000)
         self.assertIn("1 LLM backend", cfg["summary"])
         self.assertIn("embed 24k", cfg["summary"])
+        self.assertNotIn("local", cfg["summary"])
         self.assertEqual(cfg["pool_tuning"]["cooldown_s"], 300.0)
         self.assertEqual(cfg["affinity"]["prefix_chars"], 6144)
+
+    def test_config_placement_local_and_external(self):
+        """Framework ≥0.8.9: has_credential + model on config.llm_backends (no secrets)."""
+        health = {
+            **_healthy_gateway(),
+            "version": "0.8.9",
+            "api_version": 3,
+            "config": {
+                "llm_backends": [
+                    {"url": "http://localhost:5000", "weight": 1.0,
+                     "has_credential": False, "model": None},
+                    {"url": "https://api.deepseek.com/v1", "weight": 1.0,
+                     "has_credential": True, "model": "deepseek-chat"},
+                ],
+                "embed_max_chars": 24000,
+            },
+        }
+        cfg = _gateway_config(health)
+        self.assertEqual(cfg["local_count"], 1)
+        self.assertEqual(cfg["external_count"], 1)
+        by_url = {b["url"]: b for b in cfg["backends"]}
+        self.assertEqual(by_url["http://localhost:5000"]["placement"], "local")
+        self.assertFalse(by_url["http://localhost:5000"]["has_credential"])
+        self.assertEqual(by_url["https://api.deepseek.com/v1"]["placement"], "external")
+        self.assertTrue(by_url["https://api.deepseek.com/v1"]["has_credential"])
+        self.assertEqual(by_url["https://api.deepseek.com/v1"]["model"], "deepseek-chat")
+        self.assertIn("1 local · 1 external", cfg["summary"])
+        self.assertIn("embed 24k", cfg["summary"])
+
+    def test_config_all_local_summary(self):
+        health = {
+            **_healthy_gateway(),
+            "config": {
+                "llm_backends": [
+                    {"url": "http://localhost:5000", "weight": 1.0, "has_credential": False},
+                    {"url": "http://localhost:4000", "weight": 1.0, "has_credential": False},
+                ],
+            },
+        }
+        cfg = _gateway_config(health)
+        self.assertEqual(cfg["local_count"], 2)
+        self.assertEqual(cfg["external_count"], 0)
+        self.assertIn("2 LLM backends", cfg["summary"])
+        self.assertIn("local", cfg["summary"])
+        self.assertNotIn("external", cfg["summary"])
 
     def test_config_absent_on_legacy_health(self):
         self.assertIsNone(_gateway_config(_healthy_gateway()))
@@ -331,6 +379,32 @@ class LlmPoolTests(unittest.TestCase):
         self.assertEqual(by_label["localhost:5000"]["weight"], 1.0)
         self.assertFalse(by_label["localhost:5000"]["available"])
         self.assertTrue(by_label["localhost:4000"]["available"])
+        # Pre-0.8.9 config: no placement invent from URL
+        self.assertIsNone(by_label["localhost:5000"]["placement"])
+        self.assertEqual(pool["local"], 0)
+        self.assertEqual(pool["external"], 0)
+
+    def test_pool_joins_config_placement(self):
+        health = {
+            **_pool_gateway(inflight5000=1),
+            "config": {
+                "llm_backends": [
+                    {"url": "http://localhost:5000", "weight": 1.0,
+                     "has_credential": False, "model": None},
+                    {"url": "http://localhost:4000", "weight": 1.0,
+                     "has_credential": True, "model": "cloud-model"},
+                ],
+            },
+        }
+        pool = _llm_pool_summary(health)
+        by_label = {b["label"]: b for b in pool["backends"]}
+        self.assertEqual(by_label["localhost:5000"]["placement"], "local")
+        self.assertFalse(by_label["localhost:5000"]["has_credential"])
+        self.assertEqual(by_label["localhost:4000"]["placement"], "external")
+        self.assertTrue(by_label["localhost:4000"]["has_credential"])
+        self.assertEqual(by_label["localhost:4000"]["model"], "cloud-model")
+        self.assertEqual(pool["local"], 1)
+        self.assertEqual(pool["external"], 1)
 
     def test_single_backend_health_has_no_pool(self):
         self.assertIsNone(_llm_pool_summary(_healthy_gateway()))
