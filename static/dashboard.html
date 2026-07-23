@@ -41,7 +41,7 @@
             <h2 id="hero-headline">Loading…</h2>
             <p id="hero-detail"></p>
           </div>
-          <div class="pill-stack" title="Pipeline story: backlog narrative + coarse health (outbox / consolidation / dream depth). Distinct from Status · components.">
+          <div class="pill-stack" title="Pipeline story: what's upcoming (REM/NREM backlog, outbox/consolidation narrative). Distinct from Gateway health below.">
             <span class="pill-label">Pipeline</span>
             <span class="pill ok" id="hero-pill">—</span>
           </div>
@@ -50,9 +50,9 @@
 
       <section class="status-deck" aria-label="Live status">
         <div class="sidebar-head">
-          <span class="sidebar-title">Status · components</span>
-          <div class="pill-stack" title="Component health: gateway, embedder, rem/nrem daemons, stall heuristics (e.g. pool free but backlog not draining). Distinct from Pipeline pill above.">
-            <span class="pill-label">Components</span>
+          <span class="sidebar-title">Gateway health</span>
+          <div class="pill-stack" title="Gateway-class health (processes, backends, consolidation telemetry stall). Per-component status is color-coded in Infrastructure below — not this pill. Distinct from Pipeline (upcoming work).">
+            <span class="pill-label">Gateway</span>
             <span class="pill ok" id="sidebar-system-pill" title="">—</span>
           </div>
         </div>
