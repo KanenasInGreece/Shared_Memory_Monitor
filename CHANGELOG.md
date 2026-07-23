@@ -6,6 +6,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.9] - 2026-07-23
+
+### Added
+
+- **Contributors** (README) — Xenofon as author/maintainer; **Grok (xAI)** credited as
+  AI collaborator (design/implementation assistance). Docs credit only — not legal
+  or git co-authorship of the code.
+
 ## [0.7.8] - 2026-07-23
 
 **Docs / project-page impact.** Current main-page screenshot under the README title.

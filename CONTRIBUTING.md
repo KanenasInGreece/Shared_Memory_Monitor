@@ -38,6 +38,12 @@ Tag releases to match [CHANGELOG.md](CHANGELOG.md):
 gh release create vX.Y.Z --title "vX.Y.Z" --notes-file CHANGELOG.md
 ```
 
+## Credits
+
+See [README — Contributors](README.md#contributors). Human authors remain
+responsible for what is merged; AI collaborators (e.g. Grok) may be listed
+there as assistants without implying joint copyright or git co-authorship.
+
 ## License
 
 Contributions are accepted under the same [MIT License](LICENSE) as the project.
