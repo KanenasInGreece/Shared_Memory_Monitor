@@ -32,6 +32,57 @@ class DoctorTests(unittest.TestCase):
         self.assertEqual(block["client_api_version"], 3)
         self.assertEqual(block["api_version"], 3)
         self.assertEqual(block["compat"], "ok")
+        self.assertFalse(block["has_llm_placement"])
+
+    def test_coordinator_llm_placement_from_config(self):
+        with patch("sm_telemetry_monitor.doctor.get_health", return_value={
+            "status": "ok",
+            "version": "0.8.9",
+            "api_version": 3,
+            "config": {
+                "llm_backends": [
+                    {"url": "http://localhost:5000", "weight": 1.0,
+                     "has_credential": False, "model": None},
+                    {"url": "https://api.example/v1", "weight": 1.0,
+                     "has_credential": True, "model": "cloud"},
+                ],
+            },
+            "llm_pool": {
+                "http://localhost:5000": {"inflight": 0},
+                "https://api.example/v1": {"inflight": 0},
+            },
+        }):
+            from sm_telemetry_monitor.doctor import _check_coordinator
+            block = _check_coordinator()
+        self.assertTrue(block["has_llm_config"])
+        self.assertTrue(block["has_llm_pool"])
+        self.assertTrue(block["has_llm_placement"])
+        self.assertEqual(block["llm_backend_count"], 2)
+        self.assertEqual(block["llm_local_count"], 1)
+        self.assertEqual(block["llm_external_count"], 1)
+
+    def test_telemetry_panel_flags(self):
+        with patch("sm_telemetry_monitor.doctor.get_telemetry", return_value={
+            "status": "success",
+            "telemetry": {
+                "nrem": {"pending_cycles": 1},
+                "breakdown": {"by_type": {}},
+                "consolidation": {"stalled": False},
+                "entity_graph": {"entities_total": 10},
+                "latency": {"rem_ms": {}},
+                "spine": {"facts": {}},
+                "compliance": {"label_compliance": 1.0},
+            },
+        }):
+            from sm_telemetry_monitor.doctor import _check_telemetry
+            block = _check_telemetry()
+        self.assertTrue(block["has_nrem"])
+        self.assertTrue(block["has_breakdown"])
+        self.assertTrue(block["has_consolidation"])
+        self.assertTrue(block["has_entity_graph"])
+        self.assertTrue(block["has_latency"])
+        self.assertTrue(block["has_spine"])
+        self.assertTrue(block["has_compliance"])
 
     def test_dashboard_history_ready_when_samples(self):
         checks = {

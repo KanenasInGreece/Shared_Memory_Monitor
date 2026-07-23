@@ -27,4 +27,9 @@ fi
 systemctl --user restart shared-memory-monitor.service
 systemctl --user --no-pager status shared-memory-monitor.service
 echo ""
-echo "Dashboard → http://127.0.0.1:8765/"
+echo "Dashboard → http://127.0.0.1:8765/  (/diagram, /logs)"
+echo "Status:    ./scripts/agent-status.sh"
+echo "Doctor:    ./scripts/check-env.sh   # gateway version · API compat · telemetry panels · LLM placement"
+echo ""
+echo "On Status (/): Infrastructure shows Gateway version · API · N LLM backends · local|external;"
+echo "multi-backend gateways also show the LLM pool chips (local/external badges when gateway ≥0.8.9)."

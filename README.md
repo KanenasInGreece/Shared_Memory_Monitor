@@ -14,7 +14,7 @@ first-write quality, graph shape, latency, topology, and audit trails — so you
 | **What you get** | Visual ops aid over **framework-owned** telemetry and logs |
 | **What you do not get** | A second metrics store, DB credentials, or write access to memory |
 | **Dashboard** | **http://127.0.0.1:8765/** |
-| **This release** | **v0.7.1** — **API v3** client · compatible with **Shared Memory Framework ≥ v0.7.0** · live NREM density-gate thresholds + in-flight cycle running time |
+| **This release** | **v0.7.4** — **API v3** client · framework **≥ v0.7.0** (wire) · full Status UI on **≥ v0.8.9** (LLM **local/external** placement, graph/latency/consolidation panels) |
 
 ---
 
@@ -99,7 +99,7 @@ Open **http://127.0.0.1:8765/**
 
 **Shared Memory Monitor** is a sister project to the framework — a read-only **view** over **gateway telemetry** and **framework logs**. It does not own memory stores, daemons, or a separate metrics API.
 
-**Compatibility (v0.7.1):** targets **Shared Memory Framework gateway v0.7.0+** and advertises client wire contract **API v3** (`X-SM-Api-Version: 3`). Doctor/`./scripts/check-env.sh` should report `compat=ok` against a 0.7.0 gateway. Earlier monitor releases (0.5.1–0.5.3) spoke API v2 for framework 0.6.5.
+**Compatibility (v0.7.4):** wire contract **API v3** (`X-SM-Api-Version: 3`) against **Shared Memory Framework gateway ≥ v0.7.0** — `./scripts/check-env.sh` / `agent-status.sh` should report `compat=ok`. For the full ops picture users search for (LLM pool with **local** vs **external** badges, consolidation graph health + REM fairness instruments, latency drawer), run **gateway ≥ v0.8.9**; older gateways stay compatible and simply omit missing fields. Doctor prints which telemetry panels and placement signals are present.
 
 | | Framework | Monitor (this repo) |
 |---|-----------|---------------------|
@@ -120,10 +120,12 @@ Three browser views (**Monitor**, **Diagram**, **Logs**) over the **same two ups
 |-----------|-----------|
 | Backlog, outbox, NREM, charts, hero | `GET /memory/telemetry` (cached in `data/telemetry.db` between polls) |
 | Infrastructure, diagram node health, gateway version / API / config | `GET /health` (+ `config` on framework ≥0.6.1) |
+| **LLM pool** chips · **local/external** badges | `/health.llm_pool` + `/health.config.llm_backends` (`has_credential` + optional `model`, ≥0.8.9) |
 | Schema Neo4j panels | `POST /memory/graph` |
 | Schema Postgres panels | `telemetry.breakdown` in the telemetry payload |
 | First-write quality · schema conformance | `telemetry.spine` + `telemetry.compliance` |
 | Throughput & latency drawer | `telemetry.latency` |
+| Consolidation tile + drawer | `/health.consolidation` + `telemetry.consolidation` (+ `entity_graph` / `neo4j`) |
 | Log panes | Journal + audit files the framework writes |
 | Diagram agent/daemon flows | Same `agent-audit.jsonl` as the **Agent audit** log tab |
 
@@ -139,9 +141,11 @@ Captured from a running monitor (`./scripts/capture-screenshots.sh`).
 
 ### Monitor (`/`)
 
-A full-width **status deck** above the charts, in three labelled rows — **Drill-down** (Consolidation, Throughput & latency, Schema breakdown), **Backlog & queues** (Dream backlog, REM / NREM split, Pipeline queues), and Backup / Infrastructure — followed by backlog charts. All from gateway telemetry (cached polls + live `GET /health`). Range selector (`1h`–`all`) filters the local poll cache.
+A full-width **status deck** above the charts, in three labelled rows — **Drill-down** (Consolidation, Throughput & latency, Schema breakdown), **Backlog & queues** (Dream backlog, REM / NREM split, Pipeline queues), and Backup / **Infrastructure** (component grid + **LLM pool** when the gateway has more than one backend) — followed by backlog charts. All from gateway telemetry (cached polls + live `GET /health`). Range selector (`1h`–`all`) filters the local poll cache.
 
-![Monitor — status deck, backlog charts, pipeline queues, infrastructure health](docs/images/dashboard.png)
+On **gateway ≥0.8.9**, the Infrastructure hint includes the non-secret config summary (e.g. `Gateway 0.8.9 · API 3 · 2 LLM backends · local · embed 24k`), and each pool chip badges **local** or **external** from `has_credential` (optional `model` override appears in the chip meta). No API keys ever appear.
+
+![Monitor — status deck, infrastructure, LLM pool local badges, backlog charts](docs/images/dashboard.png)
 
 ### Consolidation health (side drawer)
 
@@ -196,7 +200,7 @@ Live framework topology: agents → gateway; REM/NREM ↔ gateway; memory and in
 | `telemetry.compliance` | **Framework gateway v0.6.3+** — feeds **Schema conformance** (graph writes inside the agreed ontology). Older gateways omit it. |
 | `telemetry.latency` | **Framework gateway v0.6.3+** — feeds the **Throughput & latency** drawer (per-model enrichment model-floor vs queue-wait split; consolidation-cycle p50/p95). Older gateways omit it (drawer shows an unsupported note). |
 | `postgres.technical_docs_superseded` | Soft-superseded row count on Schema drawer meta (and poll cache). |
-| Client `X-SM-Api-Version` | Monitor **v0.7.1** advertises **api_version 3** — **compatible with Shared Memory Framework gateway ≥ v0.7.0**. `./scripts/check-env.sh` reports `server=N client=N compat=ok` when they match. |
+| Client `X-SM-Api-Version` | Monitor **v0.7.4** advertises **api_version 3** — compatible with **framework ≥ v0.7.0**; full panel set + LLM placement on **≥ v0.8.9**. `./scripts/check-env.sh` reports `server=N client=N compat=ok` and which telemetry panels / placement signals are present. |
 | Python 3.11+ and [uv](https://docs.astral.sh/uv/) | `uv sync` / CLI |
 
 ### Local logs (required for `/logs` and diagram flows; same host as gateway in practice)
@@ -297,7 +301,9 @@ Charts read the **poll cache** (past `GET /memory/telemetry` responses). Live pa
 | **REM / NREM split** | `rem_backlog` vs `nrem_backlog` + ETA (the saturation verdict lives in the hero, not here) |
 | **Pipeline queues** | Telemetry postgres/neo4j/outbox fields |
 | **Backup** card | `GET /health` (`backup_in_progress`) + latest `sm-backup-*.manifest.json` in `BACKUP_DIR` |
-| **Infrastructure** grid | `GET /health` component blocks |
+| **Infrastructure** grid | `GET /health` component blocks (gateway · embed · rerank · LLM · NREM · REM) |
+| **Infrastructure** config hint | `/health.version` · `api_version` · `/health.config` summary (backend count, **local/external** mix when `has_credential` present, embed cap) |
+| **LLM pool** panel | Multi-backend only: `/health.llm_pool` + reachability; chips join `config.llm_backends` for **placement** (`local`/`external`) + `model` (≥0.8.9). Single-backend installs keep nvtop/`inference_busy` on the LLM tile. |
 
 Consolidation drawer fields:
 
@@ -334,7 +340,7 @@ Main charts: backlog over time, throughput, cumulative cleared, tier-3 growth & 
 | **Agents** | `agent-audit.jsonl` |
 | **Gateway** | `GET /health` + telemetry backlog fields |
 | **Memory** | Telemetry postgres/neo4j counts |
-| **Inference** | `GET /health` embedder/reranker/llm blocks |
+| **Inference** | `GET /health` embedder/reranker/llm blocks (pool multi-backend detail lives on the Monitor Status LLM pool panel, not as separate diagram cards) |
 
 **Legend:** OK · Active · Waiting · Backlog · Down — flows Write (red) · Read (green) · Logic (blue).
 
@@ -517,6 +523,8 @@ Regenerate screenshots: `./scripts/capture-screenshots.sh` (Playwright; monitor 
 | NREM `estimate` source | Upgrade gateway for `telemetry.nrem` |
 | Consolidation card shows `—` | Upgrade gateway for ADR-018 `telemetry.consolidation`; run `./scripts/check-env.sh` |
 | `fresh=false` on consolidation | Coordinator cache refresh failing — check journal for `consolidation health refresh failed` |
+| No **LLM pool** / no local·external badges | Need multi-backend pool (v0.6.1+) and **gateway ≥0.8.9** for `has_credential`; doctor says `placement n/a` on older config |
+| Doctor missing `entity_graph` / `latency` / `spine` | Optional panels — upgrade framework; UI hides empty bands |
 | Empty agent audit | Enable `GATEWAY_AUDIT_LOG_PATH` on gateway; restart gateway |
 | Empty gateway log tab | `journalctl --user -u hive-mind-gateway.service -n 5` |
 | Port 8765 busy | `fuser -k 8765/tcp` |
@@ -528,20 +536,20 @@ Regenerate screenshots: `./scripts/capture-screenshots.sh` (Playwright; monitor 
 | Doc | Topic |
 |-----|-------|
 | [SISTER_PROJECT.md](docs/SISTER_PROJECT.md) | Framework boundary |
-| [CHANGELOG.md](CHANGELOG.md) | Releases (current: **v0.7.1** · API **3** · framework **≥0.7.0**) |
+| [CHANGELOG.md](CHANGELOG.md) | Releases (current: **v0.7.4** · API **3** · framework **≥0.7.0** wire · **≥0.8.9** full panels) |
 | [SECURITY.md](SECURITY.md) | Secrets policy |
 
 ```bash
 ./scripts/pre-publish-check.sh && ./scripts/publish.sh
 # release: tag must match pyproject / __init__ / CHANGELOG
-# gh release create v0.7.1 --title "v0.7.1" --notes-file …
+# gh release create v0.7.4 --title "v0.7.4" --notes-file …
 ```
 
 ---
 
 ## Related
 
-- [Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory) — gateway, daemons, telemetry API (**v0.7.0** is the current compatibility target for this monitor)
+- [Shared Memory Framework](https://github.com/KanenasInGreece/Shared_Memory) — gateway, daemons, telemetry API (wire **≥0.7.0** / API 3; full monitor UI on **≥0.8.9**)
 - **shared-memory skill** — agent CLI; monitor uses the same read routes via `httpx` plus local logs
 
 ---

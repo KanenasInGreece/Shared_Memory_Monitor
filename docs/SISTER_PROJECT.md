@@ -21,13 +21,15 @@ The monitor never imports framework Python code. **No third data path** in monit
 
 | Route | Purpose |
 |-------|---------|
-| `GET /health` | Infrastructure grid (embedder, LLM, daemons); `version` + `api_version` for client compat; non-secret `config` (LLM backends, pool tuning, affinity, embed cap) |
+| `GET /health` | Infrastructure grid (embedder, LLM, daemons); `version` + `api_version` for client compat; non-secret `config` (LLM backends + weights; **≥0.8.9** `has_credential` + optional `model`); multi-backend `llm_pool` / affinity |
 | `GET /memory/telemetry` | Pipeline metrics, `nrem`, `breakdown`, `spine`, `compliance`, `latency`, `entity_graph`, `consolidation` |
 | `POST /memory/graph` | Neo4j schema panels (read-only Cypher, server-side guard) |
 
-**Client API version:** Monitor **v0.5.5** sets `bridge.API_VERSION = 3` to match
+**Client API version:** Monitor **v0.7.4** sets `bridge.API_VERSION = 3` to match
 the **deployed** gateway `api_version` (framework **≥ 0.7.0** / enrichment rebuild
-+ relation calibration routes). Do not jump ahead of what live `/health` reports.
++ relation calibration routes). Full Status-sidebar telemetry (LLM local/external
+placement, entity-graph census, latency drawer) expects **framework ≥ 0.8.9**.
+Do not jump the wire contract ahead of what live `/health` reports.
 
 **Out of scope for `monitor:read`:** `POST /memory/relations/review` and
 `/memory/relations/label` are the operator calibration oracle for machine-minted

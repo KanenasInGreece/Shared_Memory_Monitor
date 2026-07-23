@@ -6,6 +6,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Install / doctor / agent docs** — `check-env` / doctor report modern telemetry
+  panels (`entity_graph`, `latency`, `spine`, `compliance`) and non-secret LLM
+  placement (`has_credential` → local/external counts). `install.sh` and
+  `install-systemd-user.sh` describe what a green doctor means on the dashboard;
+  README, `AGENTS.md`, sister contract, and `.env.example` aligned to **v0.7.4** /
+  framework **≥0.8.9** full UI (wire still **API 3** / ≥0.7.0).
+
 ## [0.7.4] - 2026-07-23
 
 **Compatible with Shared Memory Framework gateway ≥ v0.8.9 for new fields · wire

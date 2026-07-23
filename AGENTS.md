@@ -127,7 +127,28 @@ curl -sf "$COORDINATOR_URL/health" | head -c 200
 
 Expect: coordinator ok, telemetry ok, `read_role` ok (writes denied), token not borrowed
 from a skill identity when possible. `api server=N client=N compat=ok` when gateway
-reports `api_version`.
+reports `api_version` (this package speaks **API 3**).
+
+On a modern gateway (verified against **framework ≥0.8.9**), doctor should also name
+telemetry panels and LLM placement, e.g.:
+
+```text
+coordinator: ok · gateway 0.8.9 · api server=3 client=3 compat=ok · 2 LLM backends · llm_pool · placement local
+telemetry: ok · nrem+breakdown+consolidation+entity_graph+latency+spine+compliance
+```
+
+| Doctor signal | What the user sees on the dashboard |
+|---------------|-------------------------------------|
+| `placement local` / `external` | Infrastructure config line + **LLM pool** chips badge local/external (`has_credential`) |
+| `llm_pool` | Multi-backend pool panel (in-flight / routed % / free) |
+| `nrem` + `breakdown` | Backlog / NREM + Schema drawer Postgres panels |
+| `consolidation` | Consolidation tile + drawer |
+| `entity_graph` | Graph health band in Consolidation drawer |
+| `latency` | Throughput & latency drawer |
+| `spine` / `compliance` | First-write quality / schema conformance bands |
+
+Missing panel names mean an older gateway — the UI degrades (omits bands), not a hard fail.
+`placement n/a (gateway <0.8.9)` means config backends exist but without `has_credential`.
 
 ### Phase 4 — Start
 
@@ -152,11 +173,23 @@ Open **http://127.0.0.1:8765/** (`/diagram`, `/logs`).
 ```bash
 ./scripts/agent-status.sh
 curl -sf http://127.0.0.1:8765/api/meta | head -c 200
-curl -sf http://127.0.0.1:8765/api/health | head -c 200
+curl -sf http://127.0.0.1:8765/api/health | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+cfg = d.get('config') or {}
+print('summary:', cfg.get('summary'))
+print('backends:', [(b.get('label'), b.get('placement'), b.get('model'))
+                    for b in (cfg.get('backends') or [])])
+pool = d.get('llm_pool') or {}
+print('pool placement:', [(b.get('label'), b.get('placement'))
+                          for b in (pool.get('backends') or [])])
+"
 ```
 
 Report: unit active (if installed), dashboard HTTP 200, doctor features green enough
-for the user's setup (logs optional if remote).
+for the user's setup (logs optional if remote). On gateway ≥0.8.9, `config.summary`
+should include `local` and/or `external`; pool chips carry the same `placement`.
+Open **http://127.0.0.1:8765/** and confirm Infrastructure + **LLM pool** match that.
 
 ---
 
@@ -188,12 +221,14 @@ If only running foreground, stop and re-run `./scripts/run-loop.sh --serve --int
 
 ```bash
 ./scripts/agent-upgrade.sh           # pull main, uv sync, restart unit if present, status
-# or pin: ./scripts/agent-upgrade.sh --ref v0.5.2   # example tag
+# or pin: ./scripts/agent-upgrade.sh --ref v0.7.4   # example tag
 ```
 
 After upgrade, confirm `compat=ok` if the gateway bumped `api_version` — the monitor
 must advertise the **deployed** gateway contract (`bridge.API_VERSION`; currently **3**
-for framework ≥0.7.0), not an unreleased framework branch.
+for framework ≥0.7.0). For full Status-sidebar telemetry (LLM **local/external** badges,
+genuine entity census, REM fairness instruments) prefer **framework ≥0.8.9**; older
+gateways stay compatible on the wire and simply omit newer fields.
 
 ### Stop
 
@@ -211,6 +246,8 @@ systemctl --user stop shared-memory-monitor.service
 | write probe not denied | Token may be over-privileged — use `monitor:read` only |
 | gateway unreachable | Start framework gateway; check `COORDINATOR_URL` |
 | dashboard down, unit active | `journalctl --user -u shared-memory-monitor.service -n 50` |
+| no LLM pool / no placement badges | Single-backend or gateway before 0.6.1 omits pool; placement needs **≥0.8.9** `has_credential` on `config.llm_backends` |
+| doctor missing `entity_graph` / `latency` | Upgrade gateway; panels are optional and degrade cleanly |
 
 ---
 
@@ -236,13 +273,17 @@ tag; `gh release create vX.Y.Z --notes-file …`.
 |---------|--------|
 | Sole gateway HTTP client | `src/sm_telemetry_monitor/bridge.py` |
 | Env precedence (monitor `.env` wins token/URL) | `env_loader.py` |
-| Doctor / check | `doctor.py`, `scripts/check-env.sh` |
+| Doctor / check (panels + LLM placement) | `doctor.py`, `scripts/check-env.sh` |
+| Infrastructure + LLM pool/placement | `system_health.py` ← `/health` only |
 | Poll cache | `collector.py`, `store.py` |
 | UI transport `:8765` | `server.py`, `static/` |
 | Logs | `logs_reader.py` (journal + audit JSONL only) |
 
 - **No** direct Postgres/Neo4j credentials in this repo.
 - **No** imports of framework Python packages.
+- **No** LLM API keys in monitor `.env` — cloud credentials stay on the gateway
+  (`LLM_BACKENDS_JSON` / `token_env`); the monitor only shows non-secret
+  `has_credential` + `model` from `/health.config`.
 - Everything on screen derives from `/health`, `/memory/telemetry`, read-only graph, or
   framework log files the gateway writes.
 - If a metric is missing, fix the **framework** telemetry surface — not a monitor-side DB.

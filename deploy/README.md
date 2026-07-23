@@ -33,10 +33,16 @@ systemctl --user enable --now shared-memory-monitor.service
 
 ```bash
 systemctl --user status shared-memory-monitor.service
-curl -s http://127.0.0.1:8765/api/meta
+./scripts/agent-status.sh
+./scripts/check-env.sh          # gateway version · API compat · telemetry panels · LLM placement
+curl -s http://127.0.0.1:8765/api/meta | head -c 200
+# Optional: config summary + pool placement (gateway ≥0.8.9)
+curl -s http://127.0.0.1:8765/api/health | python3 -c "import sys,json;d=json.load(sys.stdin);print((d.get('config') or {}).get('summary'))"
 ```
 
 Stop a foreground copy first if port 8765 is busy: `fuser -k 8765/tcp`.
+
+Dashboard: **http://127.0.0.1:8765/** — Infrastructure shows gateway version / API / LLM backends · local|external; multi-backend installs show the LLM pool chips.
 
 See root [README.md](../README.md#running-as-a-service).
 

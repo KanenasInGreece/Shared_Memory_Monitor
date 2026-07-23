@@ -112,6 +112,27 @@ def _check_coordinator() -> dict[str, Any]:
         compat = "ok"
     else:
         compat = "incompatible"
+
+    # Non-secret /health.config.llm_backends (v0.6.1+; placement ≥0.8.9).
+    cfg = raw.get("config") if isinstance(raw.get("config"), dict) else {}
+    backends = cfg.get("llm_backends") if isinstance(cfg.get("llm_backends"), list) else []
+    n_backends = 0
+    n_local = 0
+    n_external = 0
+    has_placement = False
+    for b in backends:
+        if not isinstance(b, dict) or not b.get("url"):
+            continue
+        n_backends += 1
+        if "has_credential" in b:
+            has_placement = True
+            if b.get("has_credential") is True:
+                n_external += 1
+            elif b.get("has_credential") is False:
+                n_local += 1
+    pool = raw.get("llm_pool")
+    has_llm_pool = isinstance(pool, dict) and bool(pool)
+
     return {
         "ok": ok,
         "status": raw.get("status"),
@@ -120,6 +141,14 @@ def _check_coordinator() -> dict[str, Any]:
         "client_api_version": API_VERSION,
         "compat": compat,
         "error": sanitize_error(raw.get("error") or raw.get("message")) or None,
+        "has_llm_config": n_backends > 0,
+        "llm_backend_count": n_backends,
+        "has_llm_pool": has_llm_pool,
+        "has_llm_placement": has_placement,
+        "llm_local_count": n_local if has_placement else None,
+        "llm_external_count": n_external if has_placement else None,
+        "has_consolidation_health": isinstance(raw.get("consolidation"), dict),
+        "inference_busy": raw.get("inference_busy"),
     }
 
 
@@ -131,6 +160,10 @@ def _check_telemetry() -> dict[str, Any]:
     nrem = t.get("nrem") if isinstance(t.get("nrem"), dict) else {}
     bd = t.get("breakdown") if isinstance(t.get("breakdown"), dict) else {}
     cons = t.get("consolidation") if isinstance(t.get("consolidation"), dict) else {}
+    eg = t.get("entity_graph") if isinstance(t.get("entity_graph"), dict) else {}
+    lat = t.get("latency") if isinstance(t.get("latency"), dict) else {}
+    spine = t.get("spine") if isinstance(t.get("spine"), dict) else {}
+    compliance = t.get("compliance") if isinstance(t.get("compliance"), dict) else {}
     return {
         "ok": ok,
         "status": payload.get("status"),
@@ -138,6 +171,10 @@ def _check_telemetry() -> dict[str, Any]:
         "has_nrem": bool(nrem) and "error" not in nrem,
         "has_breakdown": bool(bd) and "error" not in bd,
         "has_consolidation": bool(cons) and "error" not in cons,
+        "has_entity_graph": bool(eg) and "error" not in eg,
+        "has_latency": bool(lat) and "error" not in lat,
+        "has_spine": bool(spine) and "error" not in spine,
+        "has_compliance": bool(compliance) and "error" not in compliance,
     }
 
 
@@ -359,10 +396,39 @@ def format_report(report: dict[str, Any]) -> str:
                 bits.append(f"gateway {ver}")
             if srv is not None or cli is not None:
                 bits.append(f"api server={srv} client={cli} compat={compat}")
+            if block.get("has_llm_config"):
+                n = block.get("llm_backend_count")
+                bits.append(f"{n} LLM backend" + ("s" if n != 1 else ""))
+            if block.get("has_llm_pool"):
+                bits.append("llm_pool")
+            if block.get("has_llm_placement"):
+                loc = block.get("llm_local_count") or 0
+                ext = block.get("llm_external_count") or 0
+                if loc and ext:
+                    bits.append(f"placement {loc} local/{ext} external")
+                elif ext:
+                    bits.append("placement external")
+                else:
+                    bits.append("placement local")
+            elif block.get("has_llm_config"):
+                bits.append("placement n/a (gateway <0.8.9)")
             if bits:
                 extra = (extra + " · " + " · ".join(bits)) if extra else " · " + " · ".join(bits)
-        if name == "telemetry" and block.get("has_breakdown"):
-            extra = (extra + " · breakdown ok") if extra else " · breakdown ok"
+        if name == "telemetry":
+            panels = []
+            for key, label in (
+                ("has_nrem", "nrem"),
+                ("has_breakdown", "breakdown"),
+                ("has_consolidation", "consolidation"),
+                ("has_entity_graph", "entity_graph"),
+                ("has_latency", "latency"),
+                ("has_spine", "spine"),
+                ("has_compliance", "compliance"),
+            ):
+                if block.get(key):
+                    panels.append(label)
+            if panels:
+                extra = (extra + " · " + "+".join(panels)) if extra else " · " + "+".join(panels)
         lines.append(f"  {name}: {mark}{extra}")
 
     lj = report["logs"]["journal"]
