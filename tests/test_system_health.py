@@ -172,15 +172,44 @@ class LlmInferenceBusyTests(unittest.TestCase):
         llm = self._llm(snap)
         self.assertEqual(llm["state"], "warn")
         self.assertNotEqual(snap["status"], "critical")
+        self.assertEqual(snap["status"], "warn")
 
     def test_probe_down_and_gpu_idle_is_critical(self):
         snap = self._snap({**_healthy_gateway(), "llm": "down", "inference_busy": "idle"})
         self.assertEqual(self._llm(snap)["state"], "bad")
         self.assertEqual(snap["status"], "critical")
 
+    def test_healthy_gateway_with_rem_backlog_is_status_ok(self):
+        # Live false-positive class (fact 902): gateway ok + REM queue must not
+        # paint /api/health status=warn — hero owns "upcoming" narrative.
+        health = {
+            **_pool_gateway(inflight5000=1),
+            "inference_busy": "busy",
+            "consolidation": {
+                "stalled": False, "fresh": True, "stalled_types": [],
+                "last_outcome": "completed",
+            },
+        }
+        with patch("sm_telemetry_monitor.system_health._rem_trend", return_value="flat"), \
+             patch("sm_telemetry_monitor.system_health.get_telemetry",
+                   return_value=self._telemetry_payload()), \
+             patch("sm_telemetry_monitor.system_health.live_summary",
+                   return_value={"latest": {
+                       "rem_backlog": 2,
+                       "facts_rem_pending": 2,
+                       "decisions_rem_pending": 0,
+                       "nrem_backlog": 2,
+                   }}), \
+             patch("sm_telemetry_monitor.system_health.get_health", return_value=health):
+            snap = system_health_snapshot()
+        self.assertEqual(snap["status"], "ok")
+        rem = next(c for c in snap["components"] if c["key"] == "rem_daemon")
+        self.assertEqual(rem["state"], "ok")
+        self.assertIn("queued", rem["workload"]["value"])
+
 
 class RemTileTests(unittest.TestCase):
-    """REM tile warns only on a genuine stall (GPU free, backlog not draining)."""
+    """REM backlog is a process variable (decision 903) — never deck-elevating warn."""
 
     def _rem(self, backlog, *, inference_busy="idle", rem_trend="insufficient", llm="ok"):
         raw = {"rem_daemon": "running", "llm": llm}
@@ -210,10 +239,12 @@ class RemTileTests(unittest.TestCase):
         self.assertEqual(w["state"], "ok")
         self.assertIn("queued", w["value"])
 
-    def test_free_gpu_not_draining_warns(self):
+    def test_free_gpu_flat_backlog_is_queued_not_warn(self):
+        # Client rem_drain flat is not rem_stalled telemetry — ok process variable.
         w = self._rem(6, inference_busy="idle", rem_trend="flat")
-        self.assertEqual(w["state"], "warn")
-        self.assertIn("stalled", w["value"])
+        self.assertEqual(w["state"], "ok")
+        self.assertIn("queued", w["value"])
+        self.assertIn("no net drain", w["caption"])
 
     def test_no_backlog_data_is_unknown(self):
         self.assertEqual(self._rem(None)["state"], "unknown")
@@ -445,14 +476,14 @@ class LlmPoolTests(unittest.TestCase):
         self.assertIn("deferring", w["value"])
         self.assertIn("pool busy", w["caption"])
 
-    def test_rem_stall_detected_despite_gpu_busy(self):
-        # The pre-pool trap: nvtop reads busy because REM itself (or a direct
-        # chat) holds one card, but a pool slot is free — flat backlog is a
-        # genuine stall and must warn, not hide behind "GPU busy".
+    def test_rem_flat_with_free_slot_is_queued_not_warn(self):
+        # Pool free + flat backlog: upcoming work / slow drain, not deck warn
+        # (decision 903 — no gateway rem_stalled yet).
         w = self._rem(_pool_gateway(inflight5000=1), inference_busy="busy",
                       rem_trend="flat")
-        self.assertEqual(w["state"], "warn")
-        self.assertIn("stalled", w["value"])
+        self.assertEqual(w["state"], "ok")
+        self.assertIn("queued", w["value"])
+        self.assertIn("no net drain", w["caption"])
 
     def test_rem_draining_with_free_slot_is_ok(self):
         w = self._rem(_pool_gateway(inflight5000=1), inference_busy="busy",

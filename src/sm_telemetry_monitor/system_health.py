@@ -550,9 +550,13 @@ def _workload_part(key: str, raw: dict, t: dict, *, nrem_stalled: bool = False,
             if llm_pool["free"] == 0:
                 return {"value": f"{rem_q} deferring", "state": "ok",
                         "caption": "REM backlog · LLM pool busy"}
+            # Flat backlog with a free slot is process-variable (upcoming work /
+            # slow drain), not an alarm — no rem_stalled on gateway yet. Hero
+            # owns "what's upcoming"; do not yellow the tile or the deck
+            # (decision 903 / fact 902).
             if rem_trend == "flat":
-                return {"value": f"{rem_q} stalled", "state": "warn",
-                        "caption": "REM backlog · pool slot free, not draining"}
+                return {"value": f"{rem_q} queued", "state": "ok",
+                        "caption": "REM backlog · pool free · no net drain yet"}
             if rem_trend == "draining":
                 return {"value": f"{rem_q} draining", "state": "ok", "caption": "REM backlog"}
             return {"value": f"{rem_q} queued", "state": "ok", "caption": "REM backlog"}
@@ -562,10 +566,11 @@ def _workload_part(key: str, raw: dict, t: dict, *, nrem_stalled: bool = False,
         if inference_busy == "busy":
             return {"value": f"{rem_q} deferring", "state": "ok",
                     "caption": "REM backlog · GPU busy"}
-        # GPU idle/unknown: REM should be working the backlog down.
+        # GPU idle/unknown: backlog is still upcoming work until the gateway
+        # exposes rem_stalled — never promote client rem_drain flat to warn.
         if rem_trend == "flat":
-            return {"value": f"{rem_q} stalled", "state": "warn",
-                    "caption": "REM backlog · GPU free, not draining"}
+            return {"value": f"{rem_q} queued", "state": "ok",
+                    "caption": "REM backlog · GPU free · no net drain yet"}
         if rem_trend == "draining":
             return {"value": f"{rem_q} draining", "state": "ok", "caption": "REM backlog"}
         # insufficient history — can't tell stall from normal poll-gap lag; don't warn.
@@ -765,6 +770,28 @@ def _consolidation_status(consolidation: dict | None) -> str | None:
     return None
 
 
+def _component_fault_level(component: dict) -> str | None:
+    """Deck-elevating fault from one infra component, or None.
+
+    Decision 903: overall status tracks gateway-class health. Dream-cycle
+    backlog (REM/NREM workload) is a process variable — hero + tile text show
+    upcoming work; it must not paint the deck warn. Elevate only process-down,
+    blocked paths (workload bad), and infra warn on gateway/embedder/reranker/llm
+    (failed/degraded backends, outbox, probe saturation, wedge).
+    """
+    key = component.get("key")
+    proc = (component.get("process") or {}).get("state")
+    load = (component.get("workload") or {}).get("state")
+    if proc == "bad" or load == "bad":
+        return "critical"
+    # REM/NREM: process down already handled; backlog/stall heuristics stay local.
+    if key in ("rem_daemon", "nrem_daemon"):
+        return None
+    if proc == "warn" or load == "warn":
+        return "warn"
+    return None
+
+
 def _overall_state(
     components: list[dict],
     *,
@@ -773,15 +800,19 @@ def _overall_state(
 ) -> str:
     if not reachable:
         return "critical"
-    states = [c["state"] for c in components]
-    if "bad" in states:
-        return "critical"
+    worst = "ok"
+    rank = {"ok": 0, "warn": 1, "critical": 2}
+    for c in components:
+        level = _component_fault_level(c)
+        if level and rank[level] > rank[worst]:
+            worst = level
     cons = _consolidation_status(consolidation)
     if cons == "critical":
         return "critical"
-    if "warn" in states or "unknown" in states or cons == "warn":
-        return "warn"
-    return "ok"
+    if cons == "warn" and rank["warn"] > rank[worst]:
+        worst = "warn"
+    # "unknown" alone does not elevate — missing optional fields are not faults.
+    return worst
 
 
 def system_health_snapshot() -> dict:

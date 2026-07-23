@@ -6,6 +6,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.6] - 2026-07-23
+
+**Compatible with Shared Memory Framework gateway ≥ v0.8.9 for new fields · wire
+contract API v3 unchanged.** Overall status tracks gateway-class health.
+
+### Changed
+
+- **Overall status contract (decision 903 / fact 902)** — `/api/health` `status`
+  tracks gateway-class health only: process down, blocked paths, failed/degraded
+  backends, consolidation telemetry stall/stale. **REM/NREM backlog** (including
+  client `rem_drain` flat) is a process variable — tile text may say `N queued`
+  with “no net drain yet”, but it no longer yellows the tile or elevates deck
+  `status` to `warn`. Hero banner remains the home for “what’s upcoming”
+  (REM/NREM-saturated). Missing optional fields (`unknown`) no longer elevate.
+
 ## [0.7.5] - 2026-07-23
 
 **Compatible with Shared Memory Framework gateway ≥ v0.8.9 for new fields · wire
