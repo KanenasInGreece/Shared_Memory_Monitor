@@ -302,6 +302,11 @@
     <p id="schema-loading" class="schema-loading">Loading schema data…</p>
     <div id="schema-content" class="schema-content" hidden>
       <div id="schema-errors" class="schema-errors" hidden></div>
+      <section class="schema-block" id="schema-integrity-block" hidden>
+        <h3 class="schema-block-title">Graph integrity</h3>
+        <p class="consolidation-note consolidation-note-lead">Defects detected in the graph structure. These are not transient queues — non-zero counts mean a writer broke an invariant and a human must fix the data.</p>
+        <div class="consolidation-summary" id="schema-integrity-kpis"></div>
+      </section>
       <section class="schema-block">
         <h3 class="schema-block-title">Neo4j graph</h3>
         <div class="schema-charts g2">
@@ -578,6 +583,7 @@ function renderFirstWriteQuality(C) {
     integ.push(["Duplicate checks run", String(q.alias_adjudications)]);
     if (q.alias_merged != null) integ.push(["— merged as duplicates", String(q.alias_merged)]);
     if (q.alias_distinct != null) integ.push(["— kept distinct", String(q.alias_distinct)]);
+    if (q.alias_label_mismatch != null) integ.push(["— label mismatch (rejected)", String(q.alias_label_mismatch), q.alias_label_mismatch > 0 ? "warn" : null]);
   }
   // Abandoned writes: a record the outbox worker gave up applying to the graph.
   // None is the healthy case; any age at all is worth flagging.
@@ -592,8 +598,14 @@ function renderFirstWriteQuality(C) {
       integ.push(["Schema conformance", "within vocabulary"]);
     } else {
       const bits = [];
-      if (conf.invalid_label_total) bits.push(`${conf.invalid_label_total} labels`);
-      if (conf.invalid_relationship_total) bits.push(`${conf.invalid_relationship_total} links`);
+      if (conf.invalid_label_total) {
+        const labels = (conf.invalid_labels || []).map(x => x.name || x).join(", ");
+        bits.push(`${conf.invalid_label_total} labels (${labels})`);
+      }
+      if (conf.invalid_relationship_total) {
+        const rels = (conf.invalid_relationships || []).map(x => x.name || x).join(", ");
+        bits.push(`${conf.invalid_relationship_total} links (${rels})`);
+      }
       integ.push(["Off-vocabulary writes", bits.join(" · ") || "present", true]);
     }
   }
@@ -1288,6 +1300,59 @@ function renderLlmPool(H) {
   }
 }
 
+function renderGraphIntegrity(H) {
+  const btn = document.getElementById("schema-open");
+  const block = document.getElementById("schema-integrity-block");
+  const box = document.getElementById("schema-integrity-kpis");
+  if (!btn || !block || !box) return;
+
+  const inval = H?.graph_invalid_nodes;
+  const gi = H?.graph_integrity;
+
+  let hasError = false;
+  if ((inval != null && inval > 0) || (gi && gi.error)) {
+    hasError = true;
+  } else if (gi) {
+    for (const [k, v] of Object.entries(gi)) {
+      if (k !== "error" && typeof v === "number" && v > 0) {
+        hasError = true;
+      }
+    }
+  }
+
+  if (hasError) {
+    btn.classList.add("warn");
+  } else {
+    btn.classList.remove("warn");
+  }
+
+  if (inval != null || gi) {
+    block.hidden = false;
+    const kpis = [];
+    if (inval != null) {
+      kpis.push(["Invalid nodes", String(inval), inval > 0 ? "warn" : null]);
+    } else {
+      kpis.push(["Invalid nodes", "not probed yet"]);
+    }
+    
+    if (gi) {
+      if (gi.error) {
+         kpis.push(["Integrity check", gi.error, "warn"]);
+      }
+      for (const [k, v] of Object.entries(gi)) {
+         if (k === "error") continue;
+         const tone = (typeof v === "number" && v > 0) ? "warn" : null;
+         // Capitalize key if it's string
+         const kName = k.replace(/_/g, " ").replace(/^./, str => str.toUpperCase());
+         kpis.push([kName, String(v), tone]);
+      }
+    }
+    box.innerHTML = consolidationKpiHtml(kpis);
+  } else {
+    block.hidden = true;
+  }
+}
+
 function renderSystemHealth(H) {
   const status = H?.status || "unknown";
   consolidationStalled = !!(H?.consolidation?.tile?.stalled);
@@ -1295,6 +1360,7 @@ function renderSystemHealth(H) {
   renderBackup(H);
   renderConsolidation(H?.consolidation || null);
   renderLlmPool(H);
+  renderGraphIntegrity(H);
 
   const byKey = Object.fromEntries((H?.components || []).map(c => [c.key, c]));
   document.querySelectorAll("#system-health-row .health-item").forEach(el => {

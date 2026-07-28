@@ -797,6 +797,8 @@ def _overall_state(
     *,
     reachable: bool,
     consolidation: dict | None = None,
+    graph_invalid_nodes: int | None = None,
+    graph_integrity: dict | None = None,
 ) -> str:
     if not reachable:
         return "critical"
@@ -811,6 +813,18 @@ def _overall_state(
         return "critical"
     if cons == "warn" and rank["warn"] > rank[worst]:
         worst = "warn"
+    if graph_invalid_nodes and graph_invalid_nodes > 0:
+        if rank["warn"] > rank[worst]:
+            worst = "warn"
+    if isinstance(graph_integrity, dict):
+        if graph_integrity.get("error"):
+            if rank["warn"] > rank[worst]:
+                worst = "warn"
+        else:
+            for k, v in graph_integrity.items():
+                if k != "error" and isinstance(v, int) and v > 0:
+                    if rank["warn"] > rank[worst]:
+                        worst = "warn"
     # "unknown" alone does not elevate — missing optional fields are not faults.
     return worst
 
@@ -859,7 +873,16 @@ def system_health_snapshot() -> dict:
         for key, field, label, kind in _INFRA_COMPONENTS
     ]
     backup = _backup_part(raw, reachable=True, last=last_backup)
-    status = _overall_state(components, reachable=True, consolidation=consolidation)
+    graph_invalid_nodes = raw.get("graph_invalid_nodes")
+    graph_integrity = (telemetry_payload or {}).get("telemetry", {}).get("graph_integrity")
+    
+    status = _overall_state(
+        components,
+        reachable=True,
+        consolidation=consolidation,
+        graph_invalid_nodes=graph_invalid_nodes,
+        graph_integrity=graph_integrity,
+    )
 
     return {
         "status": status,
@@ -879,4 +902,6 @@ def system_health_snapshot() -> dict:
         "backup": backup,
         "consolidation": consolidation,
         "error": sanitize_error(raw.get("error")) or None,
+        "graph_invalid_nodes": raw.get("graph_invalid_nodes"),
+        "graph_integrity": (telemetry_payload or {}).get("telemetry", {}).get("graph_integrity"),
     }

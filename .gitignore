@@ -38,3 +38,8 @@ graphs/*
 docs/GITHUB.md
 docs/GATEWAY_AUDIT_HANDOFF.md
 docs/archive/
+
+# Agent constitution files & local config
+AGENTS.md
+GEMINI.md
+.gemini/

@@ -350,6 +350,7 @@ def _first_write_quality(spine: dict | None, postgres: dict | None = None) -> di
         "alias_adjudications": alias.get("adjudications"),
         "alias_merged": verdict.get("alias"),
         "alias_distinct": verdict.get("distinct"),
+        "alias_label_mismatch": verdict.get("label_mismatch"),
         # Dead-letter age: a write the outbox worker gave up applying to Neo4j.
         # None (the healthy case) means nothing is stuck.
         "dead_letter_age_seconds": dead_letter_age,

@@ -6,6 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.10] - 2026-07-28
+
+### Added
+
+- **Graph Integrity Telemetry** — Exposed `graph_invalid_nodes` (from `/health`) and `graph_integrity` (from `/memory/telemetry`) in the Schema breakdown drawer.
+- **Defect Escalation** — Escalated the overall system status to `warn` and highlighted the Schema breakdown drawer button when graph integrity defects are detected.
+
 ## [0.7.9] - 2026-07-23
 
 ### Added
