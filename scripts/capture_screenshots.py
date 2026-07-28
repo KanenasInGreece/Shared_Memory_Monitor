@@ -36,13 +36,13 @@ PAGES: list[PageSpec] = [
         "name": "schema-breakdown.png",
         "path": "/?schema=1&capture=1",
         "viewport": {"width": 1440, "height": 900},
-        "element": "#schema-content",
+        "element": "#schema-drawer",
     },
     {
         "name": "consolidation.png",
         "path": "/",
         "viewport": {"width": 1440, "height": 900},
-        "element": "#consolidation-content",
+        "element": "#consolidation-drawer",
         "open": "#consolidation-card",
     },
     {
