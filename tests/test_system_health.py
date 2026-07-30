@@ -603,5 +603,45 @@ class RemDrainSignalTests(unittest.TestCase):
         self.assertEqual(rem_drain_signal(s, window_s=300), "insufficient")
 
 
+class GraphIntegrityHealthTests(unittest.TestCase):
+    def _telemetry_payload(self, integrity=None):
+        t = {
+            "consolidation": {
+                "insight": {"stalled": False, "consecutive_failures": 0},
+                "fact_consolidation": {"stalled": False, "consecutive_failures": 0},
+            },
+        }
+        if integrity is not None:
+            t["graph_integrity"] = integrity
+        return {"status": "success", "telemetry": t}
+
+    @patch("sm_telemetry_monitor.system_health.get_telemetry")
+    @patch("sm_telemetry_monitor.system_health.live_summary", return_value={"latest": {}})
+    @patch("sm_telemetry_monitor.system_health.get_health")
+    def test_top_level_graph_invalid_nodes_triggers_warn(self, mock_health, _summary, mock_telemetry):
+        mock_health.return_value = {**_healthy_gateway(), "graph_invalid_nodes": 3}
+        mock_telemetry.return_value = self._telemetry_payload({
+            "invalid_nodes": 3, "by_reason": {"label_mismatch:Fact!=Decision": 3}, "clean": False
+        })
+        snap = system_health_snapshot()
+        self.assertEqual(snap["status"], "warn")
+        self.assertEqual(snap["graph_invalid_nodes"], 3)
+        self.assertIsNotNone(snap["graph_integrity"])
+        self.assertFalse(snap["graph_integrity"]["clean"])
+
+    @patch("sm_telemetry_monitor.system_health.get_telemetry")
+    @patch("sm_telemetry_monitor.system_health.live_summary", return_value={"latest": {}})
+    @patch("sm_telemetry_monitor.system_health.get_health")
+    def test_clean_graph_integrity_stays_ok(self, mock_health, _summary, mock_telemetry):
+        mock_health.return_value = {**_healthy_gateway(), "graph_invalid_nodes": 0}
+        mock_telemetry.return_value = self._telemetry_payload({
+            "invalid_nodes": 0, "by_reason": {}, "by_label": {}, "clean": True
+        })
+        snap = system_health_snapshot()
+        self.assertEqual(snap["status"], "ok")
+        self.assertEqual(snap["graph_invalid_nodes"], 0)
+        self.assertTrue(snap["graph_integrity"]["clean"])
+
+
 if __name__ == "__main__":
     unittest.main()

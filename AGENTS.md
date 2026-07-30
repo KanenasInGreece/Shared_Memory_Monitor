@@ -133,8 +133,8 @@ On a modern gateway (verified against **framework ≥0.8.9**), doctor should als
 telemetry panels and LLM placement, e.g.:
 
 ```text
-coordinator: ok · gateway 0.8.9 · api server=3 client=3 compat=ok · 2 LLM backends · llm_pool · placement local
-telemetry: ok · nrem+breakdown+consolidation+entity_graph+latency+spine+compliance
+coordinator: ok · gateway 0.8.17 · api server=3 client=3 compat=ok · 2 LLM backends · llm_pool · placement local
+telemetry: ok · nrem+breakdown+consolidation+entity_graph+latency+spine+compliance+graph_integrity
 ```
 
 | Doctor signal | What the user sees on the dashboard |
@@ -146,6 +146,7 @@ telemetry: ok · nrem+breakdown+consolidation+entity_graph+latency+spine+complia
 | `entity_graph` | Graph health band in Consolidation drawer |
 | `latency` | Throughput & latency drawer |
 | `spine` / `compliance` | First-write quality / schema conformance bands |
+| `graph_integrity` | Graph integrity band in Schema drawer (write-path defect detection) |
 
 Missing panel names mean an older gateway — the UI degrades (omits bands), not a hard fail.
 `placement n/a (gateway <0.8.9)` means config backends exist but without `has_credential`.

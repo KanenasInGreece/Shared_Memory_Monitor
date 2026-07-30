@@ -164,6 +164,7 @@ def _check_telemetry() -> dict[str, Any]:
     lat = t.get("latency") if isinstance(t.get("latency"), dict) else {}
     spine = t.get("spine") if isinstance(t.get("spine"), dict) else {}
     compliance = t.get("compliance") if isinstance(t.get("compliance"), dict) else {}
+    gi = t.get("graph_integrity") if isinstance(t.get("graph_integrity"), dict) else {}
     return {
         "ok": ok,
         "status": payload.get("status"),
@@ -175,6 +176,7 @@ def _check_telemetry() -> dict[str, Any]:
         "has_latency": bool(lat) and "error" not in lat,
         "has_spine": bool(spine) and "error" not in spine,
         "has_compliance": bool(compliance) and "error" not in compliance,
+        "has_graph_integrity": bool(gi) and "error" not in gi,
     }
 
 
@@ -424,6 +426,7 @@ def format_report(report: dict[str, Any]) -> str:
                 ("has_latency", "latency"),
                 ("has_spine", "spine"),
                 ("has_compliance", "compliance"),
+                ("has_graph_integrity", "graph_integrity"),
             ):
                 if block.get(key):
                     panels.append(label)

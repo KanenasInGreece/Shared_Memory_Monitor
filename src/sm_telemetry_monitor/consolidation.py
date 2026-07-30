@@ -319,6 +319,7 @@ def _first_write_quality(spine: dict | None, postgres: dict | None = None) -> di
     pg = postgres if isinstance(postgres, dict) else {}
     dec = sp.get("decisions") if isinstance(sp.get("decisions"), dict) else {}
     fac = sp.get("facts") if isinstance(sp.get("facts"), dict) else {}
+    ret = sp.get("retrospectives") if isinstance(sp.get("retrospectives"), dict) else {}
 
     emergent: list[dict] = []
     for e in sp.get("emergent_unprojected_fields") or []:
@@ -330,7 +331,7 @@ def _first_write_quality(spine: dict | None, postgres: dict | None = None) -> di
 
     dead_letter_age = pg.get("outbox_failed_oldest_age_seconds")
 
-    present = bool(dec) or bool(fac)
+    present = bool(dec) or bool(fac) or bool(ret)
     return {
         "present": present,
         "decisions": {
@@ -344,6 +345,13 @@ def _first_write_quality(spine: dict | None, postgres: dict | None = None) -> di
             "total": fac.get("total"),
             "source_ref_pct": fac.get("source_ref_pct"),
             "elicited_pct": fac.get("elicited_pct"),
+        },
+        "retrospectives": {
+            "total": ret.get("total"),
+            "rating_pct": ret.get("rating_pct"),
+            "target_pg_id_pct": ret.get("target_pg_id_pct"),
+            "grounded_in_pct": ret.get("grounded_in_pct"),
+            "elicited_pct": ret.get("elicited_pct"),
         },
         "emergent_fields": emergent[:8],
         "emergent_count": len(emergent),

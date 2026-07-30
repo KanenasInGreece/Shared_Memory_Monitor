@@ -6,6 +6,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.11] - 2026-07-30
+
+### Added
+
+- **Retrospectives Completeness Metrics (Fact 946)** — Extended `first_write_quality` completeness in `consolidation.py` and `dashboard.html` to clearly separate fill-rate metrics per **DECISION**, **FACT**, and **RETROSPECTIVE** record types (`rating_pct`, `target_pg_id_pct`, `grounded_in_pct`, `elicited_pct`).
+- **Doctor Telemetry Panel Detection** — Added `has_graph_integrity` probe to `doctor.py` so environment checks report `graph_integrity` alongside other telemetry panels for framework gateways ≥v0.8.14.
+
+### Fixed
+
+- **Graph Integrity Rendering** — Cleaned up `by_reason` and `by_label` KPI formatting in `dashboard.html` (`Reason ×count`, `Label ×count`) to prevent `[object Object]` stringification.
+- **Top-Level Health Field Resolution** — Added top-level `graph_invalid_nodes` lookup from `/health` (v0.8.15+) with fallback to `consolidation.graph_invalid_nodes` for backwards compatibility.
+
 ## [0.7.10] - 2026-07-28
 
 ### Added

@@ -820,11 +820,13 @@ def _overall_state(
         if graph_integrity.get("error"):
             if rank["warn"] > rank[worst]:
                 worst = "warn"
-        else:
-            for k, v in graph_integrity.items():
-                if k != "error" and isinstance(v, int) and v > 0:
-                    if rank["warn"] > rank[worst]:
-                        worst = "warn"
+        elif graph_integrity.get("clean") is False or (
+            isinstance(graph_integrity.get("invalid_nodes"), int)
+            and not isinstance(graph_integrity.get("invalid_nodes"), bool)
+            and graph_integrity["invalid_nodes"] > 0
+        ):
+            if rank["warn"] > rank[worst]:
+                worst = "warn"
     # "unknown" alone does not elevate — missing optional fields are not faults.
     return worst
 
@@ -874,6 +876,8 @@ def system_health_snapshot() -> dict:
     ]
     backup = _backup_part(raw, reachable=True, last=last_backup)
     graph_invalid_nodes = raw.get("graph_invalid_nodes")
+    if graph_invalid_nodes is None and isinstance(raw.get("consolidation"), dict):
+        graph_invalid_nodes = raw.get("consolidation", {}).get("graph_invalid_nodes")
     graph_integrity = (telemetry_payload or {}).get("telemetry", {}).get("graph_integrity")
     
     status = _overall_state(

@@ -389,6 +389,7 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
                                   "alternatives_pct": 76.3, "confidence_pct": 83.7,
                                   "elicited_pct": 2.1},
                     "facts": {"total": 285, "source_ref_pct": 6.7, "elicited_pct": 0.7},
+                    "retrospectives": {"total": 150, "rating_pct": 100.0, "target_pg_id_pct": 100.0, "grounded_in_pct": 18.0, "elicited_pct": 15.0},
                     "emergent_unprojected_fields": [
                         {"key": "connected_from", "n": 193},
                         {"key": "principal", "n": 193},
@@ -401,6 +402,8 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         self.assertTrue(q["present"])
         self.assertEqual(q["decisions"]["grounded_in_pct"], 4.2)
         self.assertEqual(q["facts"]["source_ref_pct"], 6.7)
+        self.assertEqual(q["retrospectives"]["rating_pct"], 100.0)
+        self.assertEqual(q["retrospectives"]["total"], 150)
         self.assertEqual(q["emergent_count"], 2)
         self.assertEqual(q["alias_merged"], 381)
         self.assertEqual(q["alias_distinct"], 231)

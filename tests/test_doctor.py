@@ -72,6 +72,7 @@ class DoctorTests(unittest.TestCase):
                 "latency": {"rem_ms": {}},
                 "spine": {"facts": {}},
                 "compliance": {"label_compliance": 1.0},
+                "graph_integrity": {"invalid_nodes": 0, "clean": True},
             },
         }):
             from sm_telemetry_monitor.doctor import _check_telemetry
@@ -83,6 +84,7 @@ class DoctorTests(unittest.TestCase):
         self.assertTrue(block["has_latency"])
         self.assertTrue(block["has_spine"])
         self.assertTrue(block["has_compliance"])
+        self.assertTrue(block["has_graph_integrity"])
 
     def test_dashboard_history_ready_when_samples(self):
         checks = {

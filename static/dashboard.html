@@ -540,9 +540,8 @@ function renderFirstWriteQuality(C) {
   // rate means elicitation isn't landing, so flag it as the actionable signal.
   const lowFill = p => p != null && p < 50;
 
-  // Completeness — spine.facts is the framework's non-decision bucket (facts +
-  // retrospectives + other types after retro-as-record / API v2), not "facts only".
-  const dec = q.decisions || {}, fac = q.facts || {};
+  // Completeness — spine metrics per DECISION, FACT, and RETROSPECTIVE record type.
+  const dec = q.decisions || {}, fac = q.facts || {}, ret = q.retrospectives || {};
   const comp = [];
   if (dec.total != null) {
     comp.push(["Decisions written", String(dec.total)]);
@@ -554,11 +553,18 @@ function renderFirstWriteQuality(C) {
     }
   }
   if (fac.total != null) {
-    comp.push(["Non-decision records", String(fac.total)]);
+    comp.push(["Facts written", String(fac.total)]);
     comp.push(["— with a citation", pct(fac.source_ref_pct), lowFill(fac.source_ref_pct)]);
     if (fac.elicited_pct != null) {
       comp.push(["— elicited at write", pct(fac.elicited_pct), lowFill(fac.elicited_pct)]);
     }
+  }
+  if (ret.total != null) {
+    comp.push(["Retrospectives written", String(ret.total)]);
+    if (ret.rating_pct != null) comp.push(["— with outcome rating", pct(ret.rating_pct), lowFill(ret.rating_pct)]);
+    if (ret.target_pg_id_pct != null) comp.push(["— with target record", pct(ret.target_pg_id_pct), lowFill(ret.target_pg_id_pct)]);
+    if (ret.grounded_in_pct != null) comp.push(["— with evidence cited", pct(ret.grounded_in_pct), lowFill(ret.grounded_in_pct)]);
+    if (ret.elicited_pct != null) comp.push(["— elicited at write", pct(ret.elicited_pct), lowFill(ret.elicited_pct)]);
   }
   document.getElementById("consolidation-fwq-complete").innerHTML =
     comp.length ? consolidationKpiHtml(comp) : `<div class="consolidation-kpi"><span class="k">Completeness</span><span class="v">no data</span></div>`;
@@ -614,9 +620,8 @@ function renderFirstWriteQuality(C) {
   // Note — explain the story + name the off-vocabulary offenders when present
   const note = document.getElementById("consolidation-fwq-note");
   if (note) {
-    let txt = "Completeness is measured against the fields the write path prompts for, so a low rate points to elicitation, not to the record's author. "
+    let txt = "Completeness is measured per record type (Decision, Fact, Retrospective) against the fields the write path prompts for. "
       + "Elicited % is how often the operator was asked for those fields at save time. "
-      + "Non-decision records are the gateway's spine bucket for everything that is not a decision (facts, retrospectives, and other types) — not a pure fact count. "
       + "Schema-growth keys are promotion candidates, not errors. ";
     if (conf.present && !conf.compliant) {
       const labs = (conf.invalid_labels || []).slice(0, 4).map(x => x.name).join(", ");
@@ -1313,10 +1318,11 @@ function renderGraphIntegrity(H) {
   if ((inval != null && inval > 0) || (gi && gi.error)) {
     hasError = true;
   } else if (gi) {
-    for (const [k, v] of Object.entries(gi)) {
-      if (k !== "error" && typeof v === "number" && v > 0) {
-        hasError = true;
-      }
+    if (typeof gi.invalid_nodes === "number" && gi.invalid_nodes > 0) {
+      hasError = true;
+    }
+    if (gi.clean === false) {
+      hasError = true;
     }
   }
 
@@ -1329,22 +1335,36 @@ function renderGraphIntegrity(H) {
   if (inval != null || gi) {
     block.hidden = false;
     const kpis = [];
-    if (inval != null) {
-      kpis.push(["Invalid nodes", String(inval), inval > 0 ? "warn" : null]);
+    const totalInvalid = (gi && typeof gi.invalid_nodes === "number") ? gi.invalid_nodes : inval;
+    if (totalInvalid != null) {
+      kpis.push([
+        "Invalid nodes",
+        totalInvalid === 0 ? "0 (clean)" : String(totalInvalid),
+        totalInvalid > 0 ? "warn" : null
+      ]);
     } else {
       kpis.push(["Invalid nodes", "not probed yet"]);
     }
     
     if (gi) {
       if (gi.error) {
-         kpis.push(["Integrity check", gi.error, "warn"]);
+        kpis.push(["Integrity check", gi.error, "warn"]);
       }
-      for (const [k, v] of Object.entries(gi)) {
-         if (k === "error") continue;
-         const tone = (typeof v === "number" && v > 0) ? "warn" : null;
-         // Capitalize key if it's string
-         const kName = k.replace(/_/g, " ").replace(/^./, str => str.toUpperCase());
-         kpis.push([kName, String(v), tone]);
+      
+      if (gi.by_reason && typeof gi.by_reason === "object") {
+        const reasons = Object.entries(gi.by_reason);
+        if (reasons.length > 0) {
+          const reasonStr = reasons.map(([r, count]) => `${r} ×${count}`).join(", ");
+          kpis.push(["By reason", reasonStr, "warn"]);
+        }
+      }
+      
+      if (gi.by_label && typeof gi.by_label === "object") {
+        const labels = Object.entries(gi.by_label);
+        if (labels.length > 0) {
+          const labelStr = labels.map(([lbl, count]) => `${lbl} ×${count}`).join(", ");
+          kpis.push(["By label", labelStr, "warn"]);
+        }
       }
     }
     box.innerHTML = consolidationKpiHtml(kpis);
