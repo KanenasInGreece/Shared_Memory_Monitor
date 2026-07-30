@@ -265,8 +265,24 @@ uv run --with pytest python -m pytest -q
 ./scripts/publish.sh                 # push origin main after audit
 ```
 
-Releases: version in `pyproject.toml` + `__init__.py` + top of `CHANGELOG.md` must match
-tag; `gh release create vX.Y.Z --notes-file …`.
+### Releases
+
+Before cutting any new tag or release on GitHub, agents must verify all 4 checkpoints:
+
+1. **Version Consistency Across All Docs & Codebase**:
+   - `pyproject.toml` (`version = "X.Y.Z"`)
+   - `src/sm_telemetry_monitor/__init__.py` (`__version__ = "X.Y.Z"`)
+   - `CHANGELOG.md` (top section `## [X.Y.Z] - YYYY-MM-DD`)
+   - `README.md` (`This release`, `Compatibility (vX.Y.Z)`, `Client X-SM-Api-Version`, `Releases (current: vX.Y.Z)`)
+   - `AGENTS.md` & `GEMINI.md` (`./scripts/agent-upgrade.sh --ref vX.Y.Z`)
+   - `docs/SISTER_PROJECT.md` (`Monitor vX.Y.Z sets bridge.API_VERSION`)
+2. **Automated Audit**:
+   - Run `./scripts/pre-publish-check.sh` (fails automatically if any doc or test file is on an older version).
+3. **UI Screenshots**:
+   - If UI layout or drawers were modified, refresh all 5 screenshots in `docs/images/` (`dashboard.png`, `consolidation.png`, `schema-breakdown.png`, `diagram.png`, `logs.png`).
+4. **Build & Release Upload**:
+   - Run `uv build` to produce wheel and sdist package distributions.
+   - Run `gh release create vX.Y.Z` and attach built dist files (`gh release upload vX.Y.Z dist/*`).
 
 ## Architecture (invariants)
 

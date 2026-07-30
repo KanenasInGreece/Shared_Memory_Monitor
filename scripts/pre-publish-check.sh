@@ -46,6 +46,41 @@ else
 fi
 
 say ""
+say "==> Version consistency across docs and codebase"
+PYVER="$(grep -E '^version =' pyproject.toml | cut -d'"' -f2)"
+INITVER="$(grep -E '^__version__ =' src/sm_telemetry_monitor/__init__.py | cut -d'"' -f2)"
+
+if [[ "$PYVER" != "$INITVER" ]]; then
+  fail "pyproject.toml version ($PYVER) does not match __init__.py ($INITVER)"
+else
+  ok "pyproject.toml and __init__.py versions match ($PYVER)"
+fi
+
+if ! grep -q "## \[$PYVER\]" CHANGELOG.md; then
+  fail "CHANGELOG.md missing header for version [$PYVER]"
+else
+  ok "CHANGELOG.md contains header for [$PYVER]"
+fi
+
+if ! grep -q "v$PYVER" README.md; then
+  fail "README.md does not reference current release v$PYVER"
+else
+  ok "README.md references v$PYVER"
+fi
+
+if ! grep -q "v$PYVER" AGENTS.md; then
+  fail "AGENTS.md does not reference current release v$PYVER"
+else
+  ok "AGENTS.md references v$PYVER"
+fi
+
+if ! grep -q "v$PYVER" docs/SISTER_PROJECT.md; then
+  fail "docs/SISTER_PROJECT.md does not reference current release v$PYVER"
+else
+  ok "docs/SISTER_PROJECT.md references v$PYVER"
+fi
+
+say ""
 say "==> Tests"
 uv run python -m unittest discover -s tests -q
 
