@@ -542,32 +542,65 @@ function renderFirstWriteQuality(C) {
 
   // Completeness — spine metrics per DECISION, FACT, and RETROSPECTIVE record type.
   const dec = q.decisions || {}, fac = q.facts || {}, ret = q.retrospectives || {};
-  const comp = [];
+  const blocks = [];
+
   if (dec.total != null) {
-    comp.push(["Decisions written", String(dec.total)]);
-    comp.push(["— with sources cited", pct(dec.grounded_in_pct), lowFill(dec.grounded_in_pct)]);
-    comp.push(["— with alternatives", pct(dec.alternatives_pct), lowFill(dec.alternatives_pct)]);
-    comp.push(["— with confidence", pct(dec.confidence_pct), lowFill(dec.confidence_pct)]);
+    const kpis = [
+      ["Sources cited", pct(dec.grounded_in_pct), lowFill(dec.grounded_in_pct)],
+      ["Alternatives", pct(dec.alternatives_pct), lowFill(dec.alternatives_pct)],
+      ["Confidence", pct(dec.confidence_pct), lowFill(dec.confidence_pct)],
+    ];
     if (dec.elicited_pct != null) {
-      comp.push(["— elicited at write", pct(dec.elicited_pct), lowFill(dec.elicited_pct)]);
+      kpis.push(["Elicited at write", pct(dec.elicited_pct), lowFill(dec.elicited_pct)]);
     }
+    blocks.push(`
+      <div class="fwq-category">
+        <div class="fwq-category-head">
+          <span class="fwq-category-title">Decisions</span>
+          <span class="fwq-category-count">${dec.total} written</span>
+        </div>
+        <div class="fwq-category-grid">${consolidationKpiHtml(kpis)}</div>
+      </div>
+    `);
   }
+
   if (fac.total != null) {
-    comp.push(["Facts written", String(fac.total)]);
-    comp.push(["— with a citation", pct(fac.source_ref_pct), lowFill(fac.source_ref_pct)]);
+    const kpis = [
+      ["Citation", pct(fac.source_ref_pct), lowFill(fac.source_ref_pct)],
+    ];
     if (fac.elicited_pct != null) {
-      comp.push(["— elicited at write", pct(fac.elicited_pct), lowFill(fac.elicited_pct)]);
+      kpis.push(["Elicited at write", pct(fac.elicited_pct), lowFill(fac.elicited_pct)]);
     }
+    blocks.push(`
+      <div class="fwq-category">
+        <div class="fwq-category-head">
+          <span class="fwq-category-title">Facts</span>
+          <span class="fwq-category-count">${fac.total} written</span>
+        </div>
+        <div class="fwq-category-grid">${consolidationKpiHtml(kpis)}</div>
+      </div>
+    `);
   }
+
   if (ret.total != null) {
-    comp.push(["Retrospectives written", String(ret.total)]);
-    if (ret.rating_pct != null) comp.push(["— with outcome rating", pct(ret.rating_pct), lowFill(ret.rating_pct)]);
-    if (ret.target_pg_id_pct != null) comp.push(["— with target record", pct(ret.target_pg_id_pct), lowFill(ret.target_pg_id_pct)]);
-    if (ret.grounded_in_pct != null) comp.push(["— with evidence cited", pct(ret.grounded_in_pct), lowFill(ret.grounded_in_pct)]);
-    if (ret.elicited_pct != null) comp.push(["— elicited at write", pct(ret.elicited_pct), lowFill(ret.elicited_pct)]);
+    const kpis = [];
+    if (ret.rating_pct != null) kpis.push(["Outcome rating", pct(ret.rating_pct), lowFill(ret.rating_pct)]);
+    if (ret.target_pg_id_pct != null) kpis.push(["Target record", pct(ret.target_pg_id_pct), lowFill(ret.target_pg_id_pct)]);
+    if (ret.grounded_in_pct != null) kpis.push(["Evidence cited", pct(ret.grounded_in_pct), lowFill(ret.grounded_in_pct)]);
+    if (ret.elicited_pct != null) kpis.push(["Elicited at write", pct(ret.elicited_pct), lowFill(ret.elicited_pct)]);
+    blocks.push(`
+      <div class="fwq-category">
+        <div class="fwq-category-head">
+          <span class="fwq-category-title">Retrospectives</span>
+          <span class="fwq-category-count">${ret.total} written</span>
+        </div>
+        <div class="fwq-category-grid">${consolidationKpiHtml(kpis)}</div>
+      </div>
+    `);
   }
+
   document.getElementById("consolidation-fwq-complete").innerHTML =
-    comp.length ? consolidationKpiHtml(comp) : `<div class="consolidation-kpi"><span class="k">Completeness</span><span class="v">no data</span></div>`;
+    blocks.length ? `<div class="fwq-categories">${blocks.join("")}</div>` : `<div class="consolidation-kpi"><span class="k">Completeness</span><span class="v">no data</span></div>`;
 
   // Schema growth — emergent (captured-but-unadopted) metadata keys
   const emHead = document.getElementById("consolidation-fwq-emergent-head");
