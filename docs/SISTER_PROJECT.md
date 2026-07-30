@@ -25,7 +25,7 @@ The monitor never imports framework Python code. **No third data path** in monit
 | `GET /memory/telemetry` | Pipeline metrics, `nrem`, `breakdown`, `spine`, `compliance`, `latency`, `entity_graph`, `consolidation` |
 | `POST /memory/graph` | Neo4j schema panels (read-only Cypher, server-side guard) |
 
-**Client API version:** Monitor **v0.7.5** sets `bridge.API_VERSION = 3` to match
+**Client API version:** Monitor **v0.8.0** sets `bridge.API_VERSION = 3` to match
 the **deployed** gateway `api_version` (framework **≥ 0.7.0** / enrichment rebuild
 + relation calibration routes). Full Status + diagram telemetry (LLM local/external
 placement, entity-graph census, latency drawer) expects **framework ≥ 0.8.9**.

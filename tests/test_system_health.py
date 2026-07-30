@@ -21,8 +21,8 @@ def _healthy_gateway(*, backup_in_progress=False):
         "llm": "ok",
         "daemon": "running",
         "rem_daemon": "running",
-        "version": "0.4.12",
-        "api_version": 1,
+        "version": "0.8.0",
+        "api_version": 3,
         "backup_in_progress": backup_in_progress,
     }
 
