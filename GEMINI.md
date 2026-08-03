@@ -1,7 +1,6 @@
-# AGENTS.md
+# GEMINI.md
 
-**The canonical agent file for this repository.** Codex CLI reads it automatically;
-Claude Code, Grok, Antigravity CLI and others are pointed here by `AGENT.md`.
+**The canonical constitution file for Antigravity (Google Gemini) in this repository.**
 
 Two missions — pick the one that matches what the user asked for:
 
@@ -75,8 +74,7 @@ Collect before writing files. Defaults in brackets are safe to offer.
 | 6 | *(optional)* Non-default backup dir for sidebar “Last backup”? | `BACKUP_DIR` |
 
 If the gateway is not installed yet, stop and point them at the framework repo
-([Shared_Memory](https://github.com/KanenasInGreece/Shared_Memory) `AGENTS.md` Part 1)
-or offer to operate the framework first. The monitor cannot substitute for the gateway.
+([Shared_Memory](https://github.com/KanenasInGreece/Shared_Memory)) or offer to operate the framework first. The monitor cannot substitute for the gateway.
 
 ### Phase 1 — Clone and install deps
 
@@ -136,20 +134,6 @@ telemetry panels and LLM placement, e.g.:
 coordinator: ok · gateway 0.8.17 · api server=3 client=3 compat=ok · 2 LLM backends · llm_pool · placement local
 telemetry: ok · nrem+breakdown+consolidation+entity_graph+latency+spine+compliance+graph_integrity
 ```
-
-| Doctor signal | What the user sees on the dashboard |
-|---------------|-------------------------------------|
-| `placement local` / `external` | Infrastructure config line + **LLM pool** chips badge local/external (`has_credential`) |
-| `llm_pool` | Multi-backend pool panel (in-flight / routed % / free) |
-| `nrem` + `breakdown` | Backlog / NREM + Schema drawer Postgres panels |
-| `consolidation` | Consolidation tile + drawer |
-| `entity_graph` | Graph health band in Consolidation drawer |
-| `latency` | Throughput & latency drawer |
-| `spine` / `compliance` | First-write quality / schema conformance bands |
-| `graph_integrity` | Graph integrity band in Schema drawer (write-path defect detection) |
-
-Missing panel names mean an older gateway — the UI degrades (omits bands), not a hard fail.
-`placement n/a (gateway <0.8.9)` means config backends exist but without `has_credential`.
 
 ### Phase 4 — Start
 
@@ -323,4 +307,4 @@ Prefer shared memory (Hive-Mind) for cross-agent facts when available; always up
 
 - Human docs: [README.md](README.md), [docs/SISTER_PROJECT.md](docs/SISTER_PROJECT.md)
 - Framework (gateway install / tokens): https://github.com/KanenasInGreece/Shared_Memory
-- Maintainer skill (workstation-local, optional): `.grok/skills/shared-memory-monitor/`
+- Maintainer skill (workstation-local, optional): `.gemini/skills/shared-memory-monitor/`

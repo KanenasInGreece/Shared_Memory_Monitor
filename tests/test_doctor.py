@@ -23,22 +23,22 @@ class DoctorTests(unittest.TestCase):
                 self.assertIn(state, ("missing", "set"))
 
     def test_client_api_version_matches_bridge(self):
-        self.assertEqual(API_VERSION, 3)
+        self.assertEqual(API_VERSION, 4)
         with patch("sm_telemetry_monitor.doctor.get_health", return_value={
-            "status": "ok", "version": "0.7.0", "api_version": 3,
+            "status": "ok", "version": "0.8.33", "api_version": 4,
         }):
             from sm_telemetry_monitor.doctor import _check_coordinator
             block = _check_coordinator()
-        self.assertEqual(block["client_api_version"], 3)
-        self.assertEqual(block["api_version"], 3)
+        self.assertEqual(block["client_api_version"], 4)
+        self.assertEqual(block["api_version"], 4)
         self.assertEqual(block["compat"], "ok")
         self.assertFalse(block["has_llm_placement"])
 
     def test_coordinator_llm_placement_from_config(self):
         with patch("sm_telemetry_monitor.doctor.get_health", return_value={
             "status": "ok",
-            "version": "0.8.9",
-            "api_version": 3,
+            "version": "0.8.33",
+            "api_version": 4,
             "config": {
                 "llm_backends": [
                     {"url": "http://localhost:5000", "weight": 1.0,

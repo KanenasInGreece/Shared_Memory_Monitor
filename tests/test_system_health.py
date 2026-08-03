@@ -21,8 +21,8 @@ def _healthy_gateway(*, backup_in_progress=False):
         "llm": "ok",
         "daemon": "running",
         "rem_daemon": "running",
-        "version": "0.8.0",
-        "api_version": 3,
+        "version": "0.9.0",
+        "api_version": 4,
         "backup_in_progress": backup_in_progress,
     }
 
@@ -371,8 +371,8 @@ class GatewayConfigTests(unittest.TestCase):
         }
         health = {
             **_healthy_gateway(),
-            "version": "0.7.0",
-            "api_version": 3,
+            "version": "0.8.33",
+            "api_version": 4,
             "config": {
                 "llm_backends": [{"url": "http://localhost:4000", "weight": 1.0}],
                 "embed_max_chars": 24000,
@@ -380,8 +380,8 @@ class GatewayConfigTests(unittest.TestCase):
         }
         with patch("sm_telemetry_monitor.system_health.get_health", return_value=health):
             snap = system_health_snapshot()
-        self.assertEqual(snap["version"], "0.7.0")
-        self.assertEqual(snap["api_version"], 3)
+        self.assertEqual(snap["version"], "0.8.33")
+        self.assertEqual(snap["api_version"], 4)
         self.assertTrue(snap["config"]["present"])
         self.assertEqual(snap["config"]["backend_count"], 1)
 

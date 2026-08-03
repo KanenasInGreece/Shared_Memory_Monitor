@@ -6,6 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-04
+
+### Added
+
+- **API v4 Protocol Upgrade** — Updated `bridge.API_VERSION` to **4** (`X-SM-Api-Version: 4`) matching Shared Memory Framework gateway **v0.8.33+** (Projects Registry, ingress project resolution, 400 project proposals, and sentinel `general_discussion`).
+- **Telemetry Surface Integration** — Updated telemetry and system health monitors to reflect API v4 framework updates including spine retrospectives isolation, top-level `graph_integrity` telemetry, and updated consolidation decision cycle gauges.
+
 ## [0.8.0] - 2026-07-30
 
 ### Added
