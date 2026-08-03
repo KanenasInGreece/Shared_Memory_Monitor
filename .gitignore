@@ -42,6 +42,7 @@ docs/GATEWAY_AUDIT_HANDOFF.md
 docs/archive/
 
 # Local agent/IDE config folders
+GEMINI.md
 .gemini/
 .claude/
 .grok/
