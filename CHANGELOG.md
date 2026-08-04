@@ -6,6 +6,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-08-04
+
+### Changed
+
+- **Alternative vectors tell a story, not a counter** — First-write quality now
+  leads with *why* (group decisions by what they *considered*, framework
+  decisions 1024/1027) and a live **caption** pairing index health with
+  Completeness **Options recorded**. KPI labels renamed (Index state, Option
+  texts with vectors, Waiting for embedder, …); states
+  `searchable` / `catching_up` / `stalled_populator` / `failing` so a full
+  recording rate next to aged pending reads as *populator stalled*, not
+  elicitation failure.
+
 ## [0.9.1] - 2026-08-04
 
 ### Added

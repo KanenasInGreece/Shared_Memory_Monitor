@@ -288,6 +288,176 @@ def _graph_health(entity_graph: dict | None, neo4j: dict | None = None) -> dict:
     }
 
 
+def _alternative_vectors(av_raw: dict, *, decisions: dict | None = None) -> dict:
+    """Interpret ``telemetry.spine.alternative_vectors`` for the Consolidation drawer.
+
+    Numbers alone are not the product — the product is the paired story with
+    ``decisions.alternatives_pct`` (decision 1027 / framework 0.8.40):
+
+    * **Why this exists:** group decisions by *what they considered*, not by the
+      conclusion text. Each alternative is a row + vector keyed to its decision.
+    * **Recording vs index:** Completeness "options recorded" is the write path;
+      this block is whether the async populator has made those rows searchable.
+    * **Stall signal:** high recorded % + non-zero pending/failing (esp. aging
+      oldest pending) → populator stalled, not elicitation failure.
+    """
+    dec = decisions if isinstance(decisions, dict) else {}
+    av_pending_age = av_raw.get("oldest_pending_age_s")
+    try:
+        av_pending_age_n = int(av_pending_age) if av_pending_age is not None else None
+    except (TypeError, ValueError):
+        av_pending_age_n = None
+
+    present = bool(av_raw) and (
+        av_raw.get("entries") is not None
+        or av_raw.get("embedded") is not None
+        or av_raw.get("pending") is not None
+        or av_raw.get("failing") is not None
+    )
+
+    def _int(key: str) -> int | None:
+        v = av_raw.get(key)
+        if v is None:
+            return None
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
+
+    entries = _int("entries")
+    embedded = _int("embedded")
+    pending = _int("pending")
+    failing = _int("failing")
+    decisions_n = _int("decisions")
+    embedded_pct = av_raw.get("embedded_pct")
+    try:
+        embedded_pct_n = float(embedded_pct) if embedded_pct is not None else None
+    except (TypeError, ValueError):
+        embedded_pct_n = None
+
+    recorded_pct = dec.get("alternatives_pct")
+    try:
+        recorded_pct_n = float(recorded_pct) if recorded_pct is not None else None
+    except (TypeError, ValueError):
+        recorded_pct_n = None
+    decisions_total = dec.get("total")
+    try:
+        decisions_total_n = int(decisions_total) if decisions_total is not None else None
+    except (TypeError, ValueError):
+        decisions_total_n = None
+
+    # State machine for the band — actionable before the raw counts.
+    if not present:
+        state = "absent"
+    elif failing is not None and failing > 0:
+        state = "failing"
+    elif pending is not None and pending > 0 and (
+        av_pending_age_n is not None and av_pending_age_n >= 900
+    ):
+        # 15m oldest pending ≈ populator not draining (same order as stall
+        # thresholds elsewhere); still warn for any pending, escalate when aged.
+        state = "stalled_populator"
+    elif pending is not None and pending > 0:
+        state = "catching_up"
+    elif embedded is not None and entries is not None and entries > 0 and embedded >= entries:
+        state = "searchable"
+    elif entries == 0 or (entries is None and embedded is None):
+        state = "empty"
+    else:
+        state = "ok"
+
+    # Operator-facing caption: purpose first, then live numbers, then the pair.
+    purpose = (
+        "Decisions are grouped by what they *considered*, not only by what they "
+        "concluded — each weighed option gets its own embedding so similar "
+        "rejections can find each other."
+    )
+    caption_parts: list[str] = []
+    if present and entries is not None:
+        if entries == 0:
+            caption_parts.append(
+                "No option texts indexed yet (no decisions recorded alternatives, "
+                "or the table is still empty after migration)."
+            )
+        elif state == "searchable":
+            bit = f"{embedded} of {entries} option texts are searchable"
+            if decisions_n is not None:
+                bit += f" across {decisions_n} decisions"
+            bit += " — the background embedder is caught up."
+            caption_parts.append(bit)
+        elif state == "failing":
+            caption_parts.append(
+                f"{failing} option embedding(s) are failing retries "
+                f"({pending or 0} still pending"
+                + (
+                    f", oldest wait {humanize_age(av_pending_age_n)}"
+                    if av_pending_age_n is not None
+                    else ""
+                )
+                + "). Check the embedder; rows stay pending until they succeed."
+            )
+        elif state in ("stalled_populator", "catching_up"):
+            age = (
+                f", oldest waiting {humanize_age(av_pending_age_n)}"
+                if av_pending_age_n is not None
+                else ""
+            )
+            verb = "stalled" if state == "stalled_populator" else "catching up"
+            caption_parts.append(
+                f"{pending} option text(s) still need vectors ({embedded or 0}/"
+                f"{entries} ready{age}) — populator {verb}."
+            )
+        else:
+            caption_parts.append(
+                f"{embedded if embedded is not None else '—'} of "
+                f"{entries} option texts searchable"
+                + (f" ({decisions_n} decisions)." if decisions_n is not None else ".")
+            )
+
+    # Pair with recording rate — the framework's explicit dual instrument.
+    if recorded_pct_n is not None and decisions_total_n is not None:
+        pair = (
+            f"Completeness above: {recorded_pct_n:g}% of {decisions_total_n} "
+            f"decisions *recorded* options at save time"
+        )
+        if state == "stalled_populator" and recorded_pct_n >= 50:
+            pair += (
+                " — recording is healthy; a full recorded % next to a stalled "
+                "pending backlog means the *populator* stopped, not elicitation."
+            )
+        else:
+            pair += (
+                ". Recording and indexing are different instruments: options can "
+                "be named yet still invisible to 'who considered the same thing?' "
+                "until embedded."
+            )
+        caption_parts.append(pair)
+    elif present:
+        caption_parts.append(
+            "Recording rate lives on Completeness → Decisions → Options recorded; "
+            "this band is only whether those texts have vectors."
+        )
+
+    return {
+        "present": present,
+        "purpose": purpose if present else None,
+        "state": state,
+        "caption": " ".join(caption_parts) if caption_parts else None,
+        "entries": entries,
+        "decisions": decisions_n,
+        "embedded": embedded,
+        "pending": pending,
+        "failing": failing,
+        "embedded_pct": embedded_pct_n,
+        "oldest_pending_age_s": av_pending_age_n,
+        "oldest_pending_age_human": (
+            humanize_age(av_pending_age_n) if av_pending_age_n is not None else None
+        ),
+        "recorded_alternatives_pct": recorded_pct_n,
+        "decisions_total": decisions_total_n,
+    }
+
+
 def _first_write_quality(spine: dict | None, postgres: dict | None = None) -> dict:
     """First-write quality — how complete a record is the moment it is written.
 
@@ -329,36 +499,22 @@ def _first_write_quality(spine: dict | None, postgres: dict | None = None) -> di
     alias = sp.get("alias") if isinstance(sp.get("alias"), dict) else {}
     verdict = alias.get("by_verdict") if isinstance(alias.get("by_verdict"), dict) else {}
 
-    # Framework ≥0.8.40: per-alternative embedding coverage (retrievability of
-    # considered options). Distinct from decisions.alternatives_pct, which only
-    # says how many decisions *recorded* alternatives — this says whether those
-    # entries are actually indexed. A high recorded % beside a non-empty pending
-    # or failing backlog means the populator has stalled (framework CHANGELOG
-    # 0.8.40). Older gateways omit the block; degrade cleanly.
-    av_raw = sp.get("alternative_vectors") if isinstance(sp.get("alternative_vectors"), dict) else {}
-    av_pending_age = av_raw.get("oldest_pending_age_s")
-    try:
-        av_pending_age_n = int(av_pending_age) if av_pending_age is not None else None
-    except (TypeError, ValueError):
-        av_pending_age_n = None
-    alternative_vectors = {
-        "present": bool(av_raw) and (
-            av_raw.get("entries") is not None
-            or av_raw.get("embedded") is not None
-            or av_raw.get("pending") is not None
-            or av_raw.get("failing") is not None
-        ),
-        "entries": av_raw.get("entries"),
-        "decisions": av_raw.get("decisions"),
-        "embedded": av_raw.get("embedded"),
-        "pending": av_raw.get("pending"),
-        "failing": av_raw.get("failing"),
-        "embedded_pct": av_raw.get("embedded_pct"),
-        "oldest_pending_age_s": av_pending_age_n,
-        "oldest_pending_age_human": (
-            humanize_age(av_pending_age_n) if av_pending_age_n is not None else None
-        ),
-    }
+    # Framework ≥0.8.40 / decisions 1024 & 1027: each option a decision *weighed*
+    # gets its own Postgres row + 1024-dim vector so decisions can be grouped by
+    # WHAT THEY CONSIDERED, not only by what they concluded. A decision embedding
+    # is dominated by its own text; alternative-level similarity is what makes
+    # "who else rejected X for the same reason?" answerable.
+    #
+    # Two instruments, not one:
+    #   spine.decisions.alternatives_pct  — write completeness (options *recorded*)
+    #   spine.alternative_vectors         — index health (options *searchable*)
+    # A full recorded % beside a stalled pending/failing backlog means the
+    # background populator stopped — not that operators stopped naming options.
+    # Older gateways omit the block; degrade cleanly.
+    alternative_vectors = _alternative_vectors(
+        sp.get("alternative_vectors") if isinstance(sp.get("alternative_vectors"), dict) else {},
+        decisions=dec,
+    )
 
     dead_letter_age = pg.get("outbox_failed_oldest_age_seconds")
 

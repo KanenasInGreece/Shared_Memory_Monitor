@@ -208,8 +208,10 @@
         <p class="consolidation-note consolidation-note-lead">How complete and clean each record is the moment it is written — the upstream gate for everything below. Records that arrive thin or messy limit how much later processing can recover, so this reads first.</p>
         <div class="section-title section-title-tight">Completeness · are new records arriving full?</div>
         <div class="consolidation-summary" id="consolidation-fwq-complete"></div>
-        <div class="section-title section-title-tight" id="consolidation-fwq-altvec-head" hidden>Alternative vectors · are considered options retrievable?</div>
+        <div class="section-title section-title-tight" id="consolidation-fwq-altvec-head" hidden>Who considered the same option? · alternative vectors</div>
+        <p class="consolidation-note consolidation-note-lead" id="consolidation-fwq-altvec-purpose" hidden></p>
         <div class="consolidation-summary" id="consolidation-fwq-altvec" hidden></div>
+        <p class="consolidation-note" id="consolidation-fwq-altvec-caption" hidden></p>
         <div class="section-title section-title-tight" id="consolidation-fwq-emergent-head" hidden>Schema growth · fields the data carries but the schema hasn't adopted</div>
         <div class="consolidation-summary" id="consolidation-fwq-emergent" hidden></div>
         <div class="section-title section-title-tight">Integrity · is the write path keeping the graph clean?</div>
@@ -547,9 +549,11 @@ function renderFirstWriteQuality(C) {
   const blocks = [];
 
   if (dec.total != null) {
+    // "Options recorded" is write completeness only — the vector index band
+    // below answers whether those texts are searchable (decision 1027).
     const kpis = [
       ["Sources cited", pct(dec.grounded_in_pct), lowFill(dec.grounded_in_pct)],
-      ["Alternatives", pct(dec.alternatives_pct), lowFill(dec.alternatives_pct)],
+      ["Options recorded", pct(dec.alternatives_pct), lowFill(dec.alternatives_pct)],
       ["Confidence", pct(dec.confidence_pct), lowFill(dec.confidence_pct)],
     ];
     if (dec.elicited_pct != null) {
@@ -604,43 +608,86 @@ function renderFirstWriteQuality(C) {
   document.getElementById("consolidation-fwq-complete").innerHTML =
     blocks.length ? `<div class="fwq-categories">${blocks.join("")}</div>` : `<div class="consolidation-kpi"><span class="k">Completeness</span><span class="v">no data</span></div>`;
 
-  // Alternative vectors (gateway ≥0.8.40) — recorded alternatives that are
-  // actually indexed for retrieval. Completeness "Alternatives %" only says
-  // decisions *named* options; this band says whether the populator is keeping
-  // those rows searchable. Flag pending/failing; a full embedded % with a
-  // growing pending backlog means the worker stalled.
+  // Alternative vectors (gateway ≥0.8.40 / decisions 1024, 1027) — not a vanity
+  // count: purpose is "who considered the same option?" Pair with Completeness
+  // "Options recorded". Lead with purpose + caption; KPIs support the story.
   const avHead = document.getElementById("consolidation-fwq-altvec-head");
   const avBox = document.getElementById("consolidation-fwq-altvec");
+  const avPurpose = document.getElementById("consolidation-fwq-altvec-purpose");
+  const avCaption = document.getElementById("consolidation-fwq-altvec-caption");
   const av = q.alternative_vectors || {};
   if (avHead && avBox) {
     if (av.present) {
       avHead.hidden = false; avBox.hidden = false;
+      if (avPurpose) {
+        avPurpose.hidden = false;
+        avPurpose.textContent = av.purpose
+          || "Each option a decision weighed gets its own embedding so similar considerations can find each other — not just similar conclusions.";
+      }
+      if (avCaption) {
+        if (av.caption) {
+          avCaption.hidden = false;
+          avCaption.textContent = av.caption;
+        } else {
+          avCaption.hidden = true;
+          avCaption.textContent = "";
+        }
+      }
       const pending = av.pending;
       const failing = av.failing;
-      const avRows = [];
-      if (av.embedded_pct != null) {
-        avRows.push(["Embedded", pct(av.embedded_pct), lowFill(av.embedded_pct)]);
-      }
-      if (av.entries != null || av.embedded != null) {
+      const state = av.state || "";
+      const stateTone = (state === "failing" || state === "stalled_populator")
+        ? "bad"
+        : (state === "catching_up" ? "warn" : (state === "searchable" ? "ok" : null));
+      const stateLabel = ({
+        searchable: "All searchable",
+        catching_up: "Embedder catching up",
+        stalled_populator: "Populator stalled",
+        failing: "Embedder failing",
+        empty: "No options indexed",
+        ok: "Index active",
+      })[state] || state || "—";
+      const avRows = [
+        ["Index state", stateLabel, stateTone],
+      ];
+      if (av.embedded != null || av.entries != null) {
         const emb = av.embedded != null ? String(av.embedded) : "—";
         const ent = av.entries != null ? String(av.entries) : "—";
-        avRows.push(["Entries", `${emb} / ${ent} embedded`]);
+        const ready = av.embedded_pct != null ? ` (${pct(av.embedded_pct)} ready)` : "";
+        avRows.push(["Option texts with vectors", `${emb} of ${ent}${ready}`, lowFill(av.embedded_pct)]);
       }
       if (av.decisions != null) {
-        avRows.push(["Decisions covered", String(av.decisions)]);
+        avRows.push(["Decisions those options belong to", String(av.decisions)]);
       }
       if (pending != null) {
-        avRows.push(["Pending", String(pending), pending > 0 ? "warn" : "ok"]);
+        avRows.push([
+          "Waiting for embedder",
+          pending === 0 ? "none" : String(pending),
+          pending > 0 ? "warn" : "ok",
+        ]);
       }
       if (failing != null) {
-        avRows.push(["Failing", String(failing), failing > 0 ? "bad" : "ok"]);
+        avRows.push([
+          "Failing retries",
+          failing === 0 ? "none" : String(failing),
+          failing > 0 ? "bad" : "ok",
+        ]);
       }
       if (pending > 0 && av.oldest_pending_age_human) {
-        avRows.push(["Oldest pending", av.oldest_pending_age_human, true]);
+        avRows.push(["Oldest still waiting", av.oldest_pending_age_human, true]);
+      }
+      if (av.recorded_alternatives_pct != null) {
+        avRows.push([
+          "Options recorded at write (completeness)",
+          pct(av.recorded_alternatives_pct),
+          lowFill(av.recorded_alternatives_pct),
+        ]);
       }
       avBox.innerHTML = consolidationKpiHtml(avRows);
     } else {
       avHead.hidden = true; avBox.hidden = true; avBox.innerHTML = "";
+      if (avPurpose) { avPurpose.hidden = true; avPurpose.textContent = ""; }
+      if (avCaption) { avCaption.hidden = true; avCaption.textContent = ""; }
     }
   }
 
@@ -697,7 +744,10 @@ function renderFirstWriteQuality(C) {
   if (note) {
     let txt = "Completeness is measured per record type (Decision, Fact, Retrospective) against the fields the write path prompts for. "
       + "Elicited % is how often the operator was asked for those fields at save time. "
-      + "Decision Alternatives % is recording only; Alternative vectors (gateway ≥0.8.40) is whether those options are embedded and retrievable. "
+      + "On Decisions, Options recorded is only whether alternatives were named at save; "
+      + "Who considered the same option? is the async vector index that makes those options searchable "
+      + "(gateway ≥0.8.40 — one embedding per weighed option so decisions group by consideration, not conclusion). "
+      + "A healthy recorded % next to a stalled pending backlog is a populator problem, not an elicitation problem. "
       + "Schema-growth keys are promotion candidates, not errors. ";
     if (conf.present && !conf.compliant) {
       const labs = (conf.invalid_labels || []).slice(0, 4).map(x => x.name).join(", ");

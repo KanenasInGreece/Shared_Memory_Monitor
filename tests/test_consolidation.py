@@ -413,13 +413,13 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         self.assertFalse(q["alternative_vectors"]["present"])
 
     def test_first_write_quality_alternative_vectors(self):
-        # Framework 0.8.40+: spine.alternative_vectors (retrievability of options).
+        # Framework 0.8.40 / decisions 1024+1027: failing+aged pending → not just numbers.
         health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
         telemetry = {
             "status": "success",
             "telemetry": {
                 "spine": {
-                    "decisions": {"total": 219, "alternatives_pct": 82.8},
+                    "decisions": {"total": 262, "alternatives_pct": 82.8},
                     "alternative_vectors": {
                         "entries": 450,
                         "decisions": 219,
@@ -443,6 +443,12 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         self.assertEqual(av["embedded_pct"], 97.8)
         self.assertEqual(av["oldest_pending_age_s"], 3600)
         self.assertEqual(av["oldest_pending_age_human"], "1h ago")
+        self.assertEqual(av["state"], "failing")
+        self.assertIn("considered", (av["purpose"] or "").lower())
+        self.assertIn("failing", (av["caption"] or "").lower())
+        self.assertEqual(av["recorded_alternatives_pct"], 82.8)
+        self.assertEqual(av["decisions_total"], 262)
+        self.assertIn("recorded", (av["caption"] or "").lower())
 
     def test_first_write_quality_alternative_vectors_healthy(self):
         health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
@@ -450,6 +456,7 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
             "status": "success",
             "telemetry": {
                 "spine": {
+                    "decisions": {"total": 262, "alternatives_pct": 82.8},
                     "alternative_vectors": {
                         "entries": 450,
                         "decisions": 219,
@@ -470,6 +477,39 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         self.assertEqual(av["failing"], 0)
         self.assertIsNone(av["oldest_pending_age_s"])
         self.assertIsNone(av["oldest_pending_age_human"])
+        self.assertEqual(av["state"], "searchable")
+        self.assertIn("searchable", (av["caption"] or "").lower())
+        self.assertIn("caught up", (av["caption"] or "").lower())
+        # Dual instrument: recording rate is named so UI is not a bare count.
+        self.assertIn("82.8", av["caption"] or "")
+        self.assertIn("recorded", (av["caption"] or "").lower())
+
+    def test_first_write_quality_alternative_vectors_stalled_populator(self):
+        # High recording rate + aged pending → populator story, not elicitation.
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "spine": {
+                    "decisions": {"total": 100, "alternatives_pct": 90.0},
+                    "alternative_vectors": {
+                        "entries": 200,
+                        "decisions": 90,
+                        "embedded": 150,
+                        "pending": 50,
+                        "failing": 0,
+                        "embedded_pct": 75.0,
+                        "oldest_pending_age_s": 3600,
+                    },
+                },
+            },
+        }
+        av = consolidation_from_payload(health, telemetry)["first_write_quality"][
+            "alternative_vectors"
+        ]
+        self.assertEqual(av["state"], "stalled_populator")
+        self.assertIn("populator", (av["caption"] or "").lower())
+        self.assertIn("recording is healthy", (av["caption"] or "").lower())
 
     def test_first_write_quality_dead_letter_age(self):
         health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
