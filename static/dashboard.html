@@ -208,6 +208,8 @@
         <p class="consolidation-note consolidation-note-lead">How complete and clean each record is the moment it is written — the upstream gate for everything below. Records that arrive thin or messy limit how much later processing can recover, so this reads first.</p>
         <div class="section-title section-title-tight">Completeness · are new records arriving full?</div>
         <div class="consolidation-summary" id="consolidation-fwq-complete"></div>
+        <div class="section-title section-title-tight" id="consolidation-fwq-altvec-head" hidden>Alternative vectors · are considered options retrievable?</div>
+        <div class="consolidation-summary" id="consolidation-fwq-altvec" hidden></div>
         <div class="section-title section-title-tight" id="consolidation-fwq-emergent-head" hidden>Schema growth · fields the data carries but the schema hasn't adopted</div>
         <div class="consolidation-summary" id="consolidation-fwq-emergent" hidden></div>
         <div class="section-title section-title-tight">Integrity · is the write path keeping the graph clean?</div>
@@ -602,6 +604,46 @@ function renderFirstWriteQuality(C) {
   document.getElementById("consolidation-fwq-complete").innerHTML =
     blocks.length ? `<div class="fwq-categories">${blocks.join("")}</div>` : `<div class="consolidation-kpi"><span class="k">Completeness</span><span class="v">no data</span></div>`;
 
+  // Alternative vectors (gateway ≥0.8.40) — recorded alternatives that are
+  // actually indexed for retrieval. Completeness "Alternatives %" only says
+  // decisions *named* options; this band says whether the populator is keeping
+  // those rows searchable. Flag pending/failing; a full embedded % with a
+  // growing pending backlog means the worker stalled.
+  const avHead = document.getElementById("consolidation-fwq-altvec-head");
+  const avBox = document.getElementById("consolidation-fwq-altvec");
+  const av = q.alternative_vectors || {};
+  if (avHead && avBox) {
+    if (av.present) {
+      avHead.hidden = false; avBox.hidden = false;
+      const pending = av.pending;
+      const failing = av.failing;
+      const avRows = [];
+      if (av.embedded_pct != null) {
+        avRows.push(["Embedded", pct(av.embedded_pct), lowFill(av.embedded_pct)]);
+      }
+      if (av.entries != null || av.embedded != null) {
+        const emb = av.embedded != null ? String(av.embedded) : "—";
+        const ent = av.entries != null ? String(av.entries) : "—";
+        avRows.push(["Entries", `${emb} / ${ent} embedded`]);
+      }
+      if (av.decisions != null) {
+        avRows.push(["Decisions covered", String(av.decisions)]);
+      }
+      if (pending != null) {
+        avRows.push(["Pending", String(pending), pending > 0 ? "warn" : "ok"]);
+      }
+      if (failing != null) {
+        avRows.push(["Failing", String(failing), failing > 0 ? "bad" : "ok"]);
+      }
+      if (pending > 0 && av.oldest_pending_age_human) {
+        avRows.push(["Oldest pending", av.oldest_pending_age_human, true]);
+      }
+      avBox.innerHTML = consolidationKpiHtml(avRows);
+    } else {
+      avHead.hidden = true; avBox.hidden = true; avBox.innerHTML = "";
+    }
+  }
+
   // Schema growth — emergent (captured-but-unadopted) metadata keys
   const emHead = document.getElementById("consolidation-fwq-emergent-head");
   const emBox = document.getElementById("consolidation-fwq-emergent");
@@ -655,6 +697,7 @@ function renderFirstWriteQuality(C) {
   if (note) {
     let txt = "Completeness is measured per record type (Decision, Fact, Retrospective) against the fields the write path prompts for. "
       + "Elicited % is how often the operator was asked for those fields at save time. "
+      + "Decision Alternatives % is recording only; Alternative vectors (gateway ≥0.8.40) is whether those options are embedded and retrievable. "
       + "Schema-growth keys are promotion candidates, not errors. ";
     if (conf.present && !conf.compliant) {
       const labs = (conf.invalid_labels || []).slice(0, 4).map(x => x.name).join(", ");

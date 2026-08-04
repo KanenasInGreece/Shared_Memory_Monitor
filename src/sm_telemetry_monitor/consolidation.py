@@ -329,9 +329,40 @@ def _first_write_quality(spine: dict | None, postgres: dict | None = None) -> di
     alias = sp.get("alias") if isinstance(sp.get("alias"), dict) else {}
     verdict = alias.get("by_verdict") if isinstance(alias.get("by_verdict"), dict) else {}
 
+    # Framework ≥0.8.40: per-alternative embedding coverage (retrievability of
+    # considered options). Distinct from decisions.alternatives_pct, which only
+    # says how many decisions *recorded* alternatives — this says whether those
+    # entries are actually indexed. A high recorded % beside a non-empty pending
+    # or failing backlog means the populator has stalled (framework CHANGELOG
+    # 0.8.40). Older gateways omit the block; degrade cleanly.
+    av_raw = sp.get("alternative_vectors") if isinstance(sp.get("alternative_vectors"), dict) else {}
+    av_pending_age = av_raw.get("oldest_pending_age_s")
+    try:
+        av_pending_age_n = int(av_pending_age) if av_pending_age is not None else None
+    except (TypeError, ValueError):
+        av_pending_age_n = None
+    alternative_vectors = {
+        "present": bool(av_raw) and (
+            av_raw.get("entries") is not None
+            or av_raw.get("embedded") is not None
+            or av_raw.get("pending") is not None
+            or av_raw.get("failing") is not None
+        ),
+        "entries": av_raw.get("entries"),
+        "decisions": av_raw.get("decisions"),
+        "embedded": av_raw.get("embedded"),
+        "pending": av_raw.get("pending"),
+        "failing": av_raw.get("failing"),
+        "embedded_pct": av_raw.get("embedded_pct"),
+        "oldest_pending_age_s": av_pending_age_n,
+        "oldest_pending_age_human": (
+            humanize_age(av_pending_age_n) if av_pending_age_n is not None else None
+        ),
+    }
+
     dead_letter_age = pg.get("outbox_failed_oldest_age_seconds")
 
-    present = bool(dec) or bool(fac) or bool(ret)
+    present = bool(dec) or bool(fac) or bool(ret) or alternative_vectors["present"]
     return {
         "present": present,
         "decisions": {
@@ -353,6 +384,7 @@ def _first_write_quality(spine: dict | None, postgres: dict | None = None) -> di
             "grounded_in_pct": ret.get("grounded_in_pct"),
             "elicited_pct": ret.get("elicited_pct"),
         },
+        "alternative_vectors": alternative_vectors,
         "emergent_fields": emergent[:8],
         "emergent_count": len(emergent),
         "alias_adjudications": alias.get("adjudications"),

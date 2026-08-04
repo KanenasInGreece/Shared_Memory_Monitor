@@ -409,6 +409,67 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         self.assertEqual(q["alias_distinct"], 231)
         self.assertIsNone(q["dead_letter_age_seconds"])   # healthy: nothing stuck
         self.assertIsNone(q["dead_letter_age_human"])
+        # gateway <0.8.40: alternative_vectors omitted → present=False
+        self.assertFalse(q["alternative_vectors"]["present"])
+
+    def test_first_write_quality_alternative_vectors(self):
+        # Framework 0.8.40+: spine.alternative_vectors (retrievability of options).
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "spine": {
+                    "decisions": {"total": 219, "alternatives_pct": 82.8},
+                    "alternative_vectors": {
+                        "entries": 450,
+                        "decisions": 219,
+                        "embedded": 440,
+                        "pending": 8,
+                        "failing": 2,
+                        "embedded_pct": 97.8,
+                        "oldest_pending_age_s": 3600,
+                    },
+                },
+            },
+        }
+        q = consolidation_from_payload(health, telemetry)["first_write_quality"]
+        av = q["alternative_vectors"]
+        self.assertTrue(av["present"])
+        self.assertEqual(av["entries"], 450)
+        self.assertEqual(av["decisions"], 219)
+        self.assertEqual(av["embedded"], 440)
+        self.assertEqual(av["pending"], 8)
+        self.assertEqual(av["failing"], 2)
+        self.assertEqual(av["embedded_pct"], 97.8)
+        self.assertEqual(av["oldest_pending_age_s"], 3600)
+        self.assertEqual(av["oldest_pending_age_human"], "1h ago")
+
+    def test_first_write_quality_alternative_vectors_healthy(self):
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "spine": {
+                    "alternative_vectors": {
+                        "entries": 450,
+                        "decisions": 219,
+                        "embedded": 450,
+                        "pending": 0,
+                        "failing": 0,
+                        "embedded_pct": 100.0,
+                        "oldest_pending_age_s": None,
+                    },
+                },
+            },
+        }
+        av = consolidation_from_payload(health, telemetry)["first_write_quality"][
+            "alternative_vectors"
+        ]
+        self.assertTrue(av["present"])
+        self.assertEqual(av["pending"], 0)
+        self.assertEqual(av["failing"], 0)
+        self.assertIsNone(av["oldest_pending_age_s"])
+        self.assertIsNone(av["oldest_pending_age_human"])
 
     def test_first_write_quality_dead_letter_age(self):
         health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
@@ -428,6 +489,7 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         q = consolidation_from_payload(health, {"status": "success", "telemetry": {}})["first_write_quality"]
         self.assertFalse(q["present"])
         self.assertEqual(q["emergent_fields"], [])
+        self.assertFalse(q["alternative_vectors"]["present"])
 
     def test_schema_conformance_non_compliant(self):
         health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}

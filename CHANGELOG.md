@@ -6,6 +6,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-08-04
+
+### Added
+
+- **Alternative vectors (framework ≥0.8.40)** — First-write quality now surfaces
+  `telemetry.spine.alternative_vectors` (entries / embedded / pending / failing /
+  embedded % / oldest pending age). Completeness **Alternatives %** remains the
+  recording rate; this band is retrievability of considered options. UI band in
+  the Consolidation drawer; degrades cleanly on older gateways that omit the block.
+
 ## [0.9.0] - 2026-08-04
 
 ### Added
