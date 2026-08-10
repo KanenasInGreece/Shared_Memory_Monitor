@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.7] - 2026-08-10
+
+### Changed
+
+- **Dreaming Cycle v2 Redesign**: Removed entity resolution as a consolidation gating constraint in the UI. Consolidation now strictly reflects the `(project, domain)` gate. Moved entity ontology health to the Schema Breakdown drawer.
+
 ## [0.9.2] - 2026-08-04
 
 ### Changed

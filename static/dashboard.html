@@ -228,9 +228,6 @@
         <div class="section-title section-title-tight" id="consolidation-bytype-head" hidden>Consolidations by type</div>
         <div class="consolidation-summary" id="consolidation-bytype" hidden></div>
         <p class="consolidation-note" id="consolidation-coverage-note"></p>
-        <div class="section-title section-title-tight" id="consolidation-graph-head" hidden>Graph health · entity resolution</div>
-        <div class="consolidation-summary" id="consolidation-graph" hidden></div>
-        <p class="consolidation-note" id="consolidation-graph-note" hidden></p>
         <div class="section-title section-title-tight" id="consolidation-rem-head" hidden>REM reliability · stranded &amp; fairness</div>
         <div class="consolidation-summary" id="consolidation-rem" hidden></div>
         <p class="consolidation-note" id="consolidation-rem-note" hidden></p>
@@ -310,6 +307,11 @@
         <h3 class="schema-block-title">Graph integrity</h3>
         <p class="consolidation-note consolidation-note-lead">Defects detected in the graph structure. These are not transient queues — non-zero counts mean a writer broke an invariant and a human must fix the data.</p>
         <div class="consolidation-summary" id="schema-integrity-kpis"></div>
+      </section>
+      <section class="schema-block" id="schema-graph-health-block">
+        <h3 class="schema-block-title" id="consolidation-graph-head" hidden>Entity resolution</h3>
+        <div class="consolidation-summary" id="consolidation-graph" hidden></div>
+        <p class="consolidation-note" id="consolidation-graph-note" hidden></p>
       </section>
       <section class="schema-block">
         <h3 class="schema-block-title">Neo4j graph</h3>
@@ -865,10 +867,9 @@ function renderConsolidationDrilldown(C) {
     covNote.textContent = "Coverage = consolidated ÷ REM-processed facts. Awaiting = REM-processed facts not yet folded into a community summary. Per cycle, “Eligible” counts clusters (groups of related facts) that meet the fold gate.";
   }
 
-  // Graph health — the input-side axis (ADR-017/018). Derived from
-  // telemetry.entity_graph (v0.6.1 semantics): mention coverage + singletons
-  // are the fragmentation proxy, orphans are true degree-0 dangling nodes,
-  // alias edges/groups track the entity-resolution layer.
+  // Entity Resolution — Derived from telemetry.entity_graph (v0.6.1 semantics):
+  // Entities represent human-sourced ontology and semantic richness. They no
+  // longer gate consolidation (which strictly gates on project and domain).
   const gh = C?.graph_health || {};
   const ghBox = document.getElementById("consolidation-graph");
   const ghHead = document.getElementById("consolidation-graph-head");
@@ -919,11 +920,11 @@ function renderConsolidationDrilldown(C) {
       ghBox.innerHTML = consolidationKpiHtml(kpis);
       if (ghNote) {
         ghNote.hidden = false;
-        ghNote.textContent = "Input-side quality: structural-only entities hold graph edges (typed relations, summary links) but no live mention. Orphans are dangling nodes with no relationships at all — expected zero. Alias edges group surface-form variants of one concept (entity-resolution layer), keeping fragmented mentions foldable." +
+        ghNote.textContent = "Ontology quality: entities act as human-sourced descriptors and no longer gate consolidation. Orphans are dangling nodes with no relationships at all — expected zero. Alias edges group surface-form variants of one concept (entity-resolution layer), keeping fragmented mentions foldable." +
           (gh.genuinely_referenced_entities != null
             ? " Genuinely referenced is the MENTIONS-only census (gateway ≥0.8.6) and the correct alias-coverage denominator; Entities (all) still includes Decision provenance free-text. The pre-0.8.6 “Mentioned” residual is omitted when genuine is present (same count)."
             : " Mentioned is residual total − orphans − unmentioned (pre-0.8.6 gateways).") +
-          (gh.rem_pending ? " Counts include entities from records still awaiting REM (relationships are built during REM), so the fragmentation share is an upper bound until REM catches up." : "") +
+          (gh.rem_pending ? " Counts include entities from records still awaiting REM (relationships are built during REM)." : "") +
           (gh.alias_edges === 0 ? " No alias edges yet — the alias-writer sweep hasn't run on this gateway." : "");
       }
     } else {

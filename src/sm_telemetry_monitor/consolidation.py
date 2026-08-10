@@ -20,8 +20,9 @@ _CYCLE_SHORT = {
 }
 
 _NREM_DENSITY_NOTE = (
-    "telemetry.nrem counts density-gate cycles; consolidation.backlog counts "
-    "strict-gate eligible clusters — do not conflate"
+    "telemetry.nrem counts density (now deprecated in UI as a gating signal); "
+    "consolidation.backlog counts strict-gate eligible clusters — the actionable "
+    "strict (project, domain) gate."
 )
 
 # Per-cycle 24h activity (gateway ≥0.7.x, decision 834 / fact 835): separate
@@ -186,15 +187,12 @@ def _fact_coverage(neo4j: dict, summaries: list | None = None) -> dict:
 
 
 def _graph_health(entity_graph: dict | None, neo4j: dict | None = None) -> dict:
-    """Input-side consolidation quality from telemetry.entity_graph.
+    """Entity resolution quality from telemetry.entity_graph.
 
-    ADR-017/018 frame consolidation quality on two axes: the *output* side
-    (coverage — facts folded into summaries, see ``_fact_coverage``) and the
-    *input* side (entity resolution — how well the graph is connected before
-    consolidation runs). A heavily fragmented entity graph (many singletons /
-    unmentioned entities) is the "garbage-in" leading indicator: weakly
-    connected entities are never pulled into a cluster, so they never
-    consolidate regardless of cycle liveness.
+    Under Dreaming Cycle v2, entities do not gate consolidation (which gates
+    strictly on project and domain). The entity graph describes the graph's
+    semantic richness (human-sourced payload). We continue to measure its
+    integrity, but it is no longer the bottleneck for consolidation liveness.
 
     Gateway v0.6.1 corrected the field semantics (the old "no live MENTIONS"
     orphan count overstated ~500x): ``orphan_entities`` is now truly dangling

@@ -99,7 +99,7 @@ def main() -> None:
             name = spec["name"]
             path = spec["path"]
             page = browser.new_page(viewport=spec["viewport"])
-            page.goto(f"{BASE}{path}", wait_until="networkidle", timeout=60_000)
+            page.goto(f"{BASE}{path}", wait_until="load", timeout=60_000)
             if "diagram" in path:
                 page.wait_for_selector("body[data-diagram-ready='1']", timeout=60_000)
             if "logs" in path:
