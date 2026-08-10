@@ -3,7 +3,6 @@ import unittest
 from sm_telemetry_monitor.analytics import enrich_row
 from sm_telemetry_monitor.nrem_backlog import (
     compute_nrem_cycles,
-    estimate_nrem_backlog,
     partition_domain_clusters,
 )
 

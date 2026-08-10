@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from .analytics import rem_drain_signal
 from .backup_reader import latest_backup_manifest
@@ -357,7 +357,7 @@ def _gateway_config(raw: dict) -> dict | None:
 def _rem_trend() -> str:
     """REM backlog drain signal over the recent stored tail (analytics heuristic)."""
     try:
-        since = datetime.now(timezone.utc) - timedelta(seconds=REM_STALL_WINDOW_S * 6)
+        since = datetime.now(UTC) - timedelta(seconds=REM_STALL_WINDOW_S * 6)
         rows = load_history(since=since)
     except Exception:
         return "insufficient"
@@ -678,7 +678,7 @@ def _backup_timestamp_from_health(raw: dict) -> str | None:
             continue
         if isinstance(value, (int, float)):
             try:
-                return datetime.fromtimestamp(value, tz=timezone.utc).isoformat()
+                return datetime.fromtimestamp(value, tz=UTC).isoformat()
             except (OSError, OverflowError, ValueError):
                 continue
         text = str(value).strip()
@@ -690,8 +690,8 @@ def _backup_timestamp_from_health(raw: dict) -> str | None:
         except ValueError:
             continue
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc).isoformat()
+            dt = dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC).isoformat()
     return None
 
 
@@ -813,27 +813,22 @@ def _overall_state(
         return "critical"
     if cons == "warn" and rank["warn"] > rank[worst]:
         worst = "warn"
-    if graph_invalid_nodes and graph_invalid_nodes > 0:
-        if rank["warn"] > rank[worst]:
-            worst = "warn"
+    if graph_invalid_nodes and graph_invalid_nodes > 0 and rank["warn"] > rank[worst]:
+        worst = "warn"
     if isinstance(graph_integrity, dict):
-        if graph_integrity.get("error"):
-            if rank["warn"] > rank[worst]:
-                worst = "warn"
-        elif graph_integrity.get("clean") is False or (
+        if (graph_integrity.get("error") or graph_integrity.get("clean") is False or (
             isinstance(graph_integrity.get("invalid_nodes"), int)
             and not isinstance(graph_integrity.get("invalid_nodes"), bool)
             and graph_integrity["invalid_nodes"] > 0
-        ):
-            if rank["warn"] > rank[worst]:
-                worst = "warn"
+        )) and rank["warn"] > rank[worst]:
+            worst = "warn"
     # "unknown" alone does not elevate — missing optional fields are not faults.
     return worst
 
 
 def system_health_snapshot() -> dict:
     """Live infrastructure (/health) plus workload context from latest telemetry."""
-    fetched_at = datetime.now(timezone.utc).isoformat()
+    fetched_at = datetime.now(UTC).isoformat()
     raw = get_health()
     telemetry_payload = get_telemetry()
     telemetry = _telemetry_latest()

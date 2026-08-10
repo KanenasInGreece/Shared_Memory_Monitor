@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import matplotlib
 
@@ -31,8 +31,8 @@ def _shade_rem_bursts(ax, t0: datetime, t1: datetime) -> None:
     cursor = start - (start % REM_POLL_S)
     while cursor < end:
         ax.axvspan(
-            datetime.fromtimestamp(cursor, tz=timezone.utc),
-            datetime.fromtimestamp(min(cursor + REM_POLL_S, end), tz=timezone.utc),
+            datetime.fromtimestamp(cursor, tz=UTC),
+            datetime.fromtimestamp(min(cursor + REM_POLL_S, end), tz=UTC),
             alpha=0.06,
             color="steelblue",
             zorder=0,

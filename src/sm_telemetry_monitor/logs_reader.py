@@ -12,7 +12,7 @@ import os
 import re
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .env_loader import bootstrap_env, get
@@ -219,8 +219,8 @@ def _ts_iso(dt: datetime | None) -> str | None:
     if dt is None:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).isoformat()
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC).isoformat()
 
 
 def _fractional_to_microsecond(digits: str) -> int:
@@ -300,8 +300,7 @@ def _tail_lines_text(path: Path, lines: int, offset: int = 0) -> dict:
     if not path.exists():
         return {"lines": [], "offset": 0, "size": 0, "error": f"File not found: {_basename(path)}"}
     size = path.stat().st_size
-    if offset > size:
-        offset = size
+    offset = min(offset, size)
     collected: list[str] = []
     if offset > 0 and offset < size:
         with path.open("r", errors="replace") as f:
@@ -372,7 +371,7 @@ def tail_source(
                 "offset": len(lines_out),
                 "since": since,
                 "until": until,
-                "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "fetched_at": datetime.now(UTC).isoformat(),
             }
         except FileNotFoundError:
             return {"error": "journalctl not available", "lines": []}
@@ -411,7 +410,7 @@ def tail_source(
         "lines": [e["raw"] for e in entries],
         "since": since,
         "until": until,
-        "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "fetched_at": datetime.now(UTC).isoformat(),
     }
     if result.get("error"):
         payload["error"] = result["error"]
@@ -654,5 +653,5 @@ def agent_activity(
         "until": until,
         "agents": counts,
         "daemon_logic": daemon_logic,
-        "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "fetched_at": datetime.now(UTC).isoformat(),
     }

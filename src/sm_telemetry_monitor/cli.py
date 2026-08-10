@@ -5,10 +5,10 @@ import subprocess
 import time
 
 from .charts import render_graphs
+from .collector import load_history, poll_once
 from .config import DATA_FILE, GRAPHS_DIR, POLL_INTERVAL_S, SERVER_HOST, SERVER_PORT
 from .dashboard import ensure_dashboard_files
 from .pipeline_chart import render_pipeline
-from .collector import load_history, poll_once
 from .server import start_server_thread
 
 
@@ -56,8 +56,11 @@ def main() -> None:
             if args.serve:
                 print(f"dashboard → {url}")
         if args.open:
-            subprocess.run(["xdg-open", url if args.serve else str(GRAPHS_DIR / "dashboard.html")],
-                             check=False)
+            import shutil
+            opener = shutil.which("xdg-open")
+            if opener:
+                subprocess.run([opener, url if args.serve else str(GRAPHS_DIR / "dashboard.html")],
+                               check=False)
         if args.once:
             break
         time.sleep(args.interval)

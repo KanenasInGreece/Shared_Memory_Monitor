@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .bridge import get_health, get_telemetry
 from .sanitize import sanitize_error
@@ -107,7 +107,7 @@ def humanize_defer_reason(reason: str | None) -> str | None:
     return _DEFER_REASONS.get(str(reason).lower(), str(reason).replace("_", " "))
 
 
-def humanize_age(seconds: int | float | None) -> str:
+def humanize_age(seconds: float | None) -> str:
     if seconds is None:
         return "—"
     try:
@@ -660,7 +660,7 @@ def _num_or_none(value) -> int | float | None:
         return None
 
 
-def _format_cycle_seconds_avg(seconds: int | float | None) -> str | None:
+def _format_cycle_seconds_avg(seconds: float | None) -> str | None:
     if seconds is None:
         return None
     try:
@@ -762,8 +762,8 @@ def _normalize_cycle(key: str, raw: dict | None) -> dict:
         try:
             started = datetime.fromisoformat(str(raw["last_started"]))
             if started.tzinfo is None:
-                started = started.replace(tzinfo=timezone.utc)
-            running_seconds = (datetime.now(timezone.utc) - started).total_seconds()
+                started = started.replace(tzinfo=UTC)
+            running_seconds = (datetime.now(UTC) - started).total_seconds()
         except (TypeError, ValueError):
             running_seconds = None
         if running_seconds is not None and running_seconds >= 0:
@@ -886,7 +886,7 @@ def consolidation_from_payload(
     fetched_at: str | None = None,
 ) -> dict:
     """Build tile + drill-down from /health and GET /memory/telemetry responses."""
-    fetched_at = fetched_at or datetime.now(timezone.utc).isoformat()
+    fetched_at = fetched_at or datetime.now(UTC).isoformat()
     reachable = health.get("status") not in ("unreachable", "error")
 
     health_cons = health.get("consolidation") if isinstance(health.get("consolidation"), dict) else {}

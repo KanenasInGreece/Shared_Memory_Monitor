@@ -22,7 +22,7 @@ much useful structure* it produces. It therefore lives in its own drawer.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .bridge import get_telemetry
 from .sanitize import sanitize_error
@@ -34,7 +34,7 @@ _MIN_SAMPLES = 10
 _CONTENTION_CHIP_THRESHOLD = 30
 
 
-def _anchor(value: float | int | dict | None) -> float | int | None:
+def _anchor(value: float | dict | None) -> float | int | None:
     """Representative scalar from a latency field that may already be a scalar
     or a percentile dict — we anchor on p50 (median), the typical case."""
     if isinstance(value, dict):
@@ -44,13 +44,13 @@ def _anchor(value: float | int | dict | None) -> float | int | None:
     return None
 
 
-def _pct(num: float | int | None, den: float | int | None) -> int | None:
+def _pct(num: float | None, den: float | None) -> int | None:
     if num is None or not den:
         return None
     return round(100 * num / den)
 
 
-def _p95(value: float | int | dict | None) -> float | int | None:
+def _p95(value: float | dict | None) -> float | int | None:
     """Optional p95 from a percentile dict; None when absent or scalar-only."""
     if isinstance(value, dict):
         return value.get("p95")
@@ -127,7 +127,7 @@ def latency_from_payload(
     fetched_at: str | None = None,
 ) -> dict:
     """Build the latency drawer snapshot from a GET /memory/telemetry response."""
-    fetched_at = fetched_at or datetime.now(timezone.utc).isoformat()
+    fetched_at = fetched_at or datetime.now(UTC).isoformat()
 
     reachable = True
     error = None

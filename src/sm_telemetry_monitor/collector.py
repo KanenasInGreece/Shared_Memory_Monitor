@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .bridge import get_health, get_telemetry
 from .config import DATA_FILE
@@ -13,7 +13,7 @@ from .store import init_db, insert_snapshot, load_all
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def load_history() -> list[dict]:

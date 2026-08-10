@@ -9,31 +9,30 @@ from __future__ import annotations
 import json
 import mimetypes
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from .analytics import build_api_payload
+from .breakdown import fetch_breakdown
 from .config import (
     IGNORED_OUTBOX_IDS,
     NEO4J_BROWSER_URL,
     POLL_INTERVAL_S,
     REM_BATCH,
     REM_POLL_S,
-    ROOT,
     SERVER_HOST,
     SERVER_PORT,
     STATIC_DIR,
 )
-from .breakdown import fetch_breakdown
 from .consolidation import consolidation_snapshot
-from .latency import latency_snapshot
 from .env_loader import bootstrap_env
-from .summary import live_summary
-from .system_health import system_health_snapshot
+from .latency import latency_snapshot
 from .logs_reader import agent_activity, list_archives, list_sources, tail_source
 from .store import init_db, load_history, meta, parse_range
+from .summary import live_summary
+from .system_health import system_health_snapshot
 
 _DASHBOARD = STATIC_DIR / "dashboard.html"
 _LOGS = STATIC_DIR / "logs.html"
@@ -46,7 +45,7 @@ def diagram_payload() -> dict:
     return {
         "summary": live_summary(),
         "health": system_health_snapshot(),
-        "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "fetched_at": datetime.now(UTC).isoformat(),
     }
 
 

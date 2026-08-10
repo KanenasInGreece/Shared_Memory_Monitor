@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from datetime import UTC, datetime, timedelta
 
 from .analytics import enrich_row
 from .config import DATA_FILE, DB_FILE
@@ -182,7 +181,7 @@ def _is_duplicate(last: dict, cur: dict) -> bool:
 def parse_range(range_spec: str | None) -> datetime | None:
     if not range_spec or range_spec == "all":
         return None
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     unit = range_spec[-1]
     try:
         n = int(range_spec[:-1])
@@ -211,7 +210,7 @@ def load_history(
         clauses.append("collected_at <= ?")
         params.append(until.isoformat())
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    sql = f"SELECT * FROM snapshots {where} ORDER BY collected_at ASC"
+    sql = f"SELECT * FROM snapshots {where} ORDER BY collected_at ASC"  # nosec B608
     with _connect() as conn:
         rows = [_row_to_dict(r) for r in conn.execute(sql, params)]
 
@@ -230,7 +229,7 @@ def _downsample(rows: list[dict], bucket_minutes: int) -> list[dict]:
         # Floor to bucket
         epoch = int(ts.timestamp())
         bucket_start = epoch - (epoch % (bucket_minutes * 60))
-        key = datetime.fromtimestamp(bucket_start, tz=timezone.utc).isoformat()
+        key = datetime.fromtimestamp(bucket_start, tz=UTC).isoformat()
         buckets[key] = row
     return [buckets[k] for k in sorted(buckets)]
 

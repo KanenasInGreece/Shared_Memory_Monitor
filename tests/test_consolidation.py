@@ -1,4 +1,5 @@
 import unittest
+from datetime import UTC
 from unittest.mock import patch
 
 from sm_telemetry_monitor.consolidation import (
@@ -839,9 +840,9 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         # last_started only means "still running" while in_flight — surface how
         # long, rather than a flat yes/no (gateway carries this but the monitor
         # never read it).
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        started = (datetime.now(timezone.utc) - timedelta(minutes=3, seconds=5)).isoformat()
+        started = (datetime.now(UTC) - timedelta(minutes=3, seconds=5)).isoformat()
         health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
         telemetry = {
             "status": "success",

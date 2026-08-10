@@ -20,8 +20,8 @@ from .env_loader import (
     get,
     memory_bridge_scripts_dir,
 )
-from .sanitize import sanitize_error
 from .logs_reader import journal_unit, journalctl_cmd
+from .sanitize import sanitize_error
 from .store import init_db, meta
 
 FEATURE_MATRIX = (

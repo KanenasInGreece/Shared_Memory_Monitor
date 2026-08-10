@@ -8,7 +8,6 @@ from .config import (
     IGNORED_OUTBOX_IDS,
     NREM_DECISION_CLUSTER_MIN,
     NREM_FACT_CLUSTER_MIN,
-    POLL_INTERVAL_S,
     REM_BATCH,
     REM_POLL_S,
 )

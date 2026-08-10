@@ -6,22 +6,22 @@ from pathlib import Path
 from unittest import mock
 
 from sm_telemetry_monitor.logs_reader import (
+    _daemon_diagram_node,
+    _filter_entries,
+    _is_daemon_agent,
+    _parse_ts,
     agent_activity,
     classify_agent_audit_io,
     classify_daemon_audit_io,
     classify_gateway_line,
     is_consolidation_line,
-    journalctl_cmd,
     journal_unit,
+    journalctl_cmd,
     list_archives,
     list_sources,
     parse_log_entry,
     resolve_archive,
     tail_source,
-    _daemon_diagram_node,
-    _filter_entries,
-    _is_daemon_agent,
-    _parse_ts,
 )
 
 
@@ -289,15 +289,15 @@ class GatewayLogClassifyTests(unittest.TestCase):
         for line in (
             "WARNING:REMDaemon:REM: inference GPU busy — deferring enrichment cycle",
             "WARNING:REMDaemon:REM: pg_id=374 LLM failed — skipping",
-            'ERROR:REMDaemon:LLM returned 503: {"error": "Backend unreachable: '
-            'Connection timeout to host http://localhost:5000/v1/chat/completions"}',
+            ('ERROR:REMDaemon:LLM returned 503: {"error": "Backend unreachable: '
+             'Connection timeout to host http://localhost:5000/v1/chat/completions"}'),
             "ERROR:ConsolidationDaemon:Insight synthesis error for NREM: ReadTimeout:",
-            "ERROR:ConsolidationDaemon:Failed to synthesise insight for 'NREM' — "
-            "ledger rows stay open; next sweep retries.",
+            ("ERROR:ConsolidationDaemon:Failed to synthesise insight for 'NREM' — "
+             "ledger rows stay open; next sweep retries."),
             # v0.6.1+ pool gate — replaces the nvtop wording on multi-backend stacks
             "WARNING:REMDaemon:REM: LLM pool has no free slot — deferring enrichment cycle",
-            "WARNING:ConsolidationDaemon:NREM: LLM pool has no free slot — "
-            "deferring consolidation; will re-check next cycle.",
+            ("WARNING:ConsolidationDaemon:NREM: LLM pool has no free slot — "
+             "deferring consolidation; will re-check next cycle."),
         ):
             self.assertEqual(classify_gateway_line(line), "line-warn", line)
 
