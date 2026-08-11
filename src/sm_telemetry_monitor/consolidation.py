@@ -802,6 +802,8 @@ def _normalize_cycle(key: str, raw: dict | None) -> dict:
         "deferred_24h": deferred_24h,
         "idle_24h": idle_24h,
         "idle_deferred_24h_display": idle_deferred_display,
+        "truncation_failures_24h": _num_or_none(raw.get("truncation_failures_24h")),
+        "slot_failures_24h": _num_or_none(raw.get("slot_failures_24h")),
     }
     cycle["state"] = _cycle_state(cycle)
     return cycle

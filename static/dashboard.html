@@ -237,7 +237,9 @@
             <table id="consolidation-cycles">
               <thead><tr>
                 <th>Cycle</th><th>Outcome</th><th>Last success</th><th>In flight</th>
-                <th>Failures</th><th>Eligible</th><th>Oldest wait</th>
+                <th title="Consecutive cycle failures">Failures</th>
+                <th title="Context truncation / Slot acquisition failures in the last 24h">Trunc/Slot (24h)</th>
+                <th>Eligible</th><th>Oldest wait</th>
                 <th title="Completed runs in the last 24h">Runs/24h</th>
                 <th title="Average duration of completed runs (24h)">Avg</th>
                 <th title="Folds succeeded / attempted in the last 24h">Folds</th>
@@ -992,12 +994,16 @@ function renderConsolidationDrilldown(C) {
         const avg = c.cycle_seconds_avg_human || "—";
         const folds = c.folds_24h_display || "—";
         const idleDeferred = c.idle_deferred_24h_display || "—";
+        const truncSlot = (c.truncation_failures_24h != null && c.slot_failures_24h != null)
+          ? `${c.truncation_failures_24h} / ${c.slot_failures_24h}`
+          : "—";
         return `<tr class="consolidation-row-${c.state || "unknown"}">` +
           `<td>${esc(c.label)}</td>` +
           `<td>${esc(outcome || "—")}${err ? `<div class="consolidation-err">${esc(err)}</div>` : ""}</td>` +
           `<td>${esc(c.last_success_age_human || "—")}</td>` +
           `<td>${c.in_flight ? (c.running_human ? `yes (running ${esc(c.running_human)})` : "yes") : "—"}</td>` +
           `<td>${c.consecutive_failures || 0}</td>` +
+          `<td>${esc(truncSlot)}</td>` +
           `<td>${esc(eligText)}</td>` +
           `<td>${esc(c.eligible_oldest_age_human || "—")}</td>` +
           `<td>${esc(runs)}</td>` +
@@ -1006,7 +1012,7 @@ function renderConsolidationDrilldown(C) {
           `<td>${esc(idleDeferred)}</td>` +
           `<td>${esc(status)}</td></tr>`;
       }).join("")
-    : `<tr class="schema-row-empty"><td colspan="12">No consolidation cycle data</td></tr>`;
+    : `<tr class="schema-row-empty"><td colspan="13">No consolidation cycle data</td></tr>`;
 
   const nd = C?.nrem_density || {};
   if (note) {
