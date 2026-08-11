@@ -128,7 +128,7 @@ Three browser views (**Monitor**, **Diagram**, **Logs**) over the **same two ups
 | Schema Postgres panels | `telemetry.breakdown` in the telemetry payload |
 | First-write quality · schema conformance | `telemetry.spine` + `telemetry.compliance` |
 | Throughput & latency drawer | `telemetry.latency` |
-| Consolidation tile + drawer | `/health.consolidation` + `telemetry.consolidation` (+ `entity_graph` / `neo4j`) |
+| Data Quality & Processing drawer | `/health.consolidation` + `telemetry.consolidation` + spine + rem fairness |
 | Log panes | Journal + audit files the framework writes |
 | Diagram agent/daemon flows | Same `agent-audit.jsonl` as the **Agent audit** log tab |
 
@@ -146,30 +146,33 @@ Captured from a running monitor (`./scripts/capture-screenshots.sh`).
 
 *(Same frame as the hero image under the title — recaptured with current UI.)*
 
-A full-width **status deck** above the charts, in three labelled rows — **Drill-down** (Consolidation, Throughput & latency, Schema breakdown), **Backlog & queues** (Dream backlog, REM / NREM split, Pipeline queues), and Backup / **Infrastructure** (component grid + **LLM pool** when the gateway has more than one backend) — followed by backlog charts. All from gateway telemetry (cached polls + live `GET /health`). Range selector (`1h`–`all`) filters the local poll cache.
+A full-width **status deck** above the charts, in three labelled rows — **Drill-down** (Data Quality & Processing, Throughput & latency, Schema & Integrity), **Backlog & queues** (Dream backlog, Pipeline queues), and Backup / **Infrastructure** (component grid + **LLM pool** when the gateway has more than one backend) — followed by backlog charts. All from gateway telemetry (cached polls + live `GET /health`). Range selector (`1h`–`all`) filters the local poll cache. Note: NREM density signals have been deprecated in the UI in favor of strict (project, domain) gating backlog to prevent conflation.
 
 On **gateway ≥0.8.9**, the Infrastructure hint includes the non-secret config summary (e.g. `Gateway 0.8.9 · API 3 · 2 LLM backends · local · embed 24k`), and each pool chip badges **local** or **external** from `has_credential` (optional `model` override appears in the chip meta). No API keys ever appear.
 
 ![Monitor — Gateway health, status deck, infrastructure, LLM pool, backlog charts](docs/images/dashboard.png)
 
-### Consolidation health (side drawer)
+### Data Quality & Processing (side drawer)
 
-Opens from **Drill-down → Consolidation**. The drawer reads the gateway's consolidation telemetry and `GET /health`, and shows the dream cycle's health on two axes — what it has **produced** (coverage) and what it has **to work with** (graph health):
+Opens from **Drill-down → Data Quality & Processing**. The drawer reads the gateway's consolidation telemetry, `GET /health`, and spine metrics. It shows the pipeline's operational health and processing queue (upstream spine + rem queues):
 
 - **First-write quality** (upstream, gateway v0.6.2+) — completeness of high-signal fields, schema-growth candidates, integrity (including off-vocabulary labels/links from `telemetry.compliance`). Non-decision totals include facts **and** retrospectives after framework API v2.
-- **Liveness** — health verdict, last outcome, time since the last successful fold **with cycle type**, stalled type list, last active cycle, and the stall threshold. The Status tile names which type(s) are stalled (`Stalled [fact consolidation]`) because the gateway ORs stall across types — one healthy cycle can leave the headline red while a sibling is still folding. A deferred cycle with an **explicit** empty eligible census reads as **idle**; unknown eligibility keeps the deferred reason (e.g. pool busy). The only red state is a genuine stall.
+- **Liveness** — health verdict, last outcome, time since the last successful fold **with cycle type**, stalled type list, last active cycle, and the stall threshold. 
 - **Coverage** (output side) — from the `telemetry.neo4j` fact census: REM-processed facts, how many are consolidated (count and %), and how many still await a fold. **Consolidations by type** lists the summaries produced — insights, thematic, community — with any superseded count.
-- **Graph health · entity resolution** (input side, gateway v0.6.0+; v0.6.1 semantics) — from `telemetry.entity_graph`: total entities, the **Mentioned** share (entities with live fact/decision mentions — the ones that can seed a fold), the **Structural only** share (entities holding graph edges but no live mention), **Orphans** (truly dangling degree-0 nodes — a hygiene defect, flagged when nonzero), **Singletons**, and the alias layer (**Alias edges** · groups · alias coverage · **largest alias group**) written by the v0.6.1 entity-resolution alias-writer. The counts include entities from records still awaiting REM — REM is the stage that builds an entity's relationships — so an **Awaiting REM** figure is shown and the fragmentation share reads as an upper bound until REM catches up.
-- **REM reliability · stranded & fairness** (gateway ≥0.7.x, decision 819; fairness ≥0.8.6 / fact 895 · decision 894) — from `telemetry.neo4j`: **Dead-lettered** (records retired at the retry cap) and **Failing** (still accumulating chargeable failures but not yet retired — the "stranded record" case: picked up repeatedly, never succeeded, never blamed, previously invisible), plus the **Retry cap** (warn styling when nonzero). Gateway ≥0.8.6 also surfaces **Passed over (yield)** and **Starved pending** as **instrument** counters (dashed/slate, not fault-warn): zeros under a thin backlog are honest dormancy; nonzero means the fairness path is live for before/after measurement.
-- **By cycle** — insight and fact-consolidation rows with outcome, last success, eligible clusters, oldest wait, last error, **24h activity** (runs, average cycle seconds, folds succeeded/attempted), and **Deferred/Idle (24h)** (decision 842, **provisional**: the per-consumer idle-clock split's timer values are reasoned defaults, not measured optima — a retrospective is owed once a full load cycle of this data accumulates). Insight empty runs and fact-consolidation folds differ by orders of magnitude in cost — read the per-type row, not only the headline.
+- **REM reliability · stranded & fairness** (gateway ≥0.7.x, decision 819; fairness ≥0.8.6 / fact 895 · decision 894) — from `telemetry.neo4j`: **Dead-lettered** (records retired at the retry cap) and **Failing** (still accumulating chargeable failures but not yet retired — the "stranded record" case: picked up repeatedly, never succeeded, never blamed, previously invisible), plus the **Retry cap** (warn styling when nonzero). Gateway ≥0.8.6 also surfaces **Passed over (yield)** and **Starved pending** as **instrument** counters (dashed/slate, not fault-warn).
+- **By cycle** — insight and fact-consolidation rows with outcome, last success, eligible clusters, oldest wait, last error, **24h activity**, and **Deferred/Idle (24h)**.
 
-![Consolidation health — liveness, fact coverage %, graph-health entity resolution, per-cycle table](docs/images/consolidation.png)
+![Data Quality & Processing — liveness, fact coverage, REM fairness, per-cycle table](docs/images/consolidation.png)
 
-### Schema breakdown (side drawer)
+### Schema & Integrity (side drawer)
 
-Opens from **Drill-down → Schema breakdown** — a slide-over panel on the right, not a separate page. Neo4j graph from `POST /memory/graph`; Postgres inventory from `telemetry.breakdown` (plus `technical_docs` / superseded counts).
+Opens from **Drill-down → Schema & Integrity** — a slide-over panel on the right, not a separate page. It presents database state/topology and entity graph hygiene. 
 
-![Schema breakdown — Neo4j labels, graph paths, telemetry record types and domains](docs/images/schema-breakdown.png)
+- **Graph health · entity resolution** (moved from consolidation drawer in Dreaming Cycle v2). From `telemetry.entity_graph`: total entities, the **Mentioned** share, the **Structural only** share, **Orphans**, **Singletons**, and the alias layer. Entity resolution is payload-only and no longer gates consolidation, hence its placement in Schema & Integrity rather than pipeline processing, to avoid implying a false upstream dependency that misleads operators debugging stalled pipelines.
+- **Neo4j labels and relationships** — from `POST /memory/graph`.
+- **Postgres inventory** — from `telemetry.breakdown` (plus `technical_docs` / superseded counts).
+
+![Schema & Integrity — Neo4j labels, graph paths, telemetry record types, entity resolution](docs/images/schema-breakdown.png)
 
 ### Diagram (`/diagram`)
 
