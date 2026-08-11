@@ -17,10 +17,14 @@ echo "Installed → $UNIT_DST (MONITOR_ROOT=$ROOT)"
 systemctl --user daemon-reload
 systemctl --user enable shared-memory-monitor.service
 
-if ss -tln 2>/dev/null | grep -q ':8765 '; then
+if command -v ss >/dev/null 2>&1 && ss -tln 2>/dev/null | grep -q ':8765 '; then
   echo ""
   echo "Port 8765 in use — stopping foreground listener, then starting user unit..."
-  fuser -k 8765/tcp 2>/dev/null || true
+  if command -v fuser >/dev/null 2>&1; then
+    fuser -k 8765/tcp 2>/dev/null || true
+  else
+    echo "fuser not found. Please manually kill the process on port 8765 if the restart fails."
+  fi
   sleep 0.5
 fi
 

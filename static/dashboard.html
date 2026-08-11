@@ -62,7 +62,7 @@
           <div class="drawer-trigger-stack drawer-trigger-stack-row">
             <button type="button" class="drawer-trigger drawer-trigger-status ok" id="consolidation-card" aria-live="polite" aria-expanded="false" aria-controls="consolidation-drawer" aria-label="Open consolidation health" title="">
               <span class="drawer-trigger-text">
-                <span class="drawer-trigger-label">Consolidation</span>
+                <span class="drawer-trigger-label">Data Quality &amp; Processing</span>
                 <span class="drawer-trigger-value" id="v-consolidation">—</span>
                 <span class="drawer-trigger-desc" id="consolidation-caption">—</span>
                 <span class="drawer-trigger-stale" id="consolidation-stale" hidden>signal stale</span>
@@ -79,7 +79,7 @@
             </button>
             <button type="button" id="schema-open" class="drawer-trigger" aria-expanded="false" aria-controls="schema-drawer" aria-label="Open schema breakdown">
               <span class="drawer-trigger-text">
-                <span class="drawer-trigger-label">Schema breakdown</span>
+                <span class="drawer-trigger-label">Schema &amp; Integrity</span>
                 <span class="drawer-trigger-desc">Neo4j graph · telemetry breakdown</span>
               </span>
               <span class="drawer-trigger-go" aria-hidden="true">Open</span>
@@ -189,7 +189,7 @@
 <aside id="consolidation-drawer" class="schema-drawer consolidation-drawer" role="dialog" aria-modal="true" aria-labelledby="consolidation-drawer-title" hidden>
   <header class="schema-drawer-head">
     <div>
-      <h2 id="consolidation-drawer-title">Consolidation health</h2>
+      <h2 id="consolidation-drawer-title">Data Quality &amp; Processing</h2>
       <p class="schema-drawer-sub">The quality chain, read top to bottom: how complete records are when written, whether consolidation is keeping up, how much has folded into summaries, and how well the entity graph connects.</p>
       <p id="consolidation-fetched" class="schema-fetched" hidden></p>
     </div>
@@ -290,7 +290,7 @@
 <aside id="schema-drawer" class="schema-drawer" role="dialog" aria-modal="true" aria-labelledby="schema-drawer-title" hidden>
   <header class="schema-drawer-head">
     <div>
-      <h2 id="schema-drawer-title">Schema breakdown</h2>
+      <h2 id="schema-drawer-title">Schema &amp; Integrity</h2>
       <p class="schema-drawer-sub">Diagnostic drill-down — graph topology and relational store inventory</p>
       <p id="schema-fetched" class="schema-fetched" hidden></p>
     </div>

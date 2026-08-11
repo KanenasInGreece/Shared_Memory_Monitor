@@ -46,6 +46,10 @@ def flatten_snapshot(payload: dict, collected_at: datetime, health: dict) -> dic
         "facts_unconsolidated": nj.get("facts_unconsolidated"),
         "decisions_total": nj.get("decisions_total"),
         "decisions_rem_pending": nj.get("decisions_rem_pending"),
+        "rem_dead_lettered": nj.get("rem_dead_lettered"),
+        "rem_failing": nj.get("rem_failing"),
+        "rem_passed_over_total": nj.get("rem_passed_over_total"),
+        "rem_starved_pending": nj.get("rem_starved_pending"),
         "gateway_status": health.get("status"),
         "gateway_version": health.get("version"),
         "embedder": health.get("embedder"),
@@ -106,8 +110,12 @@ def append_jsonl(row: dict) -> None:
 
 def poll_once() -> dict | None:
     collected_at = utc_now()
-    health = get_health()
-    payload = get_telemetry()
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        f_health = ex.submit(get_health)
+        f_telemetry = ex.submit(get_telemetry)
+        health = f_health.result()
+        payload = f_telemetry.result()
     row = flatten_snapshot(payload, collected_at, health)
     if row is None:
         status = payload.get("status", "error")

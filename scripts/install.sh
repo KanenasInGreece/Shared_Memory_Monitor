@@ -6,6 +6,11 @@ cd "$ROOT"
 
 PKG_VERSION="$(grep -E '^version\s*=' pyproject.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
 
+if ! command -v uv >/dev/null 2>&1; then
+  echo "uv required — https://docs.astral.sh/uv/" >&2
+  exit 2
+fi
+
 echo "==> Installing Python dependencies (sm-telemetry-monitor ${PKG_VERSION:-?})"
 uv sync
 
@@ -14,6 +19,9 @@ if [[ ! -f .env ]]; then
   echo "==> Created .env from .env.example"
   echo "    Required: set AGENT_TOKEN (read-only monitor token) and COORDINATOR_URL"
   echo "    Optional:  SHARED_MEMORY_ROOT / BACKUP_DIR for logs + sidebar backup date"
+  echo ""
+  echo "Please populate .env, then run ./scripts/check-env.sh to verify setup."
+  exit 0
 else
   echo "==> .env already exists (unchanged)"
 fi
