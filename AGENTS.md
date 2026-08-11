@@ -61,9 +61,11 @@ ready (missing token, gateway down, etc.). Agents should treat exit **1** with
 
 ## First-time setup
 
-### Phase 0 — Interview the user
+### Phase 0 — Interview the user (if auto-discovery fails)
 
-Collect before writing files. Defaults in brackets are safe to offer.
+`./scripts/install.sh` will attempt to auto-discover the framework's local `.env` file via systemd or common paths. It will automatically extract the `monitor` token and `COORDINATOR_URL` if found. **Run `./scripts/install.sh` first** before asking these questions, as they may be fully automated.
+
+If auto-discovery fails or the gateway is remote, collect these before writing files (defaults in brackets):
 
 | # | Ask | Fills |
 |---|-----|--------|
@@ -86,9 +88,9 @@ cd Shared_Memory_Monitor
 ./scripts/install.sh
 ```
 
-Creates `.env` from `.env.example` if missing; runs doctor (may fail until token is set).
+Creates `.env` via `auto_discover.py` if the local framework is found, otherwise creates it from `.env.example`. Runs doctor (may fail until token is set).
 
-### Phase 2 — Wire the monitor token
+### Phase 2 — Wire the monitor token (if manual)
 
 On the **gateway host** (framework install), mint or re-use the monitor identity:
 

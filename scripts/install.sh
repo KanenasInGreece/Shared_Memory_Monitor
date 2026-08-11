@@ -15,13 +15,16 @@ echo "==> Installing Python dependencies (sm-telemetry-monitor ${PKG_VERSION:-?}
 uv sync
 
 if [[ ! -f .env ]]; then
-  cp .env.example .env
-  echo "==> Created .env from .env.example"
-  echo "    Required: set AGENT_TOKEN (read-only monitor token) and COORDINATOR_URL"
-  echo "    Optional:  SHARED_MEMORY_ROOT / BACKUP_DIR for logs + sidebar backup date"
-  echo ""
-  echo "Please populate .env, then run ./scripts/check-env.sh to verify setup."
-  exit 0
+  uv run python scripts/auto_discover.py
+  if [[ ! -f .env ]]; then
+    cp .env.example .env
+    echo "==> Created .env from .env.example"
+    echo "    Required: set AGENT_TOKEN (read-only monitor token) and COORDINATOR_URL"
+    echo "    Optional:  SHARED_MEMORY_ROOT / BACKUP_DIR for logs + sidebar backup date"
+    echo ""
+    echo "Please populate .env, then run ./scripts/check-env.sh to verify setup."
+    exit 0
+  fi
 else
   echo "==> .env already exists (unchanged)"
 fi
