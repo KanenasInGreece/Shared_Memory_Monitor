@@ -98,7 +98,7 @@ python shared-memory/scripts/generate_tokens.py   # or bootstrap_tokens.sh
 # Ensure gateway .env has:
 #   AGENT_TOKENS=...,monitor:tok_...
 #   AGENT_ROLES=monitor:read
-# Then: systemctl --user restart hive-mind-gateway.service
+# Then: systemctl --user restart hive-mind-gateway.service # (or your specific gateway service name)
 ```
 
 In **this** repo's gitignored `.env` (never commit):
@@ -222,7 +222,7 @@ If only running foreground, stop and re-run `./scripts/run-loop.sh --serve --int
 
 ```bash
 ./scripts/agent-upgrade.sh           # pull main, uv sync, restart unit if present, status
-# or pin: ./scripts/agent-upgrade.sh --ref v0.9.8   # example tag
+# or pin: ./scripts/agent-upgrade.sh --ref v0.9.9   # example tag
 ```
 
 After upgrade, confirm `compat=ok` if the gateway bumped `api_version` — the monitor

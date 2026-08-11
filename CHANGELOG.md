@@ -6,7 +6,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## [0.9.8] - 2026-08-10
+## [0.9.9] - 2026-08-10
 
 ### Fixed
 - Fixed code quality (Ruff) and security (Bandit) issues across the codebase.
