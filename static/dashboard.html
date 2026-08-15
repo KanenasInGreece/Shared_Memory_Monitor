@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Shared Memory Monitor</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<link rel="stylesheet" href="/static/theme.css?v=50">
+<link rel="stylesheet" href="/static/theme.css?v=51">
 </head>
 <body data-bar-meta="dashboard">
 
@@ -140,6 +140,7 @@
               <div class="section-title section-title-tight">LLM pool</div>
               <div class="pool-line" id="llm-pool-line" aria-live="polite"></div>
               <div class="pool-backends" id="llm-pool-backends" role="list"></div>
+              <div id="llm-pool-popover" class="pool-popover" hidden role="dialog" aria-label="Backend fault signal"></div>
               <div class="hint pool-affinity" id="llm-pool-affinity" hidden></div>
             </div>
           </div>
@@ -1337,9 +1338,135 @@ function fmtInflightAge(s) {
   return mm ? `${h}h ${mm}m` : `${h}h`;
 }
 
+// Per-backend fault signal (Task 2): chip warn + inspect popover. Signal only —
+// log lines stay on /logs. Open state keyed by backend url across poll re-renders.
+let llmPoolOpenUrl = null;
+const llmPoolByUrl = new Map();
+
+function poolFaultHasCount(faults) {
+  if (!faults || typeof faults !== "object") return false;
+  return ["gateway", "credential", "transient"].some(k => {
+    const f = faults[k];
+    return f && Number(f.count) > 0;
+  });
+}
+
+function fmtPoolTs(ts) {
+  if (ts == null || ts === "") return "—";
+  return String(ts).replace("T", " ").replace(/Z$/, " UTC");
+}
+
+function fmtPoolFaultLast(kind, last) {
+  if (!last || typeof last !== "object") return "—";
+  const bits = [fmtPoolTs(last.ts)];
+  if (kind === "gateway") {
+    if (last.class) bits.push(String(last.class));
+  } else {
+    if (last.status != null && last.status !== "") bits.push(String(last.status));
+    if (last.error_type) bits.push(String(last.error_type));
+  }
+  return bits.join(" · ");
+}
+
+function poolFaultRowHtml(label, kind, fault) {
+  const count = fault && fault.count != null ? Number(fault.count) : 0;
+  const last = fault && fault.last ? fmtPoolFaultLast(kind, fault.last) : "—";
+  const cls = count > 0 ? "warn" : "ok";
+  return `<div class="pool-pop-row ${cls}">
+    <span class="pool-pop-kind">${esc(label)}</span>
+    <span class="pool-pop-count">${Number.isFinite(count) ? count : 0}</span>
+    <span class="pool-pop-last">${esc(last)}</span>
+  </div>`;
+}
+
+function closeLlmPoolPopover() {
+  llmPoolOpenUrl = null;
+  const pop = document.getElementById("llm-pool-popover");
+  if (pop) {
+    pop.hidden = true;
+    pop.innerHTML = "";
+    pop.style.top = "";
+  }
+  document.querySelectorAll("#llm-pool-backends .pool-chip[aria-expanded='true']").forEach(el => {
+    el.setAttribute("aria-expanded", "false");
+  });
+}
+
+function positionLlmPoolPopover(btn) {
+  const panel = document.getElementById("llm-pool-panel");
+  const pop = document.getElementById("llm-pool-popover");
+  if (!panel || !pop || !btn || pop.hidden) return;
+  // Anchor under the chip inside the relatively-positioned panel.
+  const top = btn.offsetTop + btn.offsetHeight + 4;
+  pop.style.top = `${top}px`;
+  pop.style.left = "0";
+  pop.style.right = "0";
+}
+
+function fillLlmPoolPopover(b) {
+  const pop = document.getElementById("llm-pool-popover");
+  if (!pop || !b) return;
+  const url = b.url || "";
+  const place = b.placement === "external" || b.placement === "local" ? b.placement : "—";
+  const faults = b.faults;
+  const hasKey = faults != null && typeof faults === "object";
+  const any = poolFaultHasCount(faults);
+  const enc = encodeURIComponent(url);
+  const credHref = `/logs?source=credential_audit&backend=${enc}`;
+  const agentHref = `/logs?source=agent_audit&backend=${enc}`;
+
+  let body;
+  if (!hasKey || !any) {
+    body = `<p class="pool-pop-empty">No faults — open logs to inspect</p>`;
+  } else {
+    body = `<div class="pool-pop-rows" role="list">
+      ${poolFaultRowHtml("gateway", "gateway", faults.gateway)}
+      ${poolFaultRowHtml("credential", "credential", faults.credential)}
+      ${poolFaultRowHtml("transient", "transient", faults.transient)}
+    </div>`;
+  }
+
+  pop.innerHTML = `
+    <div class="pool-pop-head">
+      <div class="pool-pop-title">${esc(b.label || url || "backend")}</div>
+      <div class="pool-pop-sub">${esc(url || "—")}${place !== "—" ? ` · ${esc(place)}` : ""}</div>
+    </div>
+    ${body}
+    <p class="pool-pop-cue">Chip warning is a cue to read logs — not a deck-critical by itself.</p>
+    <div class="pool-pop-links">
+      <a class="pool-pop-link" href="${credHref}">Credential audit</a>
+      <a class="pool-pop-link" href="${agentHref}">Agent audit</a>
+    </div>`;
+  pop.hidden = false;
+}
+
+function openLlmPoolPopover(btn, b) {
+  if (!btn || !b) return;
+  document.querySelectorAll("#llm-pool-backends .pool-chip[aria-expanded='true']").forEach(el => {
+    if (el !== btn) el.setAttribute("aria-expanded", "false");
+  });
+  llmPoolOpenUrl = b.url || null;
+  btn.setAttribute("aria-expanded", "true");
+  fillLlmPoolPopover(b);
+  positionLlmPoolPopover(btn);
+}
+
+function toggleLlmPoolPopover(btn) {
+  const url = btn?.dataset?.url || "";
+  if (!url) return;
+  if (llmPoolOpenUrl === url) {
+    closeLlmPoolPopover();
+    return;
+  }
+  const b = llmPoolByUrl.get(url);
+  if (!b) return;
+  openLlmPoolPopover(btn, b);
+}
+
 function renderLlmPool(H) {
   // Surfaces only fields the gateway already emits on /health (pool maps, oldest
   // in-flight age, live affinity, wedge list). Hidden when none of those exist.
+  // Optional Task-1 fields: H.credentials, backends[].faults — degrade when absent.
   const panel = document.getElementById("llm-pool-panel");
   const line = document.getElementById("llm-pool-line");
   const list = document.getElementById("llm-pool-backends");
@@ -1355,11 +1482,14 @@ function renderLlmPool(H) {
   const hasAff = !!(aff && (aff.hits != null || aff.misses != null || aff.hit_rate != null
     || (aff.hot_prefixes && aff.hot_prefixes.length)));
   const hasWedge = Array.isArray(wedged) && wedged.length > 0;
+  const auditDropped = Number(H?.credentials?.audit_log_dropped) > 0;
 
   if (!hasPool && !hasAge && !hasAff && !hasWedge) {
     panel.hidden = true;
     list.innerHTML = "";
     line.textContent = "";
+    closeLlmPoolPopover();
+    llmPoolByUrl.clear();
     if (affEl) { affEl.hidden = true; affEl.textContent = ""; }
     return;
   }
@@ -1377,11 +1507,15 @@ function renderLlmPool(H) {
   }
   if (H?.inference_busy) bits.push(`GPU ${H.inference_busy}`);
   if (hasWedge) bits.push(`wedge: ${wedged.join(", ")}`);
+  if (auditDropped) bits.push("audit log dropped");
   line.textContent = bits.join(" · ");
-  line.className = "pool-line" + (hasWedge ? " warn" : "");
+  line.className = "pool-line" + (hasWedge || auditDropped ? " warn" : "");
 
+  llmPoolByUrl.clear();
   if (hasPool) {
     list.innerHTML = pool.backends.map(b => {
+      const url = b.url || "";
+      if (url) llmPoolByUrl.set(url, b);
       const st = (b.status === "ok") ? (b.inflight > 0 ? "busy" : (b.available ? "free" : "held"))
                : (b.status === "unknown" ? "unknown" : "down");
       const stateClass = st === "busy" ? "busy" : st === "free" ? "free"
@@ -1389,6 +1523,9 @@ function renderLlmPool(H) {
       // placement from /health.config has_credential (framework ≥0.8.9) — never inferred
       const place = b.placement === "external" || b.placement === "local" ? b.placement : null;
       const placeClass = place ? ` place-${place}` : "";
+      // Fault warn never overrides down; token_verify_failed is never painted here.
+      const faultWarn = poolFaultHasCount(b.faults) && st !== "down";
+      const warnClass = faultWarn ? " warn" : "";
       const meta = [];
       if (place) meta.push(place);
       if (b.model) meta.push(b.model);
@@ -1400,18 +1537,36 @@ function renderLlmPool(H) {
       if (b.cooldown > 0) meta.push(`cooldown ${Math.round(b.cooldown)}s`);
       if (b.reserved) meta.push("reserved");
       const titleBits = [b.url, b.status, place, b.model, ...meta.filter(m => m !== place && m !== b.model)];
+      if (faultWarn || (st === "down" && poolFaultHasCount(b.faults))) titleBits.push("faults — click to inspect");
       const title = titleBits.filter(Boolean).join(" · ");
       const placeBadge = place
         ? `<span class="pool-chip-place" title="${place === "external" ? "credentialed external/paid API" : "local backend (no credential)"}">${esc(place)}</span>`
         : "";
-      return `<div class="pool-chip ${stateClass}${placeClass}" role="listitem" title="${esc(title)}">
+      const expanded = llmPoolOpenUrl && url && llmPoolOpenUrl === url ? "true" : "false";
+      return `<button type="button" class="pool-chip ${stateClass}${placeClass}${warnClass}" role="listitem"
+          data-url="${esc(url)}" aria-expanded="${expanded}"
+          aria-label="Inspect LLM backend ${esc(b.label || url || "unknown")}"
+          title="${esc(title)}">
           <span class="pool-chip-label">${esc(b.label)}${placeBadge}</span>
           <span class="pool-chip-state">${esc(st)}</span>
           <span class="pool-chip-meta">${esc(meta.join(" · "))}</span>
-        </div>`;
+        </button>`;
     }).join("");
   } else {
     list.innerHTML = "";
+  }
+
+  // Re-anchor open popover after poll re-render; close if that backend vanished.
+  if (llmPoolOpenUrl) {
+    const still = llmPoolByUrl.get(llmPoolOpenUrl);
+    const btn = Array.from(list.querySelectorAll(".pool-chip"))
+      .find(el => el.dataset.url === llmPoolOpenUrl);
+    if (still && btn) {
+      fillLlmPoolPopover(still);
+      positionLlmPoolPopover(btn);
+    } else {
+      closeLlmPoolPopover();
+    }
   }
 
   if (affEl) {
@@ -1795,9 +1950,26 @@ document.getElementById("latency-close").addEventListener("click", closeLatencyD
 document.getElementById("latency-backdrop").addEventListener("click", closeLatencyDrawer);
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
-  if (document.getElementById("latency-drawer").classList.contains("open")) closeLatencyDrawer();
+  if (llmPoolOpenUrl) closeLlmPoolPopover();
+  else if (document.getElementById("latency-drawer").classList.contains("open")) closeLatencyDrawer();
   else if (document.getElementById("consolidation-drawer").classList.contains("open")) closeConsolidationDrawer();
   else if (document.getElementById("schema-drawer").classList.contains("open")) closeSchemaDrawer();
+});
+
+// LLM pool chip inspect: click toggles popover; outside click closes; Escape above.
+document.getElementById("llm-pool-backends")?.addEventListener("click", e => {
+  const btn = e.target.closest(".pool-chip");
+  if (!btn || !document.getElementById("llm-pool-backends").contains(btn)) return;
+  e.stopPropagation();
+  toggleLlmPoolPopover(btn);
+});
+document.addEventListener("click", e => {
+  if (!llmPoolOpenUrl) return;
+  const pop = document.getElementById("llm-pool-popover");
+  const list = document.getElementById("llm-pool-backends");
+  if (pop && pop.contains(e.target)) return;
+  if (list && list.contains(e.target) && e.target.closest(".pool-chip")) return;
+  closeLlmPoolPopover();
 });
 
 function renderSidebarMetrics(D) {
