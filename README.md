@@ -16,7 +16,7 @@ first-write quality, graph shape, latency, topology, and audit trails — so you
 | **What you get** | Visual ops aid over **framework-owned** telemetry and logs |
 | **What you do not get** | A second metrics store, DB credentials, or write access to memory |
 | **Dashboard** | **http://127.0.0.1:8765/** |
-| **This release** | **v0.9.9** — **API v4** client · framework **0.9.x ready** (wire compatible **≥ v0.8.33**) · alternative vectors on **≥ v0.8.40** · full Status + **diagram** LLM pool on **≥ v0.8.9** (**local/external** placement) |
+| **This release** | **v0.9.10** — **API v4** client · framework **0.9.x ready** (wire compatible **≥ v0.8.33**) · alternative vectors on **≥ v0.8.40** · full Status + **diagram** LLM pool on **≥ v0.8.9** (**local/external** placement) |
 
 ---
 
@@ -102,7 +102,7 @@ Open **http://127.0.0.1:8765/**
 
 **Shared Memory Monitor** is a sister project to the framework — a read-only **view** over **gateway telemetry** and **framework logs**. It does not own memory stores, daemons, or a separate metrics API.
 
-**Compatibility (v0.9.9):** Ready for framework **0.9.x**. Wire contract **API v4** (`X-SM-Api-Version: 4`) against **Shared Memory Framework gateway ≥ v0.8.33** — `./scripts/check-env.sh` / `agent-status.sh` should report `compat=ok`. **Alternative vectors** band (first-write quality) needs **gateway ≥ v0.8.40**. For the full ops picture (Status + **diagram** LLM pool with **local** vs **external** badges, consolidation graph health + REM fairness instruments, latency drawer), run **gateway ≥ v0.8.9** (including all **0.9.x** releases); older gateways stay compatible and simply omit missing fields. Doctor prints which telemetry panels and placement signals are present.
+**Compatibility (v0.9.10):** Ready for framework **0.9.x**. Wire contract **API v4** (`X-SM-Api-Version: 4`) against **Shared Memory Framework gateway ≥ v0.8.33** — `./scripts/check-env.sh` / `agent-status.sh` should report `compat=ok`. **Alternative vectors** band (first-write quality) needs **gateway ≥ v0.8.40**. For the full ops picture (Status + **diagram** LLM pool with **local** vs **external** badges, consolidation graph health + REM fairness instruments, latency drawer), run **gateway ≥ v0.8.9** (including all **0.9.x** releases); older gateways stay compatible and simply omit missing fields. Doctor prints which telemetry panels and placement signals are present.
 
 | | Framework | Monitor (this repo) |
 |---|-----------|---------------------|
@@ -208,7 +208,7 @@ Live framework topology: agents → gateway; REM/NREM ↔ gateway; memory and in
 | `telemetry.compliance` | **Framework gateway v0.6.3+** — feeds **Schema conformance** (graph writes inside the agreed ontology). Older gateways omit it. |
 | `telemetry.latency` | **Framework gateway v0.6.3+** — feeds the **Throughput & latency** drawer (per-model enrichment model-floor vs queue-wait split; consolidation-cycle p50/p95). Older gateways omit it (drawer shows an unsupported note). |
 | `postgres.technical_docs_superseded` | Soft-superseded row count on Schema drawer meta (and poll cache). |
-| Client `X-SM-Api-Version` | Monitor **v0.9.9** advertises **api_version 4** — compatible with **framework ≥ v0.8.33**; alternative vectors on **≥ v0.8.40**; full panel set + LLM placement on **≥ v0.8.9**. `./scripts/check-env.sh` reports `server=N client=N compat=ok` and which telemetry panels / placement signals are present. |
+| Client `X-SM-Api-Version` | Monitor **v0.9.10** advertises **api_version 4** — compatible with **framework ≥ v0.8.33**; alternative vectors on **≥ v0.8.40**; full panel set + LLM placement on **≥ v0.8.9**. `./scripts/check-env.sh` reports `server=N client=N compat=ok` and which telemetry panels / placement signals are present. |
 | Python 3.11+ and [uv](https://docs.astral.sh/uv/) | `uv sync` / CLI |
 
 ### Local logs (required for `/logs` and diagram flows; same host as gateway in practice)
@@ -361,8 +361,9 @@ Main charts: backlog over time, throughput, cumulative cleared, tier-3 growth & 
 | **Gateway daemons** | `journalctl --user -u hive-mind-gateway.service` | Plaintext journal |
 | **REM audit** | `AUDIT_LOG_PATH` | JSONL outbox reviews |
 | **Agent audit** | `GATEWAY_AUDIT_LOG_PATH` | JSONL per-request audit |
+| **Credential audit** | `CREDENTIAL_AUDIT_LOG_PATH` | JSONL high-signal credential/fault events (framework ≥0.9.4) |
 
-Controls: **Follow** / **Pause**, since/until filters, **File** picker (live + `.gz` archives), agent filter chips (agent audit), **Consolidation** filter chip (gateway journal). Deep links: `/logs?source=agent_audit`, `/logs?source=gateway&consolidation=1`.
+Controls: **Follow** / **Pause**, since/until filters, **File** picker (live + numbered `.1` / `.N.gz` archives), agent filter chips (agent audit), **backend** chips (agent + credential audit), **origin** chips (credential audit), **Consolidation** filter chip (gateway journal). Deep links: `/logs?source=agent_audit`, `/logs?source=gateway&consolidation=1`, `/logs?source=credential_audit&backend=<url>`.
 
 Gateway journal lines for consolidation observability are severity-colored: `Consolidation run […] CRASHED` (error), `deferring` / `health refresh failed` (warn), completed runs (info).
 
@@ -379,6 +380,7 @@ Gateway journal lines for consolidation observability are severity-colored: `Con
 | `SM_JOURNAL_UNIT` | | Journal unit (default `hive-mind-gateway.service`) |
 | `AUDIT_LOG_PATH` | | REM audit JSONL |
 | `GATEWAY_AUDIT_LOG_PATH` | | Agent audit JSONL |
+| `CREDENTIAL_AUDIT_LOG_PATH` | | Credential/fault audit JSONL (empty string disables) |
 | `BACKUP_DIR` | | Directory of `sm-backup-*.manifest.json` for sidebar **Last** backup date (default `~/.shared-memory/backups`; auto-discovered from framework `.env` via `SHARED_MEMORY_ROOT`) |
 | `NEO4J_BROWSER_URL` | | Neo4j Browser tab link |
 | `SM_IGNORED_OUTBOX_IDS` | | Stale outbox IDs excluded from alerts (default `4`) |
@@ -544,13 +546,13 @@ Regenerate screenshots: `./scripts/capture-screenshots.sh` (Playwright; monitor 
 | Doc | Topic |
 |-----|-------|
 | [SISTER_PROJECT.md](docs/SISTER_PROJECT.md) | Framework boundary |
-| [CHANGELOG.md](CHANGELOG.md) | Releases (current: **v0.9.9** · API **4** · framework **0.9.x ready** / **≥0.8.33** wire · **≥0.8.40** alt-vectors · **≥0.8.9** full panels) |
+| [CHANGELOG.md](CHANGELOG.md) | Releases (current: **v0.9.10** · API **4** · framework **0.9.x ready** / **≥0.8.33** wire · **≥0.8.40** alt-vectors · **≥0.8.9** full panels) |
 | [SECURITY.md](SECURITY.md) | Secrets policy |
 
 ```bash
 ./scripts/pre-publish-check.sh && ./scripts/publish.sh
 # release: tag must match pyproject / __init__ / CHANGELOG
-# gh release create v0.9.9 --title "v0.9.9" --notes-file …
+# gh release create v0.9.10 --title "v0.9.10" --notes-file …
 ```
 
 ---

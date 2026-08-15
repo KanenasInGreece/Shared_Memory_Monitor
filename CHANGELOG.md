@@ -6,6 +6,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.10] - 2026-08-15
+
+### Added
+- Added `slot_failures` and `truncation_failures` metrics to the consolidation cycle table in the Data Quality drawer.
+- Join framework `telemetry.llm_faults` and `telemetry.credentials` onto `/api/health` (additive; no `api_version` bump). Each LLM pool rectangle can be clicked for last-event signal; a warning is a cue to open logs, not a deck-critical.
+- **Credential audit** log source (`credential_audit`) tails `credential-audit.jsonl` (`CREDENTIAL_AUDIT_LOG_PATH`). File picker lists logrotate `*.1` and `*.N.gz` for all audit jsonl sources.
+- Backend filter chips on credential audit and agent audit; origin chips (`gateway` / `upstream`) on credential audit. Deep links: `/logs?source=credential_audit&backend=<url>`.
+
+### Changed
+- Documentation for full compatibility with Shared Memory framework 0.9.x releases.
+
 ## [0.9.9] - 2026-08-10
 
 ### Fixed
