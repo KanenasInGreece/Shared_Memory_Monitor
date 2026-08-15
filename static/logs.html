@@ -61,6 +61,14 @@
   <span class="logs-agent-label">Agent</span>
   <div class="logs-agent-chips" id="agent-chips" role="group" aria-label="Filter by agent"></div>
 </div>
+<div class="logs-agent-bar" id="backend-bar" hidden>
+  <span class="logs-agent-label">Backend</span>
+  <div class="logs-agent-chips" id="backend-chips" role="group" aria-label="Filter by backend"></div>
+</div>
+<div class="logs-agent-bar" id="origin-bar" hidden>
+  <span class="logs-agent-label">Origin</span>
+  <div class="logs-agent-chips" id="origin-chips" role="group" aria-label="Filter by origin"></div>
+</div>
 <div id="log" role="log" aria-live="polite"></div>
 
 <script src="/static/bar-meta.js?v=1"></script>
@@ -68,6 +76,8 @@
 const pageParams = new URLSearchParams(location.search);
 const urlSource = pageParams.get("source");
 const urlConsolidation = pageParams.get("consolidation") === "1";
+const urlBackend = pageParams.get("backend");
+const urlOrigin = pageParams.get("origin");
 let consolidationFilter = localStorage.getItem("sm-log-consolidation") === "1";
 if (urlConsolidation) {
   consolidationFilter = true;
@@ -81,6 +91,18 @@ let lastJournalLine = null;
 let sourceLabels = {};
 let totalLines = 0, totalErr = 0, totalWarn = 0, totalConsolidation = 0;
 let lineBuffer = [];
+
+/** Slash-normalise backend URL for filter compare (rstrip /). */
+function normalizeBackend(url) {
+  return String(url || "").replace(/\/+$/, "");
+}
+/** Chip label = host:port (strip scheme) — same idea as system_health._backend_label. */
+function backendLabel(url) {
+  const s = String(url || "");
+  const i = s.indexOf("//");
+  return i >= 0 ? s.slice(i + 2) : s;
+}
+
 function loadSeverityFilters() {
   const raw = localStorage.getItem("sm-log-severity") || "";
   return new Set(raw.split(",").filter(k => k === "error" || k === "warn"));
@@ -102,8 +124,17 @@ function severityEmptyMessage() {
   if (severityFilters.has("warn")) parts.push("warnings");
   return `(no ${parts.join(" or ")} in view)`;
 }
+function supportsBackendFilter() {
+  return source === "agent_audit" || source === "credential_audit";
+}
 function hasAgentFilter() {
   return source === "agent_audit" && agentFilters.size > 0;
+}
+function hasBackendFilter() {
+  return supportsBackendFilter() && backendFilters.size > 0;
+}
+function hasOriginFilter() {
+  return source === "credential_audit" && originFilters.size > 0;
 }
 function filterStatusNote() {
   const parts = [];
@@ -116,6 +147,12 @@ function filterStatusNote() {
   }
   if (hasAgentFilter()) {
     parts.push([...agentFilters].sort().join(", "));
+  }
+  if (hasBackendFilter()) {
+    parts.push([...backendFilters].sort().map(backendLabel).join(", "));
+  }
+  if (hasOriginFilter()) {
+    parts.push([...originFilters].sort().join(", "));
   }
   if (!parts.length) return "";
   return ` · showing ${parts.join(" · ")} only`;
@@ -133,6 +170,39 @@ function saveAgentFilters() {
   }
 }
 let agentFilters = loadAgentFilters();
+/** Single key for all sources — cleared on tab switch like sm-log-agents. */
+function loadBackendFilters() {
+  const raw = localStorage.getItem("sm-log-backends") || "";
+  return new Set(raw.split(",").map(normalizeBackend).filter(Boolean));
+}
+function saveBackendFilters() {
+  if (backendFilters.size) {
+    localStorage.setItem("sm-log-backends", [...backendFilters].sort().join(","));
+  } else {
+    localStorage.removeItem("sm-log-backends");
+  }
+}
+let backendFilters = loadBackendFilters();
+if (urlBackend) {
+  backendFilters.add(normalizeBackend(urlBackend));
+  saveBackendFilters();
+}
+function loadOriginFilters() {
+  const raw = localStorage.getItem("sm-log-origins") || "";
+  return new Set(raw.split(",").filter(Boolean));
+}
+function saveOriginFilters() {
+  if (originFilters.size) {
+    localStorage.setItem("sm-log-origins", [...originFilters].sort().join(","));
+  } else {
+    localStorage.removeItem("sm-log-origins");
+  }
+}
+let originFilters = loadOriginFilters();
+if (urlOrigin) {
+  originFilters.add(String(urlOrigin));
+  saveOriginFilters();
+}
 let filterFrom = localStorage.getItem("sm-log-from") || "";
 let filterTo = localStorage.getItem("sm-log-to") || "";
 const MAX_LOG_LINES = 2500;
@@ -152,6 +222,17 @@ function parseAgentAudit(raw) {
 function gatewayAuditAgent(raw) {
   const o = parseAgentAudit(raw);
   return o?.agent ? String(o.agent) : null;
+}
+
+function auditBackend(raw) {
+  const o = parseAgentAudit(raw);
+  if (!o?.backend) return null;
+  return normalizeBackend(o.backend);
+}
+
+function auditOrigin(raw) {
+  const o = parseAgentAudit(raw);
+  return o?.origin != null && o.origin !== "" ? String(o.origin) : null;
 }
 
 function isConsolidationLine(text) {
@@ -190,6 +271,18 @@ function classify(text){
       return "line-info";
     }
     return "";
+  }
+  if (source === "credential_audit") {
+    // Classify by event only — never scan payload text for "error".
+    const o = parseAgentAudit(text);
+    if (!o) return "";
+    const ev = String(o.event || "").toLowerCase();
+    if (ev === "upstream_credential_fault") return "line-err";
+    if (ev === "token_verify_failed") return "line-warn";
+    if (ev === "gateway_fault") return "line-warn";
+    if (ev === "daemon_token_issued") return "line-info";
+    if (ev === "token_verify_failed_suppressed") return "line-warn";
+    return "line-info";
   }
   if (source === "rem_audit") {
     // Structured outbox-review audit: classify by the review status only — do
@@ -274,6 +367,14 @@ function linePassesFilters(ln) {
     const agent = gatewayAuditAgent(ln);
     if (!agent || !agentFilters.has(agent)) return false;
   }
+  if (hasBackendFilter()) {
+    const backend = auditBackend(ln);
+    if (!backend || !backendFilters.has(backend)) return false;
+  }
+  if (hasOriginFilter()) {
+    const origin = auditOrigin(ln);
+    if (!origin || !originFilters.has(origin)) return false;
+  }
   if (!severityFilters.size) return true;
   const c = classify(ln);
   if (severityFilters.has("error") && c === "line-err") return true;
@@ -281,31 +382,48 @@ function linePassesFilters(ln) {
   return false;
 }
 
+function hasAnyLineFilter() {
+  return hasSeverityFilter() || hasAgentFilter() || hasBackendFilter() ||
+    hasOriginFilter() || hasConsolidationFilter();
+}
+
 function visibleLines() {
-  if (!severityFilters.size && !hasAgentFilter() && !hasConsolidationFilter()) return lineBuffer;
+  if (!hasAnyLineFilter()) return lineBuffer;
   return lineBuffer.filter(linePassesFilters);
 }
 
 function agentEmptyMessage() {
-  if (hasConsolidationFilter() && !hasAgentFilter() && !severityFilters.size) {
+  const dims = [];
+  if (hasAgentFilter()) {
+    dims.push(`agent${agentFilters.size > 1 ? "s" : ""}: ${[...agentFilters].sort().join(", ")}`);
+  }
+  if (hasBackendFilter()) {
+    const labs = [...backendFilters].sort().map(backendLabel).join(", ");
+    dims.push(`backend${backendFilters.size > 1 ? "s" : ""}: ${labs}`);
+  }
+  if (hasOriginFilter()) {
+    dims.push(`origin: ${[...originFilters].sort().join(", ")}`);
+  }
+  if (hasConsolidationFilter() && !dims.length && !severityFilters.size) {
     return "(no consolidation-related lines in view)";
   }
-  if (!hasAgentFilter()) return severityEmptyMessage();
-  const agents = [...agentFilters].sort().join(", ");
+  if (!dims.length) return severityEmptyMessage();
   if (!severityFilters.size && !hasConsolidationFilter()) {
-    return `(no lines for agent${agentFilters.size > 1 ? "s" : ""}: ${agents})`;
+    return `(no lines for ${dims.join(" · ")})`;
   }
-  return `(no matching lines for ${agents})`;
+  return `(no matching lines for ${dims.join(" · ")})`;
 }
 
 function updateChips() {
   const shown = visibleLines().length;
-  const filtered = hasSeverityFilter() || hasAgentFilter() || hasConsolidationFilter();
+  const filtered = hasAnyLineFilter();
   setChip("chip-lines", filtered ? `${shown}/${totalLines}` : String(totalLines));
   setChip("chip-consolidation", totalConsolidation, totalConsolidation > 0 ? "" : "");
   setChip("chip-err", totalErr, totalErr > 0 ? "bad" : "good");
   setChip("chip-warn", totalWarn, totalWarn > 0 ? "warn" : "");
   renderAgentChips();
+  renderBackendChips();
+  renderOriginChips();
 }
 
 function collectAgents(lines) {
@@ -317,6 +435,24 @@ function collectAgents(lines) {
   return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 }
 
+function collectBackends(lines) {
+  const counts = new Map();
+  for (const ln of lines) {
+    const b = auditBackend(ln);
+    if (b) counts.set(b, (counts.get(b) || 0) + 1);
+  }
+  return counts;
+}
+
+function collectOrigins(lines) {
+  const counts = new Map();
+  for (const ln of lines) {
+    const o = auditOrigin(ln);
+    if (o) counts.set(o, (counts.get(o) || 0) + 1);
+  }
+  return counts;
+}
+
 function toggleAgentFilter(agent) {
   if (agentFilters.has(agent)) {
     agentFilters.delete(agent);
@@ -324,6 +460,31 @@ function toggleAgentFilter(agent) {
     agentFilters.add(agent);
   }
   saveAgentFilters();
+  paintLog(agentEmptyMessage());
+  const el = document.getElementById("log");
+  if (document.getElementById("follow").checked) el.scrollTop = el.scrollHeight;
+}
+
+function toggleBackendFilter(backend) {
+  const key = normalizeBackend(backend);
+  if (backendFilters.has(key)) {
+    backendFilters.delete(key);
+  } else {
+    backendFilters.add(key);
+  }
+  saveBackendFilters();
+  paintLog(agentEmptyMessage());
+  const el = document.getElementById("log");
+  if (document.getElementById("follow").checked) el.scrollTop = el.scrollHeight;
+}
+
+function toggleOriginFilter(origin) {
+  if (originFilters.has(origin)) {
+    originFilters.delete(origin);
+  } else {
+    originFilters.add(origin);
+  }
+  saveOriginFilters();
   paintLog(agentEmptyMessage());
   const el = document.getElementById("log");
   if (document.getElementById("follow").checked) el.scrollTop = el.scrollHeight;
@@ -362,6 +523,72 @@ function renderAgentChips() {
   });
 }
 
+function renderBackendChips() {
+  const bar = document.getElementById("backend-bar");
+  const host = document.getElementById("backend-chips");
+  if (!supportsBackendFilter()) {
+    bar.hidden = true;
+    host.innerHTML = "";
+    return;
+  }
+  const counts = collectBackends(lineBuffer);
+  // Keep deep-linked / active filters visible even when count is 0 (empty-state).
+  for (const b of backendFilters) {
+    if (!counts.has(b)) counts.set(b, 0);
+  }
+  const backends = [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  bar.hidden = backends.length === 0;
+  if (!backends.length) {
+    host.innerHTML = "";
+    return;
+  }
+  host.innerHTML = backends.map(([backend, count]) => {
+    const active = backendFilters.has(backend);
+    const label = backendLabel(backend);
+    let cls = "chip chip-agent";
+    if (active) cls += " chip-filter-active";
+    cls += " chip-clickable";
+    return `<button type="button" class="${cls}" data-backend="${escAttr(backend)}" ` +
+      `aria-pressed="${active}" title="Show ${escapeHtml(label)} only">` +
+      `<span class="k">${escapeHtml(label)}</span><span class="v">${count}</span></button>`;
+  }).join("");
+  host.querySelectorAll("[data-backend]").forEach(btn => {
+    btn.addEventListener("click", () => toggleBackendFilter(btn.dataset.backend));
+  });
+}
+
+function renderOriginChips() {
+  const bar = document.getElementById("origin-bar");
+  const host = document.getElementById("origin-chips");
+  if (source !== "credential_audit") {
+    bar.hidden = true;
+    host.innerHTML = "";
+    return;
+  }
+  const counts = collectOrigins(lineBuffer);
+  for (const o of originFilters) {
+    if (!counts.has(o)) counts.set(o, 0);
+  }
+  const origins = [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  bar.hidden = origins.length === 0;
+  if (!origins.length) {
+    host.innerHTML = "";
+    return;
+  }
+  host.innerHTML = origins.map(([origin, count]) => {
+    const active = originFilters.has(origin);
+    let cls = "chip chip-agent";
+    if (active) cls += " chip-filter-active";
+    cls += " chip-clickable";
+    return `<button type="button" class="${cls}" data-origin="${escAttr(origin)}" ` +
+      `aria-pressed="${active}" title="Show origin ${escapeHtml(origin)} only">` +
+      `<span class="k">${escapeHtml(origin)}</span><span class="v">${count}</span></button>`;
+  }).join("");
+  host.querySelectorAll("[data-origin]").forEach(btn => {
+    btn.addEventListener("click", () => toggleOriginFilter(btn.dataset.origin));
+  });
+}
+
 function mergeLines(incoming, clear) {
   lineBuffer = clear ? incoming.slice() : lineBuffer.concat(incoming);
   if (lineBuffer.length > MAX_LOG_LINES) {
@@ -374,7 +601,7 @@ function paintLog(emptyMsg) {
   const el = document.getElementById("log");
   const shown = visibleLines();
   const html = shown.map(renderRawLine).join("");
-  el.innerHTML = html || `<div class="log-line">${escapeHtml(emptyMsg || "(no lines in range)")}</div>`;
+  el.innerHTML = html || `<div class="log-line">${escapeHtml(emptyMsg || agentEmptyMessage())}</div>`;
   updateChips();
 }
 
@@ -448,11 +675,31 @@ function formatAgentAuditLine(raw) {
     o.status != null && `status=${o.status}`,
     o.latency_ms != null && `${o.latency_ms}ms`,
     o.request_id && `req=${o.request_id}`,
+    o.backend && `backend=${backendLabel(o.backend)}`,
   ].filter(Boolean).join("  ·  ");
   return {
     ts: o.ts || "",
     meta,
     route: route.trim(),
+  };
+}
+
+function formatCredentialAuditLine(raw) {
+  const o = parseAgentAudit(raw);
+  if (!o) return null;
+  const meta = [
+    o.origin && `origin=${o.origin}`,
+    o.backend && `backend=${backendLabel(o.backend)}`,
+    o.request_id && `req=${o.request_id}`,
+    o.status != null && `status=${o.status}`,
+    o.error_type && `error_type=${o.error_type}`,
+    o.error_class && `error_class=${o.error_class}`,
+    o.digest_prefix && `digest=${o.digest_prefix}`,
+  ].filter(Boolean).join("  ·  ");
+  return {
+    ts: o.ts || "",
+    meta,
+    event: o.event != null ? String(o.event) : "",
   };
 }
 
@@ -523,6 +770,19 @@ function renderRawLine(raw) {
       html += `<div class="log-audit-row">`;
       if (audit.ts) html += `<span class="log-ts-inline">${escapeHtml(audit.ts)}</span>`;
       if (audit.route) html += `<span class="log-audit-route">${escapeHtml(audit.route)}</span>`;
+      html += `<span class="log-audit-meta">${escapeHtml(audit.meta)}</span>`;
+      html += `</div>`;
+      html += `</div>`;
+      return html;
+    }
+  }
+  if (source === "credential_audit") {
+    const audit = formatCredentialAuditLine(raw);
+    if (audit) {
+      let html = `<div class="log-line log-audit log-credential-audit ${cls}">`;
+      html += `<div class="log-audit-row">`;
+      if (audit.ts) html += `<span class="log-ts-inline">${escapeHtml(audit.ts)}</span>`;
+      if (audit.event) html += `<span class="log-audit-route">${escapeHtml(audit.event)}</span>`;
       html += `<span class="log-audit-meta">${escapeHtml(audit.meta)}</span>`;
       html += `</div>`;
       html += `</div>`;
@@ -612,6 +872,10 @@ function bindSourceTabs(sources) {
     localStorage.removeItem("sm-log-severity");
     agentFilters = new Set();
     localStorage.removeItem("sm-log-agents");
+    backendFilters = new Set();
+    localStorage.removeItem("sm-log-backends");
+    originFilters = new Set();
+    localStorage.removeItem("sm-log-origins");
     consolidationFilter = false;
     localStorage.removeItem("sm-log-consolidation");
     resetCounts();
@@ -686,7 +950,7 @@ async function refresh(clear=false){
         return;
       }
       mergeLines(lines, clear);
-      if (hasSeverityFilter() || hasAgentFilter() || clear) {
+      if (hasAnyLineFilter() || clear) {
         paintLog();
       } else {
         appendLog(lines);
