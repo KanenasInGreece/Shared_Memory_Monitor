@@ -85,6 +85,65 @@ class DoctorTests(unittest.TestCase):
         self.assertTrue(block["has_spine"])
         self.assertTrue(block["has_compliance"])
         self.assertTrue(block["has_graph_integrity"])
+        # Absent keys stay false (I8 — key presence, not content)
+        self.assertFalse(block["has_llm_faults"])
+        self.assertFalse(block["has_credentials"])
+
+    def test_telemetry_llm_faults_and_credentials_key_presence(self):
+        """I8: empty llm_faults {} still counts as present; absent keys stay false."""
+        with patch("sm_telemetry_monitor.doctor.get_telemetry", return_value={
+            "status": "success",
+            "telemetry": {
+                "nrem": {"pending_cycles": 0},
+                "llm_faults": {},
+                "credentials": {
+                    "token_verify_failed": 0,
+                    "daemon_tokens_issued": 1,
+                    "audit_log_dropped": 0,
+                },
+            },
+        }):
+            from sm_telemetry_monitor.doctor import _check_telemetry
+            block = _check_telemetry()
+        self.assertTrue(block["has_llm_faults"])
+        self.assertTrue(block["has_credentials"])
+
+    def test_format_report_names_llm_faults_and_credentials(self):
+        report = {
+            "monitor_root": "/tmp/mon",
+            "gateway_client": {
+                "mode": "httpx",
+                "coordinator_url": "http://localhost:8888",
+                "agent_token_source": "monitor",
+            },
+            "env_sources": [],
+            "keys": {"AGENT_TOKEN": "set", "agent_token_source": "monitor"},
+            "local_data": {"samples": 0, "last_at": None},
+            "connectivity": {
+                "coordinator": {"ok": True, "version": "0.9.4", "api_version": 4,
+                                "client_api_version": 4, "compat": "ok"},
+                "telemetry": {
+                    "ok": True,
+                    "has_nrem": True,
+                    "has_breakdown": True,
+                    "has_llm_faults": True,
+                    "has_credentials": True,
+                },
+                "neo4j_breakdown": {"ok": True},
+                "read_role": {"ok": True},
+            },
+            "logs": {
+                "log_paths": {"log_dir_exists": True, "log_dir": "/tmp"},
+                "journal": {"ok": True, "unit": "x", "scope": "user"},
+            },
+            "features": [],
+        }
+        text = format_report(report)
+        self.assertIn("llm_faults", text)
+        self.assertIn("credentials", text)
+        # Panel string still uses + join style
+        self.assertRegex(text, r"telemetry: ok · .*llm_faults")
+        self.assertRegex(text, r"telemetry: ok · .*credentials")
 
     def test_dashboard_history_ready_when_samples(self):
         checks = {

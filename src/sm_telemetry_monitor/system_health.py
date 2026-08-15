@@ -205,6 +205,124 @@ def _llm_pool_summary(raw: dict) -> dict | None:
     }
 
 
+def _placement_sort_key(backend: dict) -> tuple[int, str]:
+    """local → external → unknown; stable by label within a band."""
+    p = backend.get("placement")
+    if p == "local":
+        band = 0
+    elif p == "external":
+        band = 1
+    else:
+        band = 2
+    return (band, str(backend.get("label") or backend.get("url") or ""))
+
+
+def _fault_slot(obj) -> dict | None:
+    """Pass through a {count, last, ...} blob; None when absent/invalid."""
+    return obj if isinstance(obj, dict) else None
+
+
+def _backend_faults_from_entry(entry: dict | None) -> dict:
+    """Flatten telemetry.llm_faults[url] → chip faults {gateway, credential, transient}."""
+    if not isinstance(entry, dict):
+        return {"gateway": None, "credential": None, "transient": None}
+    llm = entry.get("llm") if isinstance(entry.get("llm"), dict) else {}
+    return {
+        "gateway": _fault_slot(entry.get("gateway")),
+        "credential": _fault_slot(llm.get("credential")),
+        "transient": _fault_slot(llm.get("transient")),
+    }
+
+
+def _recompute_pool_totals(backends: list[dict]) -> dict:
+    return {
+        "backends": backends,
+        "total": len(backends),
+        "up": sum(1 for b in backends if b.get("status") == "ok"),
+        "busy": sum(1 for b in backends if (b.get("inflight") or 0) > 0),
+        "free": sum(1 for b in backends if b.get("available")),
+        "local": sum(1 for b in backends if b.get("placement") == "local"),
+        "external": sum(1 for b in backends if b.get("placement") == "external"),
+    }
+
+
+def _join_llm_faults(
+    llm_pool: dict | None,
+    telemetry_payload: dict | None,
+    health_raw: dict,
+) -> tuple[dict | None, dict | None]:
+    """Join telemetry.llm_faults onto pool backends; extract credentials.
+
+    Returns (llm_pool, credentials). ``faults`` is attached only when the
+    telemetry object has an ``llm_faults`` key (empty ``{}`` still attaches
+    null slots). Fault URLs missing from the pool synthesise a backend row.
+    credentials is the dict when the key exists, else None — never invent zeros.
+    Fault counts do not affect overall deck state (caller must not feed them in).
+    """
+    t = (telemetry_payload or {}).get("telemetry")
+    t = t if isinstance(t, dict) else {}
+    has_faults_key = "llm_faults" in t
+    if "credentials" in t and isinstance(t.get("credentials"), dict):
+        credentials: dict | None = t["credentials"]
+    else:
+        credentials = None
+
+    llm_faults = t.get("llm_faults") if has_faults_key else None
+    if has_faults_key and not isinstance(llm_faults, dict):
+        llm_faults = {}
+
+    faults_by_norm: dict[str, tuple[str, dict | None]] = {}
+    if has_faults_key:
+        for url, entry in (llm_faults or {}).items():
+            url_s = str(url)
+            faults_by_norm[url_s.rstrip("/")] = (
+                url_s,
+                entry if isinstance(entry, dict) else None,
+            )
+
+    backends: list[dict] = list((llm_pool or {}).get("backends") or [])
+    seen_norm: set[str] = set()
+    meta_by_url = _config_backend_index(health_raw)
+
+    for b in backends:
+        url = b.get("url")
+        nurl = str(url).rstrip("/") if url is not None else ""
+        seen_norm.add(nurl)
+        if has_faults_key:
+            pair = faults_by_norm.get(nurl)
+            entry = pair[1] if pair else None
+            b["faults"] = _backend_faults_from_entry(entry)
+
+    if has_faults_key:
+        for nurl, (orig_url, entry) in faults_by_norm.items():
+            if nurl in seen_norm:
+                continue
+            meta = meta_by_url.get(nurl) or meta_by_url.get(orig_url) or {}
+            backends.append({
+                "url": orig_url,
+                "label": _backend_label(orig_url),
+                "status": "unknown",
+                "inflight": 0,
+                "cooldown": 0.0,
+                "reserved": False,
+                "available": False,
+                "weight": None,
+                "routed": None,
+                "routed_pct": None,
+                "fails": None,
+                "has_credential": meta.get("has_credential"),
+                "model": meta.get("model"),
+                "placement": meta.get("placement"),
+                "faults": _backend_faults_from_entry(entry),
+            })
+
+    if not backends:
+        return llm_pool, credentials
+
+    backends.sort(key=_placement_sort_key)
+    return _recompute_pool_totals(backends), credentials
+
+
 def _oldest_inflight_age_s(raw: dict) -> float | None:
     """Seconds the oldest in-flight LLM call has been open — wedge visibility.
 
@@ -860,6 +978,9 @@ def system_health_snapshot() -> dict:
     llm_busy = any(c.get("in_flight") for c in (consolidation.get("cycles") or []))
     inference_busy = _inference_busy_state(raw)
     llm_pool = _llm_pool_summary(raw)
+    # Join additive telemetry.llm_faults / credentials after pool summary.
+    # Fault counts never feed _overall_state / _status_summary (I2).
+    llm_pool, credentials = _join_llm_faults(llm_pool, telemetry_payload, raw)
     gateway_config = _gateway_config(raw)
     rem_trend = _rem_trend()
     components = [
@@ -883,7 +1004,7 @@ def system_health_snapshot() -> dict:
         graph_integrity=graph_integrity,
     )
 
-    return {
+    out = {
         "status": status,
         "summary": _status_summary(components, status, backup=backup, consolidation=consolidation),
         "reachable": True,
@@ -903,4 +1024,6 @@ def system_health_snapshot() -> dict:
         "error": sanitize_error(raw.get("error")) or None,
         "graph_invalid_nodes": raw.get("graph_invalid_nodes"),
         "graph_integrity": (telemetry_payload or {}).get("telemetry", {}).get("graph_integrity"),
+        "credentials": credentials,
     }
+    return out

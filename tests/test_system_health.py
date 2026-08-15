@@ -577,6 +577,206 @@ class LlmPoolTests(unittest.TestCase):
         self.assertIn("oldest in-flight 45s", llm["workload"]["caption"])
 
 
+class LlmFaultsCredentialsJoinTests(unittest.TestCase):
+    """I1–I5: join telemetry.llm_faults / credentials onto pool backends."""
+
+    def _base_telemetry(self, **extra):
+        t = {
+            "consolidation": {
+                "insight": {"stalled": False, "consecutive_failures": 0},
+                "fact_consolidation": {"stalled": False, "consecutive_failures": 0},
+            },
+        }
+        t.update(extra)
+        return {"status": "success", "telemetry": t}
+
+    def _snap(self, health, telemetry_payload):
+        with patch("sm_telemetry_monitor.system_health.get_telemetry",
+                   return_value=telemetry_payload), \
+             patch("sm_telemetry_monitor.system_health.live_summary",
+                   return_value={"latest": {}}), \
+             patch("sm_telemetry_monitor.system_health.get_health", return_value=health):
+            return system_health_snapshot()
+
+    def test_i1_no_llm_faults_key_omits_faults_on_backends(self):
+        snap = self._snap(_pool_gateway(), self._base_telemetry())
+        for b in snap["llm_pool"]["backends"]:
+            self.assertNotIn("faults", b)
+
+    def test_i1_empty_llm_faults_attaches_null_faults(self):
+        snap = self._snap(_pool_gateway(), self._base_telemetry(llm_faults={}))
+        for b in snap["llm_pool"]["backends"]:
+            self.assertIn("faults", b)
+            self.assertEqual(
+                b["faults"],
+                {"gateway": None, "credential": None, "transient": None},
+            )
+
+    def test_i1_populated_faults_join_by_url(self):
+        gw_last = {"ts": "2026-08-15T10:00:00+00:00", "class": "TimeoutError"}
+        cred_last = {
+            "ts": "2026-08-15T10:01:00+00:00",
+            "status": 401,
+            "error_type": "auth",
+        }
+        trans_last = {
+            "ts": "2026-08-15T10:02:00+00:00",
+            "status": 529,
+            "error_type": "overloaded",
+        }
+        faults = {
+            "http://localhost:5000": {
+                "gateway": {"count": 1, "last": gw_last},
+                "llm": {
+                    "credential": {"count": 1, "last": cred_last},
+                    "transient": {"count": 2, "last": trans_last},
+                },
+            },
+        }
+        snap = self._snap(_pool_gateway(), self._base_telemetry(llm_faults=faults))
+        by_url = {b["url"]: b for b in snap["llm_pool"]["backends"]}
+        f5000 = by_url["http://localhost:5000"]["faults"]
+        self.assertEqual(f5000["gateway"]["count"], 1)
+        self.assertEqual(f5000["gateway"]["last"], gw_last)
+        self.assertEqual(f5000["credential"]["count"], 1)
+        self.assertEqual(f5000["credential"]["last"], cred_last)
+        self.assertEqual(f5000["transient"]["count"], 2)
+        self.assertEqual(f5000["transient"]["last"], trans_last)
+        # Other pool backend has the key but empty fault slots
+        f4000 = by_url["http://localhost:4000"]["faults"]
+        self.assertIsNone(f4000["gateway"])
+        self.assertIsNone(f4000["credential"])
+        self.assertIsNone(f4000["transient"])
+        # Existing pool fields unchanged
+        self.assertEqual(by_url["http://localhost:5000"]["status"], "ok")
+        self.assertEqual(by_url["http://localhost:5000"]["fails"], 2)
+
+    def test_i2_faults_do_not_change_overall_status(self):
+        faults = {
+            "http://localhost:5000": {
+                "gateway": {"count": 3, "last": {"ts": "t", "class": "TimeoutError"}},
+                "llm": {
+                    "credential": {"count": 5, "last": {"ts": "t", "status": 401}},
+                    "transient": {"count": 1, "last": {"ts": "t", "status": 529}},
+                },
+            },
+        }
+        snap = self._snap(
+            _pool_gateway(),
+            self._base_telemetry(
+                llm_faults=faults,
+                credentials={
+                    "token_verify_failed": 1,
+                    "daemon_tokens_issued": 0,
+                    "audit_log_dropped": 2,
+                },
+            ),
+        )
+        self.assertEqual(snap["status"], "ok")
+
+    def test_i3_credentials_top_level_not_on_backend(self):
+        snap = self._snap(
+            _pool_gateway(),
+            self._base_telemetry(
+                llm_faults={},
+                credentials={
+                    "token_verify_failed": 4,
+                    "daemon_tokens_issued": 1,
+                    "audit_log_dropped": 2,
+                },
+            ),
+        )
+        self.assertEqual(snap["credentials"]["audit_log_dropped"], 2)
+        self.assertEqual(snap["credentials"]["token_verify_failed"], 4)
+        for b in snap["llm_pool"]["backends"]:
+            self.assertNotIn("token_verify_failed", b)
+            self.assertNotIn("audit_log_dropped", b)
+            dumped = json.dumps(b.get("faults") or {})
+            self.assertNotIn("token_verify_failed", dumped)
+            self.assertNotIn("audit_log_dropped", dumped)
+
+    def test_i3_credentials_absent_not_invented(self):
+        snap = self._snap(_pool_gateway(), self._base_telemetry(llm_faults={}))
+        # omit or null — never invent zero counters
+        creds = snap.get("credentials")
+        self.assertTrue(creds is None or creds == {})
+
+    def test_i4_fault_url_absent_from_pool_synthesises_backend(self):
+        remote = "https://api.example/v1"
+        faults = {
+            remote: {
+                "gateway": None,
+                "llm": {
+                    "credential": {
+                        "count": 1,
+                        "last": {"ts": "t", "status": 401, "error_type": "auth"},
+                    },
+                },
+            },
+        }
+        health = {
+            **_pool_gateway(),
+            "config": {
+                "llm_backends": [
+                    {"url": "http://localhost:5000", "weight": 1.0,
+                     "has_credential": False},
+                    {"url": "http://localhost:4000", "weight": 1.0,
+                     "has_credential": False},
+                    {"url": remote, "weight": 1.0,
+                     "has_credential": True, "model": "cloud"},
+                ],
+            },
+        }
+        snap = self._snap(health, self._base_telemetry(llm_faults=faults))
+        by_url = {b["url"]: b for b in snap["llm_pool"]["backends"]}
+        self.assertIn(remote, by_url)
+        synth = by_url[remote]
+        self.assertEqual(synth["label"], "api.example/v1")
+        self.assertEqual(synth["status"], "unknown")
+        self.assertEqual(synth["inflight"], 0)
+        self.assertEqual(synth["placement"], "external")
+        self.assertEqual(synth["faults"]["credential"]["count"], 1)
+        self.assertEqual(snap["llm_pool"]["total"], 3)
+
+    def test_i5_backends_sort_local_external_unknown(self):
+        health = {
+            **_healthy_gateway(),
+            "llm_backends": {
+                "https://api.example/v1": "ok",
+                "http://localhost:5000": "ok",
+                "http://orphan:9": "ok",
+            },
+            "llm_pool": {
+                "https://api.example/v1": {
+                    "weight": 1.0, "inflight": 0, "routed": 0, "routed_pct": 0,
+                    "fails": 0, "cooldown": 0.0, "reserved": False,
+                },
+                "http://localhost:5000": {
+                    "weight": 1.0, "inflight": 0, "routed": 0, "routed_pct": 0,
+                    "fails": 0, "cooldown": 0.0, "reserved": False,
+                },
+                "http://orphan:9": {
+                    "weight": 1.0, "inflight": 0, "routed": 0, "routed_pct": 0,
+                    "fails": 0, "cooldown": 0.0, "reserved": False,
+                },
+            },
+            "config": {
+                "llm_backends": [
+                    # external first in config — sort must still put local first
+                    {"url": "https://api.example/v1", "weight": 1.0,
+                     "has_credential": True},
+                    {"url": "http://localhost:5000", "weight": 1.0,
+                     "has_credential": False},
+                    # orphan: no has_credential → unknown placement
+                    {"url": "http://orphan:9", "weight": 1.0},
+                ],
+            },
+        }
+        snap = self._snap(health, self._base_telemetry(llm_faults={}))
+        placements = [b.get("placement") for b in snap["llm_pool"]["backends"]]
+        self.assertEqual(placements, ["local", "external", None])
+
+
 class RemDrainSignalTests(unittest.TestCase):
     def _s(self, *pairs):
         return [{"collected_at": t, "rem_backlog": b} for t, b in pairs]

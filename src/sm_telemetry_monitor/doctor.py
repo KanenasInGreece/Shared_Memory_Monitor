@@ -165,6 +165,7 @@ def _check_telemetry() -> dict[str, Any]:
     spine = t.get("spine") if isinstance(t.get("spine"), dict) else {}
     compliance = t.get("compliance") if isinstance(t.get("compliance"), dict) else {}
     gi = t.get("graph_integrity") if isinstance(t.get("graph_integrity"), dict) else {}
+    # llm_faults / credentials: key presence only (empty {} still counts — I8).
     return {
         "ok": ok,
         "status": payload.get("status"),
@@ -177,6 +178,8 @@ def _check_telemetry() -> dict[str, Any]:
         "has_spine": bool(spine) and "error" not in spine,
         "has_compliance": bool(compliance) and "error" not in compliance,
         "has_graph_integrity": bool(gi) and "error" not in gi,
+        "has_llm_faults": "llm_faults" in t,
+        "has_credentials": "credentials" in t,
     }
 
 
@@ -427,6 +430,8 @@ def format_report(report: dict[str, Any]) -> str:
                 ("has_spine", "spine"),
                 ("has_compliance", "compliance"),
                 ("has_graph_integrity", "graph_integrity"),
+                ("has_llm_faults", "llm_faults"),
+                ("has_credentials", "credentials"),
             ):
                 if block.get(key):
                     panels.append(label)
