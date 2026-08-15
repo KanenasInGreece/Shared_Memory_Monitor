@@ -99,7 +99,21 @@ def main() -> None:
             name = spec["name"]
             path = spec["path"]
             page = browser.new_page(viewport=spec["viewport"])
-            page.goto(f"{BASE}{path}", wait_until="load", timeout=60_000)
+            page.goto(f"{BASE}{path}", wait_until="networkidle", timeout=90_000)
+            # Dashboard paints health tiles and Chart.js after /api/health +
+            # /api/summary return — "load" is too early (tiles stay "—").
+            if spec["name"] == "dashboard.png" or spec.get("open") or "schema=1" in path:
+                page.wait_for_function(
+                    """() => {
+                      const n = document.querySelector(
+                        '#system-health-row .health-item[data-key="gateway"] .n');
+                      const updated = document.getElementById('bar-updated-v');
+                      return n && n.textContent.trim() !== '—'
+                        && updated && !updated.textContent.includes('connecting');
+                    }""",
+                    timeout=90_000,
+                )
+                page.wait_for_timeout(2500)
             if "diagram" in path:
                 page.wait_for_selector("body[data-diagram-ready='1']", timeout=60_000)
             if "logs" in path:
