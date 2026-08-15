@@ -1,5 +1,6 @@
 import gzip
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,11 +15,13 @@ from sm_telemetry_monitor.logs_reader import (
     classify_agent_audit_io,
     classify_daemon_audit_io,
     classify_gateway_line,
+    credential_audit_path,
     is_consolidation_line,
     journal_unit,
     journalctl_cmd,
     list_archives,
     list_sources,
+    log_dir,
     parse_log_entry,
     resolve_archive,
     tail_source,
@@ -105,6 +108,79 @@ class AgentAuditSourceTests(unittest.TestCase):
         self.assertEqual(result["lines"], [line])
 
 
+class CredentialAuditSourceTests(unittest.TestCase):
+    """I6 / I9 — credential_audit source; empty env disables live path."""
+
+    def test_list_sources_includes_credential_audit(self):
+        with mock.patch.dict(os.environ):
+            os.environ.pop("CREDENTIAL_AUDIT_LOG_PATH", None)
+            ids = [s.id for s in list_sources()]
+            self.assertIn("credential_audit", ids)
+            self.assertNotIn("save_logs", ids)
+            self.assertNotIn("gateway_audit", ids)
+            self.assertGreater(ids.index("credential_audit"), ids.index("agent_audit"))
+            src = next(s for s in list_sources() if s.id == "credential_audit")
+            self.assertEqual(src.kind, "jsonl")
+            self.assertEqual(src.path, "credential-audit.jsonl")
+            self.assertEqual(credential_audit_path(), log_dir() / "credential-audit.jsonl")
+
+    def test_empty_credential_audit_path_disables_live(self):
+        """Empty CREDENTIAL_AUDIT_LOG_PATH disables live file (no default invent)."""
+        with mock.patch.dict(os.environ, {"CREDENTIAL_AUDIT_LOG_PATH": ""}):
+            path = credential_audit_path()
+            default = log_dir() / "credential-audit.jsonl"
+            # Do not fall back to the default live file when explicitly disabled.
+            self.assertNotEqual(path, default)
+            self.assertFalse(path.exists())
+            ids = [s.id for s in list_sources()]
+            self.assertIn("credential_audit", ids)
+            result = tail_source("credential_audit", lines=5)
+            self.assertEqual(result.get("source"), "credential_audit")
+            self.assertEqual(result.get("lines"), [])
+            self.assertIn("error", result)
+            self.assertIn("not found", result["error"].lower())
+
+    def test_whitespace_credential_audit_path_disables_live(self):
+        with mock.patch.dict(os.environ, {"CREDENTIAL_AUDIT_LOG_PATH": "  "}):
+            path = credential_audit_path()
+            self.assertNotEqual(path, log_dir() / "credential-audit.jsonl")
+            self.assertFalse(path.exists())
+
+    def test_credential_audit_keeps_raw_json(self):
+        line = json.dumps({
+            "ts": "2026-08-15T10:00:00+00:00",
+            "event": "llm.credential",
+            "origin": "gateway",
+            "backend": "http://localhost:5000",
+            "request_id": "cred001",
+            "status": "failed",
+            "error_type": "auth",
+        })
+        entry = parse_log_entry(line, kind="jsonl")
+        self.assertEqual(entry["raw"], line)
+        self.assertEqual(entry["ts"], "2026-08-15T10:00:00+00:00")
+
+    @mock.patch("sm_telemetry_monitor.logs_reader.credential_audit_path")
+    def test_tail_credential_audit_reads_jsonl(self, mock_path):
+        line = json.dumps({
+            "ts": "2026-08-15T10:00:00+00:00",
+            "event": "llm.credential",
+            "origin": "upstream",
+            "backend": "http://localhost:4000",
+            "request_id": "cred002",
+        })
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "credential-audit.jsonl"
+            path.write_text(line + "\n", encoding="utf-8")
+            mock_path.return_value = path
+            with mock.patch("sm_telemetry_monitor.logs_reader._log_root", return_value=Path(td).resolve()):
+                result = tail_source("credential_audit", lines=10)
+        self.assertEqual(result["source"], "credential_audit")
+        self.assertEqual(result["archive"], "live")
+        self.assertEqual(result["lines"], [line])
+        self.assertEqual(result["lines"][0], line)
+
+
 class ArchiveTests(unittest.TestCase):
     def setUp(self):
         self.td = tempfile.TemporaryDirectory()
@@ -138,6 +214,61 @@ class ArchiveTests(unittest.TestCase):
         self.assertEqual(len(out["archives"]), 1)
         result = tail_source("rem_audit", lines=5, archive=rotated.name)
         self.assertEqual(len(result["lines"]), 1)
+
+    @mock.patch("sm_telemetry_monitor.logs_reader.credential_audit_path")
+    def test_numbered_rotates_credential_audit(self, mock_cred):
+        """I7: .1 uncompressed + .N.gz listed; live excluded from archives."""
+        live = self.root / "credential-audit.jsonl"
+        live.write_text(json.dumps({"ts": "live"}) + "\n", encoding="utf-8")
+        mock_cred.return_value = live
+        r1 = self.root / "credential-audit.jsonl.1"
+        r1.write_text(json.dumps({"ts": "2026-08-14T00:00:00+00:00"}) + "\n", encoding="utf-8")
+        r2 = self.root / "credential-audit.jsonl.2.gz"
+        with gzip.open(r2, "wt", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": "2026-08-13T00:00:00+00:00"}) + "\n")
+        out = list_archives("credential_audit")
+        ids = [a["id"] for a in out["archives"]]
+        self.assertIn("credential-audit.jsonl.1", ids)
+        self.assertIn("credential-audit.jsonl.2.gz", ids)
+        self.assertNotIn("credential-audit.jsonl", ids)
+        self.assertNotIn("live", ids)
+        resolved = resolve_archive("credential_audit", "credential-audit.jsonl.1")
+        self.assertEqual(resolved, r1.resolve())
+        tailed = tail_source("credential_audit", lines=5, archive="credential-audit.jsonl.1")
+        self.assertEqual(len(tailed["lines"]), 1)
+        self.assertIn("2026-08-14", tailed["lines"][0])
+
+    @mock.patch("sm_telemetry_monitor.logs_reader.agent_audit_path")
+    def test_numbered_rotates_agent_audit(self, mock_agent):
+        """I7: gateway-audit live + .1 + .2.gz (host logrotate pattern)."""
+        live = self.root / "gateway-audit.jsonl"
+        live.write_text(json.dumps({"ts": "live"}) + "\n", encoding="utf-8")
+        mock_agent.return_value = live
+        r1 = self.root / "gateway-audit.jsonl.1"
+        r1.write_text(json.dumps({"ts": "2026-08-14T00:00:00+00:00", "agent": "grok"}) + "\n", encoding="utf-8")
+        r2 = self.root / "gateway-audit.jsonl.2.gz"
+        with gzip.open(r2, "wt", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": "2026-08-13T00:00:00+00:00", "agent": "claude"}) + "\n")
+        out = list_archives("agent_audit")
+        ids = [a["id"] for a in out["archives"]]
+        self.assertIn("gateway-audit.jsonl.1", ids)
+        self.assertIn("gateway-audit.jsonl.2.gz", ids)
+        self.assertNotIn("gateway-audit.jsonl", ids)
+        resolved = resolve_archive("agent_audit", "gateway-audit.jsonl.1")
+        self.assertEqual(resolved, r1.resolve())
+
+    @mock.patch("sm_telemetry_monitor.logs_reader.audit_path")
+    def test_resolve_numbered_archive_rejects_traversal(self, mock_audit):
+        live = self.root / "rem-audit.jsonl"
+        live.write_text("{}\n", encoding="utf-8")
+        mock_audit.return_value = live
+        (self.root / "rem-audit.jsonl.1").write_text("{}\n", encoding="utf-8")
+        with self.assertRaises(ValueError):
+            resolve_archive("rem_audit", "../rem-audit.jsonl.1")
+        with self.assertRaises(ValueError):
+            resolve_archive("rem_audit", "/etc/passwd")
+        ok = resolve_archive("rem_audit", "rem-audit.jsonl.1")
+        self.assertTrue(ok.is_file())
 
 
 class AgentActivityTests(unittest.TestCase):

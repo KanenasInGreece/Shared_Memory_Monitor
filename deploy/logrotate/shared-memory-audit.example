@@ -7,7 +7,8 @@
 
 /var/log/shared-memory/rem-audit.jsonl
 /var/log/shared-memory/agent-audit.jsonl
-/var/log/shared-memory/gateway-audit.jsonl {
+/var/log/shared-memory/gateway-audit.jsonl
+/var/log/shared-memory/credential-audit.jsonl {
     daily
     rotate 30
     missingok

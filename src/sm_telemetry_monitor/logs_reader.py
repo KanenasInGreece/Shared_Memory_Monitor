@@ -86,11 +86,31 @@ def agent_audit_path() -> Path:
     return agent
 
 
+def credential_audit_path() -> Path:
+    """Live credential-audit jsonl.
+
+    Unset → ``log_dir()/credential-audit.jsonl``.
+    Empty/whitespace ``CREDENTIAL_AUDIT_LOG_PATH`` → disabled (no default; path
+    does not exist). Differs from ``GATEWAY_AUDIT_LOG_PATH``, where empty falls
+    through to the agent-audit default.
+    """
+    raw = get("CREDENTIAL_AUDIT_LOG_PATH")
+    if raw is not None:
+        stripped = raw.strip()
+        if not stripped:
+            # Explicit disable — never invent log_dir()/credential-audit.jsonl.
+            return Path("/nonexistent/credential-audit.jsonl")
+        return Path(os.path.expanduser(stripped))
+    return log_dir() / "credential-audit.jsonl"
+
+
 def _live_path(source_id: str) -> Path | None:
     if source_id == "rem_audit":
         return audit_path()
     if source_id == "agent_audit":
         return agent_audit_path()
+    if source_id == "credential_audit":
+        return credential_audit_path()
     return None
 
 
@@ -110,12 +130,36 @@ def _archive_candidates(source_id: str) -> list[Path]:
         names.add(live_name[:-6])  # stem without .jsonl
 
     archives: list[Path] = []
+    seen: set[Path] = set()
+
+    # Gzip rotates: name.jsonl.N.gz and legacy name.jsonl-YYYYMMDD.gz prefix match.
     for path in root.glob("*.gz"):
         if not path.is_file():
             continue
         name = path.name
         if any(name.startswith(prefix) for prefix in names):
             archives.append(path)
+            seen.add(path)
+
+    # Uncompressed numbered rotates (logrotate delaycompress): name.jsonl.1
+    prefix = live_name + "."
+    try:
+        entries = list(root.iterdir())
+    except OSError:
+        entries = []
+    for path in entries:
+        if not path.is_file() or path in seen:
+            continue
+        name = path.name
+        if name == live_name:
+            continue
+        if not name.startswith(prefix):
+            continue
+        rest = name[len(prefix):]
+        if rest.isdigit():
+            archives.append(path)
+            seen.add(path)
+
     return sorted(archives, key=lambda p: p.name, reverse=True)
 
 
@@ -177,7 +221,7 @@ def resolve_archive(source_id: str, archive_id: str) -> Path:
 
 
 def list_sources() -> list[LogSource]:
-    """Infrastructure log sources — gateway journal, REM audit, agent audit."""
+    """Infrastructure log sources — gateway journal, REM/agent/credential audits."""
     return [
         LogSource(
             id="gateway",
@@ -199,6 +243,13 @@ def list_sources() -> list[LogSource]:
             kind="jsonl",
             path=_basename(agent_audit_path()),
             description="Per-request agent audit — identity, route, status, latency",
+        ),
+        LogSource(
+            id="credential_audit",
+            label="Credential audit",
+            kind="jsonl",
+            path=_basename(credential_audit_path()),
+            description="High-signal credential/fault events — origin, backend, request_id",
         ),
     ]
 
