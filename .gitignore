@@ -43,6 +43,8 @@ docs/archive/
 
 # Local agent/IDE config folders
 GEMINI.md
+CLAUDE.md
+CLAUDE.local.md
 .gemini/
 .claude/
 .grok/
