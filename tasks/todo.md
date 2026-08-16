@@ -9,7 +9,7 @@
 
 ## Phase 2 — Release (Grok 4.6)
 - [x] Five-axis review against `tasks/plan.md`
-- [ ] Task 3: Merge to main, version 0.9.12, push, tag, `gh release create`
+- [x] Task 3: Merge to main, version 0.9.12, push, tag, `gh release create`
 
 ## Standing Definition of Done (every task)
 - [x] Acceptance criteria met
