@@ -22,16 +22,17 @@ The monitor never imports framework Python code. **No third data path** in monit
 | Route | Purpose |
 |-------|---------|
 | `GET /health` | Infrastructure grid (embedder, LLM, daemons); `version` + `api_version` for client compat; non-secret `config` (LLM backends + weights; **≥0.8.9** `has_credential` + optional `model`); multi-backend `llm_pool` / affinity |
-| `GET /memory/telemetry` | Pipeline metrics, `nrem`, `breakdown`, `spine`, `compliance`, `latency`, `entity_graph`, `consolidation` |
+| `GET /memory/telemetry` | Pipeline metrics, `nrem`, `breakdown`, `spine`, `compliance`, `latency`, `entity_graph`, `consolidation`; **≥0.9.4** `llm_faults` + `credentials`; **≥0.9.8** `credentials.*_last_ts` siblings |
 | `POST /memory/graph` | Neo4j schema panels (read-only Cypher, server-side guard) |
 
-**Client API version:** Monitor **v0.9.11** sets `bridge.API_VERSION = 4` to match
+**Client API version:** Monitor **v0.9.12** sets `bridge.API_VERSION = 4` to match
 the **deployed** gateway `api_version` (framework **≥ 0.8.33** / projects registry
 + sentinel + telemetry enhancements). **Alternative vectors** on first-write quality
 expects **framework ≥ 0.8.40** (`telemetry.spine.alternative_vectors`). Full Status +
 diagram telemetry (LLM local/external placement, entity-graph census, latency drawer)
-expects **framework ≥ 0.8.9**. Do not jump the wire contract ahead of what live
-`/health` reports.
+expects **framework ≥ 0.8.9**. Credential last-event age on the pool line expects
+**framework ≥ 0.9.8** (`credentials.*_last_ts`). Do not jump the wire contract ahead
+of what live `/health` reports.
 
 **Out of scope for `monitor:read`:** `POST /memory/relations/review` and
 `/memory/relations/label` are the operator calibration oracle for machine-minted
@@ -46,6 +47,7 @@ framework surfaces it read-only, the monitor can add a band without a new data p
 | `hive-mind-gateway.service` journal | Gateway daemon stdout |
 | `rem-audit.jsonl` | REM outbox audit |
 | `agent-audit.jsonl` | Per-request agent audit; diagram flow highlighting |
+| `credential-audit.jsonl` | High-signal credential/fault events (framework **≥ 0.9.4**) |
 
 `data/telemetry.db` caches past `GET /memory/telemetry` responses for charts — it is not a monitor-owned metrics store. `:8765` `/api/*` routes are UI transport over `bridge.py` and `logs_reader.py`.
 

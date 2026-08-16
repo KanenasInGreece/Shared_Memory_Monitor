@@ -133,8 +133,8 @@ On a modern gateway (verified against **framework ≥0.8.9**), doctor should als
 telemetry panels and LLM placement, e.g.:
 
 ```text
-coordinator: ok · gateway 0.8.17 · api server=3 client=3 compat=ok · 2 LLM backends · llm_pool · placement local
-telemetry: ok · nrem+breakdown+consolidation+entity_graph+latency+spine+compliance+graph_integrity
+coordinator: ok · gateway 0.9.8 · api server=4 client=4 compat=ok · 2 LLM backends · llm_pool · placement local
+telemetry: ok · nrem+breakdown+consolidation+entity_graph+latency+spine+compliance+graph_integrity+llm_faults+credentials
 ```
 
 | Doctor signal | What the user sees on the dashboard |
@@ -147,6 +147,8 @@ telemetry: ok · nrem+breakdown+consolidation+entity_graph+latency+spine+complia
 | `latency` | Throughput & latency drawer |
 | `spine` / `compliance` | First-write quality / schema conformance bands |
 | `graph_integrity` | Graph integrity band in Schema drawer (write-path defect detection) |
+| `llm_faults` | Per-backend fault counts on pool chips (framework **≥ 0.9.4**) |
+| `credentials` | Own-door `token_verify_failed` / `audit_log_dropped` on the pool line; **≥ 0.9.8** pairs each with `*_last_ts` age |
 
 Missing panel names mean an older gateway — the UI degrades (omits bands), not a hard fail.
 `placement n/a (gateway <0.8.9)` means config backends exist but without `has_credential`.
@@ -222,7 +224,7 @@ If only running foreground, stop and re-run `./scripts/run-loop.sh --serve --int
 
 ```bash
 ./scripts/agent-upgrade.sh           # pull main, uv sync, restart unit if present, status
-# or pin: ./scripts/agent-upgrade.sh --ref v0.9.11   # example tag
+# or pin: ./scripts/agent-upgrade.sh --ref v0.9.12   # example tag
 ```
 
 After upgrade, confirm `compat=ok` if the gateway bumped `api_version` — the monitor

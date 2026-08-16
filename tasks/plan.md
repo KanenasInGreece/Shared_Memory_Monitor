@@ -1,201 +1,174 @@
-# Implementation Plan: Align monitor with framework 0.9.4 logs + telemetry
+# Implementation Plan: Consume framework 0.9.8 credential last-event timestamps
 
 ## Overview
 
-Bring Shared Memory Monitor up to date with the framework **v0.9.4** observability contract (facts **1294**, **1297**; decision **1295**): **telemetry is SIGNAL**, **logs are DETAIL**. The operator path is: a per-backend LLM rectangle warns → click it for last-event signal → follow a deep link into `/logs` and filter by that backend (and, on the credential log, by origin/gateway).
+Framework **v0.9.8** (`fact:1314`, main `dc9b122`, PR #248) amended `fact:1307`.
+`GET /memory/telemetry` `credentials` is still the three integer counters from
+`fact:1297`, plus three **flat additive** sibling timestamps:
 
-This is **not** a new top-level fault panel. Live `/health` already paints one rectangle per pool backend (`localhost:5000` local, `localhost:4000` local today). Remote/external backends use the same chip; they already get a `place-external` badge when `has_credential` is true. What is missing is joining additive `telemetry.llm_faults` / `telemetry.credentials` onto those chips, a click-to-inspect popover, a new **Credential audit** log source, and backend (plus origin) filter chips on the logs that carry those fields.
+- `token_verify_failed_last_ts`
+- `daemon_tokens_issued_last_ts`
+- `audit_log_dropped_last_ts`
 
-Working-tree leftover: uncommitted **v0.9.10** version bump for `slot_failures` already on `origin/main` (`95ee780`) under the **v0.9.9** tag. Merger folds that bump into this release. Do **not** commit `search_results.json` or `telemetry.json`.
+A `null` last_ts means “not in this process”, distinct from “just now”. The
+shape is **not** `{count, last:{ts}}` — 1297 stays additive, `api_version`
+stays **4**. The skill `status` human renderer now prints non-zero
+`credentials` / `llm_faults` (the other 16 Aug finding). That client is
+already shipped; this cycle is the **monitor**.
 
-Roles (fact **1184**, this cycle only — no project-adoption decision exists yet):
+Live on this workstation (gateway 0.9.8, already joined onto `/api/health`):
 
-- **Planner / reviewer / merger:** Grok 4.6 (this session). Stays out of feature execution. Version files + CHANGELOG + tag + GitHub release are merger-only.
-- **Builder:** Grok Build (`general-purpose` subagent). One worktree per parallel unit. Escalates instead of guessing.
+```text
+token_verify_failed=0 / last_ts=null
+daemon_tokens_issued=2 / last_ts=2026-08-16T21:12:04Z
+audit_log_dropped=0 / last_ts=null
+llm_faults={}
+```
+
+`system_health._join_llm_faults` already passes the credentials dict through.
+The product gap is presentation: `token_verify_failed` is never rendered, and
+`audit_log_dropped` has no age. `fact:1307` + `fact:1314`: pair the count with
+last-event age so a stale one-off reads as historical.
+
+Roles (`decision:1300` grounded on `fact:1184`):
+
+- **Planner / reviewer / merger:** Grok 4.6. Stays out of feature execution.
+  Version files, CHANGELOG, tag, GitHub release are merger-only.
+- **Builder:** Grok Build (`general-purpose` subagent). One worktree. Escalates
+  instead of guessing.
+
+Do **not** commit `search_results.json` or `telemetry.json`.
 
 ## Architecture Decisions
 
-- **A1. Division of surfaces (locked — decision 1295).** Dashboard chips carry counters + last-event context only. Log lines never appear on the dashboard. Investigation happens on `/logs`.
-- **A2. Per-backend rectangle, not a top-level panel.** Reuse `#llm-pool-backends .pool-chip`. No new Status-deck card, no fourth drawer-trigger next to Data Quality / Latency / Schema.
-- **A3. Click the chip to inspect that backend.** Same visual language as existing drawers (tokens, warn/ok/bad, `esc()`), but a compact popover anchored to the chip. Copy ends with a Logs deep link. Escape / outside click / second click closes it.
-- **A4. Warn is a cue to open logs, not a deck-critical.** Credential-class faults (`llm.credential`) and gateway-path faults (`gateway`) mark that chip `warn` (or keep `down` if the pool already says down). Transient faults (`llm.transient`) also mark the chip `warn` with different popover copy. **Do not** flip `_overall_state` / the hero pill from these counters alone. `credentials.audit_log_dropped > 0` warns the **pool line**, not a chip. `credentials.token_verify_failed` is own-door auth — never paint an LLM chip.
-- **A5. Remote backends appear the same way as local ones.** Same chip component. Sort **local first, then external, then unknown placement**. If `llm_faults` names a URL that is not in `llm_pool`, synthesise a chip for that URL (label via existing `_backend_label`) so the signal is not invisible. Join by URL, slash-normalised the same way `_config_backend_index` already does. Placement still comes only from `has_credential` — never infer from hostname.
-- **A6. Logs: new source + existing filters, not a new page.** Add `credential_audit` to `list_sources()`. Reuse File picker, Follow/Pause, time range, severity chips. Add backend chips on **credential audit** and **agent audit**. Add origin chips (`gateway` / `upstream`) on credential audit only.
-- **A7. Logrotate uses the existing picker.** Framework rotates `*-audit.jsonl` as `.1` (delaycompress, uncompressed) then `.2.gz`…`.14.gz`. Today `_archive_candidates` only globs `*.gz`, so yesterday’s `.1` is invisible. Extend the matcher to numbered rotates; do not invent a second archive UI.
-- **A8. Additive and degrading.** Older gateways omit `llm_faults` / `credentials` / `credential-audit.jsonl` — hide the new bits, keep current behaviour. No `api_version` bump (still **4**).
-- **A9. Secrets.** Never render raw tokens. `digest_prefix` may be shown as the gateway already stores it (8 hex of the presented token). `CREDENTIAL_AUDIT_LOG_PATH=""` means disabled — omit the source or show unavailable, do not invent a path.
+- **A1. Division of surfaces (locked — `decision:1295`).** Dashboard carries
+  counters + last-event context only. Log lines stay on `/logs`.
+- **A2. Flat siblings, not a restructure (`fact:1314`).** Do not nest
+  credentials into `{count, last}`. Pass the dict through. Missing last_ts
+  keys on older gateways stay missing — never invent timestamps.
+- **A3. Own-door auth stays off LLM chips (locked — plan A4 / I3).**
+  `token_verify_failed` is own-door. It never appears on a pool backend chip
+  or in a chip popover. `audit_log_dropped` stays on the **pool line**.
+- **A4. Age lives on the pool line.** When `token_verify_failed > 0`, append
+  `token verify failed N` plus a relative age when `token_verify_failed_last_ts`
+  is a parseable ISO string. When `audit_log_dropped > 0`, keep
+  `audit log dropped` and append the same age form from
+  `audit_log_dropped_last_ts` if present. Count 0 stays quiet (match skill
+  `status`). Do **not** surface `daemon_tokens_issued` (normal start mint).
+- **A5. Relative age, not a second clock.** Reuse the existing
+  `fmtInflightAge` idea: “12m ago”, “2h ago”. Clock-skew / unparseable → omit
+  the age, keep the count. Null last_ts + count > 0 (old gateway or
+  never-stamped) → count only.
+- **A6. Visibility.** If the only signal is a credentials warn (no pool / age /
+  affinity / wedge), the pool panel must still show so the line is not hidden.
+  Today `auditDropped` is computed then ignored in the hide predicate — fix
+  that in the same `renderLlmPool` edit.
+- **A7. No deck-critical.** These counters still must not flip `_overall_state`
+  / the hero pill (I2).
+- **A8. Deep link.** A credentials warn on the pool line may add a small link
+  `/logs?source=credential_audit` (no backend filter — own-door). Do not invent
+  a new Status-deck card.
+- **A9. Secrets.** Never render tokens. last_ts is an ISO timestamp only.
 
 ## Numbered invariants (mutation-tested)
 
 | Id | Rule | Test lives in |
 |----|------|----------------|
-| I1 | `/api/health.llm_pool.backends[]` may carry a `faults` object `{gateway, credential, transient}` joined from `telemetry.llm_faults[url]`; missing telemetry → no `faults` key, chips unchanged. | `tests/test_system_health.py` |
-| I2 | Chip warn from faults does **not** change `_overall_state` when all processes are otherwise ok. | `tests/test_system_health.py` |
-| I3 | `audit_log_dropped > 0` appears on the health payload as `credentials.audit_log_dropped` and does not attach to a backend chip. `token_verify_failed` never appears on a backend chip. | `tests/test_system_health.py` |
-| I4 | A `llm_faults` URL absent from `llm_pool` still produces a backend row (synthesised chip). | `tests/test_system_health.py` |
-| I5 | Backends sort local → external → unknown. | `tests/test_system_health.py` |
-| I6 | `list_sources()` includes `credential_audit` whose live path is `CREDENTIAL_AUDIT_LOG_PATH` or `log_dir()/credential-audit.jsonl`. Empty env disables the live file. | `tests/test_logs_reader.py` |
-| I7 | `list_archives("credential_audit")` and `list_archives("agent_audit")` include `*.1` and `*.N.gz` next to the live stem; path traversal still rejected. | `tests/test_logs_reader.py` |
-| I8 | Doctor telemetry line names `llm_faults` and `credentials` when those keys exist on the payload (empty `{}` still counts as present). | `tests/test_doctor.py` |
-| I9 | Agent-audit and credential-audit lines keep raw JSON on the wire (`parse_log_entry`); UI-only formatting. | `tests/test_logs_reader.py` (existing contract) |
+| I10 | `/api/health.credentials` preserves `*_last_ts` sibling keys when present; absent keys stay absent; values are not rewritten; `null` stays `null`. | `tests/test_system_health.py` |
+| I11 | `token_verify_failed` and any `*_last_ts` never appear on `llm_pool.backends[]` (extends I3). | `tests/test_system_health.py` |
+| I2 | Unchanged: credential counters / last_ts do not change `_overall_state`. | existing I2 + last_ts fixture |
+| I3 | Unchanged: `audit_log_dropped` stays top-level credentials, not a chip. | existing |
 
-## File ownership (parallelism)
+UI A4–A6 are browser-verified (no JS test harness). Mutation on I10: a test
+that only checks `token_verify_failed` still passes if last_ts is dropped —
+pin the **value** of each last_ts key.
+
+## File ownership
 
 | Unit | Owner files | Must not touch |
 |------|-------------|----------------|
-| **A — health join** | `src/sm_telemetry_monitor/system_health.py`, `tests/test_system_health.py`, `src/sm_telemetry_monitor/doctor.py`, `tests/test_doctor.py` | version files, CHANGELOG, static UI |
-| **B — pool popover** (after A) | `static/dashboard.html`, `static/theme.css` (popover/warn-on-chip only) | `logs.html`, Python except via `/api/health` |
-| **C — log source + archives** | `src/sm_telemetry_monitor/env_loader.py`, `src/sm_telemetry_monitor/logs_reader.py`, `tests/test_logs_reader.py`, `deploy/logrotate/shared-memory-audit.example` | version files, dashboard |
-| **D — log filters** (after C) | `static/logs.html` | `theme.css` unless a class already exists — **do not edit theme.css** if B owns it; reuse `chip`, `chip-filter-active`, `logs-agent-bar` |
-| **M — merge / release** | `pyproject.toml`, `src/sm_telemetry_monitor/__init__.py`, `CHANGELOG.md`, `README.md`, `AGENTS.md`, `GEMINI.md`, `docs/SISTER_PROJECT.md`, `.grok/skills/shared-memory-monitor/SKILL.md` if the log table is listed | feature code |
-
-Shared file: `static/theme.css` is named. **B owns it.** D reuses existing chip classes.
-
-`server.py` already derives `/api/logs/sources` and `/api/logs/archives` from `list_sources()` — no change unless a test proves otherwise.
+| **A — passthrough tests** | `tests/test_system_health.py`; `src/sm_telemetry_monitor/system_health.py` **only if** a test proves the dict is stripped (today it is not) | version files, CHANGELOG, static UI, docs |
+| **B — pool-line age** (after A) | `static/dashboard.html`; `static/theme.css` only if the line needs a link class that does not already exist | Python, `logs.html`, version files |
+| **M — merge / release** | `pyproject.toml`, `src/sm_telemetry_monitor/__init__.py`, `CHANGELOG.md`, `README.md`, `AGENTS.md`, `GEMINI.md` if it pins a version, `docs/SISTER_PROJECT.md`, `.env.example`, `.grok/skills/shared-memory-monitor/SKILL.md` if the compatibility line is listed | feature code |
 
 ## Task List
 
-### Phase 0 — Hygiene (merger, before builders)
+### Task 1: Pin last_ts passthrough (I10, I11)
 
-- [ ] Task 0: Leave leftover v0.9.10 version-file edits uncommitted on this checkout. Builders branch from `HEAD` (v0.9.9 code). Do not commit `search_results.json` / `telemetry.json`.
-
-### Phase 1 — Signal on existing rectangles
-
-### Task 1: Join `llm_faults` + `credentials` onto `/api/health`
-
-**Description:** `system_health_snapshot()` already calls `get_telemetry()`. Read `telemetry.llm_faults` and `telemetry.credentials` (payload is `{status, telemetry:{...}}`). Attach a compact `faults` object to each pool backend. Pass `credentials` through at snapshot top-level. Sort backends local → external → unknown. Synthesise a chip when a fault URL is missing from the pool. Doctor names `llm_faults` + `credentials` when the keys exist.
+**Description:** Extend `LlmFaultsCredentialsJoinTests` so a credentials blob
+with the three 0.9.8 last_ts siblings survives `_join_llm_faults` / the
+snapshot unchanged. Older fixture without those keys still has no invented
+timestamps.
 
 **Acceptance criteria:**
-- [ ] I1–I5 and I8 hold with failing tests written first.
-- [ ] Live `curl /api/health` on this workstation still shows both local chips when `llm_faults` is `{}`.
-- [ ] Empty/missing sections do not change chip `status`/`fails`/`placement`.
+- [ ] I10 and I11 fail before any Python change (or stay green if passthrough
+      already holds — then no `system_health.py` edit).
+- [ ] I2 still green with last_ts populated and `token_verify_failed > 0`.
 
-**Verification:**
-- [ ] `uv run pytest -q tests/test_system_health.py tests/test_doctor.py`
-- [ ] `curl -sf http://127.0.0.1:8765/api/health` after a local restart (or builder notes that the user unit must be restarted by the merger).
+**Verification:** `uv run pytest -q tests/test_system_health.py`
 
-**Dependencies:** Task 0
-**Files:** `system_health.py`, `tests/test_system_health.py`, `doctor.py`, `tests/test_doctor.py`
-**Estimated scope:** M
+**Dependencies:** None
+**Estimated scope:** S
 
-### Task 2: Chip warn + click popover + Logs deep link
+### Task 2: Pool-line last-failure age
 
-**Description:** In `renderLlmPool`, apply an extra `warn` class when `b.faults` has any count > 0 (keep `down` if already down). Make each chip a button (keyboard + `aria-expanded`). Click opens a compact popover: origin-split counts, last `{ts, class|status, error_type}`, one sentence that this is a cue to read logs, and links `/logs?source=credential_audit&backend=<url>` and `/logs?source=agent_audit&backend=<url>`. Reuse existing `--warn` / `--ok` / `--bad` tokens. Do not add a Status-deck card.
+**Description:** In `renderLlmPool`, implement A4–A8. Count 0 stays quiet.
+Warn class if `audit_log_dropped > 0` **or** `token_verify_failed > 0`.
 
 **Acceptance criteria:**
-- [ ] External and local chips stay the same rectangle component; only data and interaction change.
-- [ ] Popover is per-backend; closing does not navigate away.
-- [ ] Deep-link query params match what Task 4 will read (`source`, `backend`).
-- [ ] No log line text is rendered on the dashboard.
+- [ ] Injected `token_verify_failed=2` + last_ts ~12 minutes ago shows
+      `token verify failed 2` and a relative age; no LLM chip warn from this.
+- [ ] Injected count>0 without last_ts shows the count only.
+- [ ] `audit_log_dropped > 0` still warns the line and can show age.
+- [ ] Hide predicate includes credentials warns (A6).
+- [ ] Hero / deck status unchanged (I2).
+- [ ] Desktop and ~400px sidebar: line wraps, does not overflow.
 
-**Verification:**
-- [ ] Browser: open `http://127.0.0.1:8765/`, confirm both current chips still render; click one, popover shows “no faults” empty state; Tab/Escape work.
-- [ ] With a fixture or temporarily injected `faults` in the browser console, warn class + last-event copy appear.
-- [ ] Desktop and ~400px sidebar width: popover does not overflow off-screen.
+**Verification:** Browser on `http://127.0.0.1:8765/` after merger restarts the
+user unit. Live today is count=0 — use a console fixture on `H.credentials`
+or a temporary health override documented in the handoff. Check `/logs` still
+loads. Do not leave a temporary override in the commit.
 
 **Dependencies:** Task 1
-**Files:** `static/dashboard.html`, `static/theme.css`
-**Estimated scope:** M
+**Estimated scope:** S
 
-### Checkpoint: Phase 1
-- [ ] Tests pass. Dashboard still shows the approved pool chips. No top-level fault panel.
-
-### Phase 2 — Logs detail
-
-### Task 3: Credential-audit source + numbered logrotate archives
-
-**Description:** Whitelist `CREDENTIAL_AUDIT_LOG_PATH` in `env_loader._FRAMEWORK_KEYS`. Add `credential_audit_path()` / `list_sources()` entry. Extend `_archive_candidates` to include live-stem `*.1` and `*.N.gz` (and keep current `*.gz` prefix match). Add `credential-audit.jsonl` to the shipped logrotate example. Format function is UI-side (Task 4); reader keeps raw lines.
-
-**Acceptance criteria:**
-- [ ] I6, I7, I9 hold with failing tests first.
-- [ ] `GET /api/logs/sources` lists `credential_audit`.
-- [ ] `GET /api/logs/archives?source=agent_audit` includes `gateway-audit.jsonl.1` on this host.
-- [ ] Traversal (`../`, absolute paths) still raises.
-
-**Verification:**
-- [ ] `uv run pytest -q tests/test_logs_reader.py tests/test_security.py`
-- [ ] `curl -sf http://127.0.0.1:8765/api/logs/sources` and archives for `credential_audit` / `agent_audit`.
-
-**Dependencies:** Task 0 (parallel with Task 1)
-**Files:** `env_loader.py`, `logs_reader.py`, `tests/test_logs_reader.py`, `deploy/logrotate/shared-memory-audit.example`
-**Estimated scope:** M
-
-### Task 4: Backend + origin filters; format credential lines
-
-**Description:** Mirror the existing **Agent** chip bar. On `agent_audit` and `credential_audit`, collect `backend` from JSON and render filter chips (label = host:port via the same shortening as pool chips). On `credential_audit` only, also render origin chips (`gateway` / `upstream` from `origin`). Honour URL `?backend=` and `?origin=` on load (dashboard deep links). Format credential lines like agent-audit (ts, event, origin, backend, request_id, status/error_type — no payload dump). File picker already bound — just works once Task 3 lists `.1`.
-
-**Acceptance criteria:**
-- [ ] `/logs?source=credential_audit&backend=http://localhost:5000` shows only that backend (or the empty-state sentence).
-- [ ] `/logs?source=agent_audit&backend=http://localhost:4000` same for agent audit.
-- [ ] Origin chip `gateway` hides upstream-only events.
-- [ ] Archive picker lists previous rotates; switching file keeps filters.
-- [ ] Style matches existing agent chips (`chip chip-agent` / `chip-filter-active`).
-
-**Verification:**
-- [ ] Browser `/logs`: new tab present; File includes live; backend chips appear on agent audit (live data has `:5000` and `:4000`); credential tab shows the three live events; apply time range + archive if `.1` exists.
-- [ ] Follow/Pause/severity/consolidation on gateway tab still work (regression).
-
-**Dependencies:** Task 3
-**Files:** `static/logs.html`
-**Estimated scope:** M
-
-### Checkpoint: Phase 2
-- [ ] Operator path works: chip → popover → Logs with backend pre-filtered.
-- [ ] Full `uv run pytest -q`
-
-### Phase 3 — Release (merger only)
-
-### Task 5: Review, merge to main, v0.9.10 tag + GitHub release
-
-**Description:** Five-axis review against this plan. Reject scope creep. Then merger: version **0.9.10** across the release checklist (including stale `GEMINI.md` `v0.9.7` pin), CHANGELOG that describes this cycle (not only slot_failures), screenshots if Logs/Status layout changed (`docs/images/dashboard.png`, `docs/images/logs.png`), `./scripts/pre-publish-check.sh`, restart user unit, smoke `/api/health` + `/logs`, commit on `main` (or squash-merge the builder branches), push `origin main`, `gh release create v0.9.10` with wheel/sdist.
-
-**Acceptance criteria:**
-- [ ] Review findings at Critical/Required resolved or operator-overruled in writing.
-- [ ] Version consistent in pyproject, `__init__`, CHANGELOG, README, AGENTS, GEMINI, SISTER_PROJECT.
-- [ ] `pre-publish-check.sh` exits 0.
-- [ ] Tag `v0.9.10` on the merge commit; GitHub release attached.
-
-**Verification:**
-- [ ] `./scripts/pre-publish-check.sh`
+### Checkpoint
 - [ ] `uv run pytest -q`
-- [ ] `systemctl --user restart shared-memory-monitor.service` then doctor + browser smoke.
-- [ ] `git ls-remote --tags origin` shows `v0.9.10`.
+- [ ] No version/CHANGELOG edits from the builder
 
-**Dependencies:** Tasks 1–4 + review
-**Files:** merger-only list above
+### Task 3: Review + merge + v0.9.12 (merger only)
+
+**Description:** Five-axis review against this plan. Then merger: bump
+**0.9.11 → 0.9.12**, CHANGELOG, docs that name framework **0.9.8** last_ts
+and fix the stale installer bits (SISTER_PROJECT telemetry table,
+AGENTS Phase-3 example, `.env.example` still says `api_version 3`).
+Screenshots only if the pool line layout actually changed. Restart user
+unit, smoke, `pre-publish-check.sh`, `uv build`, push `origin main`,
+`gh release create v0.9.12`.
+
+**Acceptance criteria:**
+- [ ] Critical/Required review findings resolved or operator-overruled.
+- [ ] Version consistent in pyproject, `__init__`, CHANGELOG, README, AGENTS,
+      SISTER_PROJECT (and GEMINI if it pins).
+- [ ] Tag `v0.9.12` + GitHub release with wheel/sdist.
+
+**Dependencies:** Tasks 1–2 + review
 **Estimated scope:** M
-
-## Parallelization
-
-```
-Task 1 (A) ──────────► Task 2 (B)
-Task 3 (C) ──────────► Task 4 (D)
-                              └──► Review (4.6) ──► Task 5 (merger)
-```
-
-A ∥ C are disjoint files. B waits on A (`/api/health` shape). D waits on C (source id + archives). theme.css: B only.
-
-## Risks and Mitigations
-
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| Empty `llm_faults` today hides the popover path | Low | Always allow click; empty state says “no faults — open logs to inspect” |
-| `.1` files are uncompressed JSONL, not gzip | Med | Archive reader already tails non-gz via `_tail_lines_text`; do not force gzip |
-| `agent-audit.jsonl` vs live `gateway-audit.jsonl` | Low | Existing fallback stays; new source is a third file |
-| Deep-link `backend` is a full URL | Low | Query-param encode; compare against JSON `backend` after slash-normalise |
-| Click-chip vs existing hover `title=` | Low | Keep title tooltip; click is the inspect affordance |
-| Screenshot drift | Low | Recapture dashboard + logs if layout changes |
-
-## Open Questions (defaults if unanswered)
-
-- **Popover vs reuse Schema drawer chrome:** default popover (A3). A full-width drawer would compete with the three existing drill-downs.
-- **Deck elevation on credential faults:** default no (A4). Say so if you want the LLM health-item to go warn when any backend has `llm.credential.count > 0`.
-- **Build-cycle adoption:** this cycle follows 1184 operationally. A saved project decision is **not** created unless you ask.
 
 ## Out of scope
 
-- Inventing monitor-side metrics or reading Postgres/Neo4j.
-- A5 `/health` reshape (framework later).
-- Surfacing `dream-metrics.jsonl` or per-save `shared_memory_*.log.gz`.
-- Changing consolidation / schema / latency drawers.
-- Publishing anything except the v0.9.10 release you already approved.
+- Framework / skill edits (already shipped in 0.9.8).
+- Reshaping credentials to `{count, last}`.
+- Painting `token_verify_failed` on LLM chips.
+- Surfacing `daemon_tokens_issued` on the dashboard.
+- A5 `/health` slimming.
+- Inventing monitor-side timestamps or reading the credential log to recover age.
+- Committing `search_results.json` / `telemetry.json`.
+
+## Risks
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Live count is 0 — cannot see the warn path | Med | Console fixture / documented inject; tests pin the payload |
+| Relative-age wording vs skill `_age_phrase` | Low | Same idea, not a shared module — do not import framework code |
+| Screenshot / layout drift | Low | Recapture `docs/images/dashboard.png` only if the line is visibly new |

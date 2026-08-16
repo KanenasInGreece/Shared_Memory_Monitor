@@ -6,6 +6,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.12] - 2026-08-17
+
+### Added
+- Pair framework **0.9.8** `credentials.*_last_ts` siblings with the existing
+  own-door counters on the LLM pool line (`token verify failed N` + relative
+  age; `audit log dropped` + age). A stale one-off no longer reads as ongoing.
+  Older gateways omit the timestamps and still show the count. `api_version`
+  stays **4**. Own-door auth is still never painted on an LLM chip
+  (`fact:1314`, `fact:1297`).
+
 ## [0.9.11] - 2026-08-15
 
 ### Added
