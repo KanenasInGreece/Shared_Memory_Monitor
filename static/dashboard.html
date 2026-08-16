@@ -1338,6 +1338,20 @@ function fmtInflightAge(s) {
   return mm ? `${h}h ${mm}m` : `${h}h`;
 }
 
+function fmtLastEventAge(iso) {
+  // Credential last_ts → "12m ago" / "2h ago". Unparseable or future → omit.
+  if (iso == null || iso === "") return null;
+  const t = Date.parse(String(iso));
+  if (!Number.isFinite(t)) return null;
+  const s = (Date.now() - t) / 1000;
+  if (s < 0) return null;
+  if (s < 1) return "<1s ago";
+  if (s < 60) return `${Math.round(s)}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  return `${Math.floor(m / 60)}h ago`;
+}
+
 // Per-backend fault signal (Task 2): chip warn + inspect popover. Signal only —
 // log lines stay on /logs. Open state keyed by backend url across poll re-renders.
 let llmPoolOpenUrl = null;
@@ -1464,9 +1478,8 @@ function toggleLlmPoolPopover(btn) {
 }
 
 function renderLlmPool(H) {
-  // Surfaces only fields the gateway already emits on /health (pool maps, oldest
-  // in-flight age, live affinity, wedge list). Hidden when none of those exist.
-  // Optional Task-1 fields: H.credentials, backends[].faults — degrade when absent.
+  // Surfaces /health pool maps, oldest in-flight age, live affinity, wedge list,
+  // and credentials warns (own-door counts). Hidden when none of those exist.
   const panel = document.getElementById("llm-pool-panel");
   const line = document.getElementById("llm-pool-line");
   const list = document.getElementById("llm-pool-backends");
@@ -1477,14 +1490,17 @@ function renderLlmPool(H) {
   const age = H?.llm_oldest_inflight_age_s;
   const wedged = H?.llm_suspect_wedged || [];
   const aff = H?.llm_affinity_live;
+  const creds = H?.credentials;
   const hasPool = !!(pool && pool.backends && pool.backends.length);
   const hasAge = age != null;
   const hasAff = !!(aff && (aff.hits != null || aff.misses != null || aff.hit_rate != null
     || (aff.hot_prefixes && aff.hot_prefixes.length)));
   const hasWedge = Array.isArray(wedged) && wedged.length > 0;
-  const auditDropped = Number(H?.credentials?.audit_log_dropped) > 0;
+  const tokenFailed = Number(creds?.token_verify_failed) || 0;
+  const auditDropped = Number(creds?.audit_log_dropped) || 0;
+  const credsWarn = tokenFailed > 0 || auditDropped > 0;
 
-  if (!hasPool && !hasAge && !hasAff && !hasWedge) {
+  if (!hasPool && !hasAge && !hasAff && !hasWedge && !credsWarn) {
     panel.hidden = true;
     list.innerHTML = "";
     line.textContent = "";
@@ -1507,9 +1523,22 @@ function renderLlmPool(H) {
   }
   if (H?.inference_busy) bits.push(`GPU ${H.inference_busy}`);
   if (hasWedge) bits.push(`wedge: ${wedged.join(", ")}`);
-  if (auditDropped) bits.push("audit log dropped");
-  line.textContent = bits.join(" · ");
-  line.className = "pool-line" + (hasWedge || auditDropped ? " warn" : "");
+  if (tokenFailed > 0) {
+    const ageTxt = fmtLastEventAge(creds?.token_verify_failed_last_ts);
+    bits.push(`token verify failed ${tokenFailed}` + (ageTxt ? ` ${ageTxt}` : ""));
+  }
+  if (auditDropped > 0) {
+    const ageTxt = fmtLastEventAge(creds?.audit_log_dropped_last_ts);
+    bits.push("audit log dropped" + (ageTxt ? ` ${ageTxt}` : ""));
+  }
+  const text = bits.join(" · ");
+  line.className = "pool-line" + (hasWedge || credsWarn ? " warn" : "");
+  if (credsWarn) {
+    const sep = text ? " · " : "";
+    line.innerHTML = `${esc(text)}${sep}<a class="pool-pop-link" href="/logs?source=credential_audit">credential audit</a>`;
+  } else {
+    line.textContent = text;
+  }
 
   llmPoolByUrl.clear();
   if (hasPool) {
