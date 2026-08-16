@@ -666,9 +666,12 @@ class LlmFaultsCredentialsJoinTests(unittest.TestCase):
             self._base_telemetry(
                 llm_faults=faults,
                 credentials={
-                    "token_verify_failed": 1,
+                    "token_verify_failed": 3,
+                    "token_verify_failed_last_ts": "2026-08-16T20:59:00Z",
                     "daemon_tokens_issued": 0,
+                    "daemon_tokens_issued_last_ts": None,
                     "audit_log_dropped": 2,
+                    "audit_log_dropped_last_ts": "2026-08-16T21:00:00Z",
                 },
             ),
         )
@@ -700,6 +703,86 @@ class LlmFaultsCredentialsJoinTests(unittest.TestCase):
         # omit or null — never invent zero counters
         creds = snap.get("credentials")
         self.assertTrue(creds is None or creds == {})
+
+    def test_i10_last_ts_siblings_passthrough_unchanged(self):
+        """I10: snapshot credentials keeps 0.9.8 last_ts siblings as-is.
+
+        Mutation: checking only token_verify_failed still passes if last_ts
+        is dropped — pin each last_ts value (including explicit null).
+        Passthrough already holds — _join_llm_faults does not strip the dict.
+        """
+        verify_ts = "2026-08-16T20:59:00Z"
+        issued_ts = "2026-08-16T21:12:04Z"
+        snap = self._snap(
+            _pool_gateway(),
+            self._base_telemetry(
+                llm_faults={},
+                credentials={
+                    "token_verify_failed": 2,
+                    "token_verify_failed_last_ts": verify_ts,
+                    "daemon_tokens_issued": 2,
+                    "daemon_tokens_issued_last_ts": issued_ts,
+                    "audit_log_dropped": 0,
+                    "audit_log_dropped_last_ts": None,
+                },
+            ),
+        )
+        creds = snap["credentials"]
+        self.assertEqual(creds["token_verify_failed_last_ts"], verify_ts)
+        self.assertEqual(creds["daemon_tokens_issued_last_ts"], issued_ts)
+        self.assertIn("audit_log_dropped_last_ts", creds)
+        self.assertIsNone(creds["audit_log_dropped_last_ts"])
+        self.assertEqual(creds["token_verify_failed"], 2)
+        self.assertEqual(creds["daemon_tokens_issued"], 2)
+        self.assertEqual(creds["audit_log_dropped"], 0)
+
+    def test_i10_absent_last_ts_not_invented(self):
+        """I10: older credentials blobs stay without invented last_ts keys."""
+        snap = self._snap(
+            _pool_gateway(),
+            self._base_telemetry(
+                llm_faults={},
+                credentials={
+                    "token_verify_failed": 0,
+                    "daemon_tokens_issued": 2,
+                    "audit_log_dropped": 0,
+                },
+            ),
+        )
+        creds = snap["credentials"]
+        self.assertNotIn("token_verify_failed_last_ts", creds)
+        self.assertNotIn("daemon_tokens_issued_last_ts", creds)
+        self.assertNotIn("audit_log_dropped_last_ts", creds)
+
+    def test_i11_own_door_keys_never_on_backends(self):
+        """I11: token_verify_failed and *_last_ts stay off llm_pool.backends[]."""
+        last_ts_keys = (
+            "token_verify_failed_last_ts",
+            "daemon_tokens_issued_last_ts",
+            "audit_log_dropped_last_ts",
+        )
+        snap = self._snap(
+            _pool_gateway(),
+            self._base_telemetry(
+                llm_faults={},
+                credentials={
+                    "token_verify_failed": 4,
+                    "token_verify_failed_last_ts": "2026-08-16T20:59:00Z",
+                    "daemon_tokens_issued": 1,
+                    "daemon_tokens_issued_last_ts": "2026-08-16T21:12:04Z",
+                    "audit_log_dropped": 2,
+                    "audit_log_dropped_last_ts": None,
+                },
+            ),
+        )
+        for b in snap["llm_pool"]["backends"]:
+            self.assertNotIn("token_verify_failed", b)
+            for key in last_ts_keys:
+                self.assertNotIn(key, b)
+            dumped = json.dumps(b)
+            self.assertNotIn("token_verify_failed", dumped)
+            for key in last_ts_keys:
+                self.assertNotIn(key, dumped)
 
     def test_i4_fault_url_absent_from_pool_synthesises_backend(self):
         remote = "https://api.example/v1"
