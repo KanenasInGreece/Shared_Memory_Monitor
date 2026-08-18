@@ -385,6 +385,125 @@ class GatewayConfigTests(unittest.TestCase):
         self.assertTrue(snap["config"]["present"])
         self.assertEqual(snap["config"]["backend_count"], 1)
 
+    def test_i16_descriptors_copied_including_explicit_null(self):
+        """I16: roles/n_ctx/private_ok/max_inflight/prices copy when present.
+
+        Mutation: checking only private_ok=True still passes if roles is dropped
+        when null — pin roles is None with the key kept.
+        """
+        health = {
+            **_pool_gateway(),
+            "config": {
+                "llm_backends": [
+                    {
+                        "url": "http://localhost:5000",
+                        "weight": 1.0,
+                        "has_credential": False,
+                        "model": None,
+                        "private_ok": True,
+                        "roles": None,
+                        "n_ctx": None,
+                        "max_inflight": None,
+                        "price_per_mtok_in": None,
+                        "price_per_mtok_out": None,
+                    },
+                    {
+                        "url": "http://localhost:4000",
+                        "weight": 1.0,
+                        "has_credential": False,
+                        "private_ok": True,
+                        "roles": None,
+                        "n_ctx": 8192,
+                        "max_inflight": 2,
+                        "price_per_mtok_in": 0.14,
+                        "price_per_mtok_out": 0.28,
+                    },
+                ],
+            },
+        }
+        cfg = _gateway_config(health)
+        by_url = {b["url"]: b for b in cfg["backends"]}
+        b5000 = by_url["http://localhost:5000"]
+        self.assertTrue(b5000["private_ok"])
+        self.assertIn("roles", b5000)
+        self.assertIsNone(b5000["roles"])
+        self.assertIn("n_ctx", b5000)
+        self.assertIsNone(b5000["n_ctx"])
+        self.assertIn("max_inflight", b5000)
+        self.assertIsNone(b5000["max_inflight"])
+        self.assertIn("price_per_mtok_in", b5000)
+        self.assertIsNone(b5000["price_per_mtok_in"])
+        self.assertIn("price_per_mtok_out", b5000)
+        self.assertIsNone(b5000["price_per_mtok_out"])
+        b4000 = by_url["http://localhost:4000"]
+        self.assertEqual(b4000["n_ctx"], 8192)
+        self.assertEqual(b4000["max_inflight"], 2)
+        self.assertEqual(b4000["price_per_mtok_in"], 0.14)
+        self.assertEqual(b4000["price_per_mtok_out"], 0.28)
+
+        pool = _llm_pool_summary(health)
+        p_by_url = {b["url"]: b for b in pool["backends"]}
+        self.assertTrue(p_by_url["http://localhost:5000"]["private_ok"])
+        self.assertIn("roles", p_by_url["http://localhost:5000"])
+        self.assertIsNone(p_by_url["http://localhost:5000"]["roles"])
+        self.assertEqual(p_by_url["http://localhost:4000"]["n_ctx"], 8192)
+        self.assertEqual(p_by_url["http://localhost:4000"]["price_per_mtok_in"], 0.14)
+
+    def test_i16_pre_0913_fixture_has_no_invented_descriptors(self):
+        """I16: older config backends must not gain invented descriptor keys."""
+        health = {
+            **_pool_gateway(),
+            "config": {
+                "llm_backends": [
+                    {"url": "http://localhost:5000", "weight": 1.0,
+                     "has_credential": False, "model": None},
+                    {"url": "http://localhost:4000", "weight": 1.0,
+                     "has_credential": True, "model": "cloud-model"},
+                ],
+            },
+        }
+        descriptor_keys = (
+            "roles", "n_ctx", "private_ok", "max_inflight",
+            "price_per_mtok_in", "price_per_mtok_out",
+        )
+        cfg = _gateway_config(health)
+        for b in cfg["backends"]:
+            for key in descriptor_keys:
+                self.assertNotIn(key, b)
+        pool = _llm_pool_summary(health)
+        for b in pool["backends"]:
+            for key in descriptor_keys:
+                self.assertNotIn(key, b)
+
+    def test_i17_allow_unauthenticated_only_when_sent(self):
+        """I17: allow_unauthenticated_provider_keys appears only when gateway sent it."""
+        base_cfg = {
+            "llm_backends": [{"url": "http://localhost:4000", "weight": 1.0}],
+        }
+        cfg_absent = _gateway_config({**_healthy_gateway(), "config": dict(base_cfg)})
+        self.assertNotIn("allow_unauthenticated_provider_keys", cfg_absent)
+
+        cfg_true = _gateway_config({
+            **_healthy_gateway(),
+            "config": {**base_cfg, "allow_unauthenticated_provider_keys": True},
+        })
+        self.assertTrue(cfg_true["allow_unauthenticated_provider_keys"])
+
+        cfg_false = _gateway_config({
+            **_healthy_gateway(),
+            "config": {**base_cfg, "allow_unauthenticated_provider_keys": False},
+        })
+        self.assertIn("allow_unauthenticated_provider_keys", cfg_false)
+        self.assertFalse(cfg_false["allow_unauthenticated_provider_keys"])
+
+        # Top-level health boolean of the same name also counts.
+        cfg_top = _gateway_config({
+            **_healthy_gateway(),
+            "allow_unauthenticated_provider_keys": True,
+            "config": dict(base_cfg),
+        })
+        self.assertTrue(cfg_top["allow_unauthenticated_provider_keys"])
+
 
 class LlmPoolTests(unittest.TestCase):
     """Multi-backend pool (v0.6.1+): per-backend busy on the LLM tile, pool-slot
@@ -755,11 +874,16 @@ class LlmFaultsCredentialsJoinTests(unittest.TestCase):
         self.assertNotIn("audit_log_dropped_last_ts", creds)
 
     def test_i11_own_door_keys_never_on_backends(self):
-        """I11: token_verify_failed and *_last_ts stay off llm_pool.backends[]."""
-        last_ts_keys = (
+        """I11: own-door credential keys (incl. route denied) stay off backends[]."""
+        own_door_keys = (
+            "token_verify_failed",
             "token_verify_failed_last_ts",
+            "daemon_tokens_issued",
             "daemon_tokens_issued_last_ts",
+            "audit_log_dropped",
             "audit_log_dropped_last_ts",
+            "credentialed_route_denied",
+            "credentialed_route_denied_last_ts",
         )
         snap = self._snap(
             _pool_gateway(),
@@ -772,17 +896,219 @@ class LlmFaultsCredentialsJoinTests(unittest.TestCase):
                     "daemon_tokens_issued_last_ts": "2026-08-16T21:12:04Z",
                     "audit_log_dropped": 2,
                     "audit_log_dropped_last_ts": None,
+                    "credentialed_route_denied": 2,
+                    "credentialed_route_denied_last_ts": "2026-08-18T16:00:00+00:00",
                 },
             ),
         )
         for b in snap["llm_pool"]["backends"]:
-            self.assertNotIn("token_verify_failed", b)
-            for key in last_ts_keys:
+            for key in own_door_keys:
                 self.assertNotIn(key, b)
             dumped = json.dumps(b)
-            self.assertNotIn("token_verify_failed", dumped)
-            for key in last_ts_keys:
+            for key in own_door_keys:
                 self.assertNotIn(key, dumped)
+
+    def test_i14_credentialed_route_denied_passthrough(self):
+        """I14: credentialed_route_denied + last_ts survive (including null)."""
+        denied_ts = "2026-08-18T15:50:00+00:00"
+        snap = self._snap(
+            _pool_gateway(),
+            self._base_telemetry(
+                llm_faults={},
+                credentials={
+                    "token_verify_failed": 0,
+                    "token_verify_failed_last_ts": None,
+                    "daemon_tokens_issued": 0,
+                    "daemon_tokens_issued_last_ts": None,
+                    "audit_log_dropped": 0,
+                    "audit_log_dropped_last_ts": None,
+                    "credentialed_route_denied": 2,
+                    "credentialed_route_denied_last_ts": denied_ts,
+                },
+            ),
+        )
+        creds = snap["credentials"]
+        self.assertEqual(creds["credentialed_route_denied"], 2)
+        self.assertEqual(creds["credentialed_route_denied_last_ts"], denied_ts)
+
+        snap_null = self._snap(
+            _pool_gateway(),
+            self._base_telemetry(
+                llm_faults={},
+                credentials={
+                    "credentialed_route_denied": 0,
+                    "credentialed_route_denied_last_ts": None,
+                },
+            ),
+        )
+        self.assertEqual(snap_null["credentials"]["credentialed_route_denied"], 0)
+        self.assertIn("credentialed_route_denied_last_ts", snap_null["credentials"])
+        self.assertIsNone(snap_null["credentials"]["credentialed_route_denied_last_ts"])
+
+        snap_absent = self._snap(
+            _pool_gateway(),
+            self._base_telemetry(
+                llm_faults={},
+                credentials={"token_verify_failed": 0, "audit_log_dropped": 0},
+            ),
+        )
+        self.assertNotIn("credentialed_route_denied", snap_absent["credentials"])
+        self.assertNotIn("credentialed_route_denied_last_ts", snap_absent["credentials"])
+
+    def test_i12_llm_routing_passthrough_pins_values(self):
+        """I12: llm_routing is the raw /health dict — pin every counter + last_ts."""
+        llm_routing = {
+            "routed_role_extract": 4,
+            "routed_role_extract_last_ts": "2026-08-18T16:12:40.809531+00:00",
+            "routed_role_verify": 0,
+            "routed_role_verify_last_ts": None,
+            "routed_role_judge": 0,
+            "routed_role_judge_last_ts": None,
+            "routing_no_eligible_backend": 0,
+            "routing_no_eligible_backend_last_ts": None,
+            "routing_fit_rejected": 0,
+            "routing_fit_rejected_last_ts": None,
+            "routing_backend_at_capacity": 0,
+            "routing_backend_at_capacity_last_ts": None,
+        }
+        health = {**_pool_gateway(), "llm_routing": llm_routing}
+        snap = self._snap(health, self._base_telemetry(llm_faults={}))
+        self.assertEqual(snap["llm_routing"], llm_routing)
+        # Pin values individually so a rewrite of zeros would fail.
+        r = snap["llm_routing"]
+        self.assertEqual(r["routed_role_extract"], 4)
+        self.assertEqual(
+            r["routed_role_extract_last_ts"],
+            "2026-08-18T16:12:40.809531+00:00",
+        )
+        self.assertEqual(r["routed_role_verify"], 0)
+        self.assertIsNone(r["routed_role_verify_last_ts"])
+        self.assertEqual(r["routed_role_judge"], 0)
+        self.assertIsNone(r["routed_role_judge_last_ts"])
+        self.assertEqual(r["routing_no_eligible_backend"], 0)
+        self.assertIsNone(r["routing_no_eligible_backend_last_ts"])
+        self.assertEqual(r["routing_fit_rejected"], 0)
+        self.assertIsNone(r["routing_fit_rejected_last_ts"])
+        self.assertEqual(r["routing_backend_at_capacity"], 0)
+        self.assertIsNone(r["routing_backend_at_capacity_last_ts"])
+
+    def test_i12_llm_routing_absent_not_invented(self):
+        """I12: absent llm_routing → snapshot key absent or null, never zeros."""
+        snap = self._snap(_pool_gateway(), self._base_telemetry(llm_faults={}))
+        routing = snap.get("llm_routing")
+        self.assertTrue(routing is None or "llm_routing" not in snap)
+        if isinstance(routing, dict):
+            self.fail("invented llm_routing dict must not appear when gateway omitted it")
+
+    def test_i13_llm_token_usage_passthrough_and_join(self):
+        """I13: per-URL token totals preserved; join onto matching pool backend only."""
+        llm_token_usage = {
+            "http://localhost:5000": {
+                "tokens_prompt_total": 5711,
+                "tokens_completion_total": 2003,
+                "tokens_last_ts": "2026-08-18T16:12:39.677154+00:00",
+            },
+            "http://localhost:4000": {
+                "tokens_prompt_total": 0,
+                "tokens_completion_total": 0,
+                "tokens_last_ts": None,
+            },
+        }
+        health = {**_pool_gateway(), "llm_token_usage": llm_token_usage}
+        snap = self._snap(health, self._base_telemetry(llm_faults={}))
+        self.assertEqual(snap["llm_token_usage"], llm_token_usage)
+        usage = snap["llm_token_usage"]
+        self.assertEqual(usage["http://localhost:5000"]["tokens_prompt_total"], 5711)
+        self.assertEqual(usage["http://localhost:5000"]["tokens_completion_total"], 2003)
+        self.assertEqual(
+            usage["http://localhost:5000"]["tokens_last_ts"],
+            "2026-08-18T16:12:39.677154+00:00",
+        )
+        self.assertEqual(usage["http://localhost:4000"]["tokens_prompt_total"], 0)
+        self.assertIsNone(usage["http://localhost:4000"]["tokens_last_ts"])
+
+        by_url = {b["url"]: b for b in snap["llm_pool"]["backends"]}
+        self.assertEqual(
+            by_url["http://localhost:5000"]["tokens"],
+            {
+                "prompt_total": 5711,
+                "completion_total": 2003,
+                "last_ts": "2026-08-18T16:12:39.677154+00:00",
+            },
+        )
+        self.assertEqual(
+            by_url["http://localhost:4000"]["tokens"],
+            {"prompt_total": 0, "completion_total": 0, "last_ts": None},
+        )
+
+    def test_i13_backend_without_usage_entry_has_no_tokens(self):
+        """I13: do not invent tokens or backends for URLs missing from usage."""
+        llm_token_usage = {
+            "http://localhost:5000": {
+                "tokens_prompt_total": 100,
+                "tokens_completion_total": 20,
+                "tokens_last_ts": "2026-08-18T16:00:00+00:00",
+            },
+        }
+        health = {**_pool_gateway(), "llm_token_usage": llm_token_usage}
+        snap = self._snap(health, self._base_telemetry(llm_faults={}))
+        by_url = {b["url"]: b for b in snap["llm_pool"]["backends"]}
+        self.assertIn("tokens", by_url["http://localhost:5000"])
+        self.assertNotIn("tokens", by_url["http://localhost:4000"])
+        # Never invent a usage backend that was not in the pool.
+        self.assertNotIn("https://missing.example/v1", by_url)
+        self.assertEqual(len(snap["llm_token_usage"]), 1)
+
+    def test_i13_llm_token_usage_absent_not_invented(self):
+        snap = self._snap(_pool_gateway(), self._base_telemetry(llm_faults={}))
+        usage = snap.get("llm_token_usage")
+        self.assertTrue(usage is None or "llm_token_usage" not in snap)
+        for b in snap["llm_pool"]["backends"]:
+            self.assertNotIn("tokens", b)
+
+    def test_i2_routing_tokens_route_denied_do_not_change_status(self):
+        """I2: routing refuses, tokens, credentialed_route_denied leave status ok."""
+        llm_routing = {
+            "routed_role_extract": 4,
+            "routed_role_extract_last_ts": "2026-08-18T16:12:40.809531+00:00",
+            "routed_role_verify": 0,
+            "routed_role_verify_last_ts": None,
+            "routed_role_judge": 0,
+            "routed_role_judge_last_ts": None,
+            "routing_no_eligible_backend": 3,
+            "routing_no_eligible_backend_last_ts": "2026-08-18T16:10:00+00:00",
+            "routing_fit_rejected": 1,
+            "routing_fit_rejected_last_ts": "2026-08-18T16:09:00+00:00",
+            "routing_backend_at_capacity": 2,
+            "routing_backend_at_capacity_last_ts": "2026-08-18T16:08:00+00:00",
+        }
+        llm_token_usage = {
+            "http://localhost:5000": {
+                "tokens_prompt_total": 5711,
+                "tokens_completion_total": 2003,
+                "tokens_last_ts": "2026-08-18T16:12:39.677154+00:00",
+            },
+        }
+        health = {
+            **_pool_gateway(),
+            "llm_routing": llm_routing,
+            "llm_token_usage": llm_token_usage,
+        }
+        snap = self._snap(
+            health,
+            self._base_telemetry(
+                llm_faults={},
+                credentials={
+                    "token_verify_failed": 0,
+                    "audit_log_dropped": 0,
+                    "credentialed_route_denied": 5,
+                    "credentialed_route_denied_last_ts": "2026-08-18T16:00:00+00:00",
+                },
+            ),
+        )
+        self.assertEqual(snap["status"], "ok")
+        self.assertEqual(snap["llm_routing"]["routing_no_eligible_backend"], 3)
+        self.assertEqual(snap["credentials"]["credentialed_route_denied"], 5)
 
     def test_i4_fault_url_absent_from_pool_synthesises_backend(self):
         remote = "https://api.example/v1"

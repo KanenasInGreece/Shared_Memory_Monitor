@@ -93,8 +93,26 @@ def _backend_placement(has_credential) -> str | None:
     return None
 
 
+# Additive config.llm_backends descriptors (framework ≥0.9.13). Copy only when
+# the gateway sent the key — including explicit null — never invent.
+_BACKEND_DESCRIPTOR_KEYS = (
+    "roles",
+    "n_ctx",
+    "private_ok",
+    "max_inflight",
+    "price_per_mtok_in",
+    "price_per_mtok_out",
+)
+
+
+def _copy_backend_descriptors(src: dict, dest: dict) -> None:
+    for key in _BACKEND_DESCRIPTOR_KEYS:
+        if key in src:
+            dest[key] = src[key]
+
+
 def _config_backend_index(raw: dict) -> dict[str, dict]:
-    """url → {has_credential, model, placement} from /health.config.llm_backends."""
+    """url → {has_credential, model, placement, descriptors…} from config.llm_backends."""
     cfg = raw.get("config")
     if not isinstance(cfg, dict):
         return {}
@@ -114,14 +132,47 @@ def _config_backend_index(raw: dict) -> dict[str, dict]:
             has_cred = None
         model = b.get("model")
         model_s = str(model) if model not in (None, "") else None
-        out[url_s] = {
+        meta = {
             "has_credential": has_cred,
             "model": model_s,
             "placement": _backend_placement(has_cred),
         }
+        _copy_backend_descriptors(b, meta)
+        out[url_s] = meta
         # also index with trailing slash variants if gateway ever differs
         out[str(url)] = out[url_s]
     return out
+
+
+def _apply_meta_descriptors(backend: dict, meta: dict) -> None:
+    """Copy descriptor keys from config index onto a pool/config backend row."""
+    _copy_backend_descriptors(meta, backend)
+
+
+def _join_token_usage_onto_backends(backends: list[dict], health_raw: dict) -> None:
+    """Attach tokens:{prompt_total,completion_total,last_ts} when URL has usage."""
+    usage = health_raw.get("llm_token_usage")
+    if not isinstance(usage, dict):
+        return
+    by_norm: dict[str, dict] = {}
+    for url, entry in usage.items():
+        if not isinstance(entry, dict):
+            continue
+        url_s = str(url)
+        by_norm[url_s.rstrip("/")] = entry
+        by_norm[url_s] = entry
+    for b in backends:
+        url = b.get("url")
+        if url is None:
+            continue
+        entry = by_norm.get(str(url).rstrip("/")) or by_norm.get(str(url))
+        if entry is None:
+            continue
+        b["tokens"] = {
+            "prompt_total": entry.get("tokens_prompt_total"),
+            "completion_total": entry.get("tokens_completion_total"),
+            "last_ts": entry.get("tokens_last_ts"),
+        }
 
 
 def _llm_pool_summary(raw: dict) -> dict | None:
@@ -175,7 +226,7 @@ def _llm_pool_summary(raw: dict) -> dict | None:
         except (TypeError, ValueError):
             fails_i = None
         meta = meta_by_url.get(str(url).rstrip("/")) or meta_by_url.get(str(url)) or {}
-        backends.append({
+        row = {
             "url": url,
             # short label for UI chips: strip scheme, keep host:port tail
             "label": _backend_label(url),
@@ -191,9 +242,12 @@ def _llm_pool_summary(raw: dict) -> dict | None:
             "has_credential": meta.get("has_credential"),
             "model": meta.get("model"),
             "placement": meta.get("placement"),
-        })
+        }
+        _apply_meta_descriptors(row, meta)
+        backends.append(row)
     if not backends:
         return None
+    _join_token_usage_onto_backends(backends, raw)
     return {
         "backends": backends,
         "total": len(backends),
@@ -298,7 +352,7 @@ def _join_llm_faults(
             if nurl in seen_norm:
                 continue
             meta = meta_by_url.get(nurl) or meta_by_url.get(orig_url) or {}
-            backends.append({
+            row = {
                 "url": orig_url,
                 "label": _backend_label(orig_url),
                 "status": "unknown",
@@ -314,11 +368,14 @@ def _join_llm_faults(
                 "model": meta.get("model"),
                 "placement": meta.get("placement"),
                 "faults": _backend_faults_from_entry(entry),
-            })
+            }
+            _apply_meta_descriptors(row, meta)
+            backends.append(row)
 
     if not backends:
         return llm_pool, credentials
 
+    _join_token_usage_onto_backends(backends, health_raw)
     backends.sort(key=_placement_sort_key)
     return _recompute_pool_totals(backends), credentials
 
@@ -409,14 +466,16 @@ def _gateway_config(raw: dict) -> dict | None:
                 has_cred = None
             model = b.get("model")
             model_s = str(model) if model not in (None, "") else None
-            backends.append({
+            row = {
                 "url": str(url),
                 "label": str(url).split("//", 1)[-1],
                 "weight": b.get("weight"),
                 "has_credential": has_cred,
                 "model": model_s,
                 "placement": _backend_placement(has_cred),
-            })
+            }
+            _copy_backend_descriptors(b, row)
+            backends.append(row)
 
     pool_tuning = cfg.get("llm_pool_tuning") if isinstance(cfg.get("llm_pool_tuning"), dict) else {}
     affinity = cfg.get("llm_affinity") if isinstance(cfg.get("llm_affinity"), dict) else {}
@@ -450,7 +509,7 @@ def _gateway_config(raw: dict) -> dict | None:
         except (TypeError, ValueError):
             bits.append(f"embed {embed_max}")
 
-    return {
+    out = {
         "present": True,
         "backend_count": n,
         "backends": backends,
@@ -470,6 +529,12 @@ def _gateway_config(raw: dict) -> dict | None:
         } if affinity else None,
         "summary": " · ".join(bits) if bits else "configured",
     }
+    # I17: only when gateway sent it (config preferred, else top-level health bool).
+    if "allow_unauthenticated_provider_keys" in cfg:
+        out["allow_unauthenticated_provider_keys"] = cfg["allow_unauthenticated_provider_keys"]
+    elif "allow_unauthenticated_provider_keys" in raw:
+        out["allow_unauthenticated_provider_keys"] = raw["allow_unauthenticated_provider_keys"]
+    return out
 
 
 def _rem_trend() -> str:
@@ -1026,4 +1091,9 @@ def system_health_snapshot() -> dict:
         "graph_integrity": (telemetry_payload or {}).get("telemetry", {}).get("graph_integrity"),
         "credentials": credentials,
     }
+    # I12/I13: flat passthrough — absent keys stay absent; never invent zeros.
+    if "llm_routing" in raw and isinstance(raw.get("llm_routing"), dict):
+        out["llm_routing"] = raw["llm_routing"]
+    if "llm_token_usage" in raw and isinstance(raw.get("llm_token_usage"), dict):
+        out["llm_token_usage"] = raw["llm_token_usage"]
     return out

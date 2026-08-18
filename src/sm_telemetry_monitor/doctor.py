@@ -132,6 +132,9 @@ def _check_coordinator() -> dict[str, Any]:
                 n_local += 1
     pool = raw.get("llm_pool")
     has_llm_pool = isinstance(pool, dict) and bool(pool)
+    # 0.9.13 surfaces: key presence on /health (empty {} still counts — I8 style).
+    has_llm_routing = "llm_routing" in raw
+    has_llm_token_usage = "llm_token_usage" in raw
 
     return {
         "ok": ok,
@@ -145,6 +148,8 @@ def _check_coordinator() -> dict[str, Any]:
         "llm_backend_count": n_backends,
         "has_llm_pool": has_llm_pool,
         "has_llm_placement": has_placement,
+        "has_llm_routing": has_llm_routing,
+        "has_llm_token_usage": has_llm_token_usage,
         "llm_local_count": n_local if has_placement else None,
         "llm_external_count": n_external if has_placement else None,
         "has_consolidation_health": isinstance(raw.get("consolidation"), dict),
@@ -406,6 +411,10 @@ def format_report(report: dict[str, Any]) -> str:
                 bits.append(f"{n} LLM backend" + ("s" if n != 1 else ""))
             if block.get("has_llm_pool"):
                 bits.append("llm_pool")
+            if block.get("has_llm_routing"):
+                bits.append("llm_routing")
+            if block.get("has_llm_token_usage"):
+                bits.append("llm_token_usage")
             if block.get("has_llm_placement"):
                 loc = block.get("llm_local_count") or 0
                 ext = block.get("llm_external_count") or 0

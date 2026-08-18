@@ -60,6 +60,25 @@ class DoctorTests(unittest.TestCase):
         self.assertEqual(block["llm_backend_count"], 2)
         self.assertEqual(block["llm_local_count"], 1)
         self.assertEqual(block["llm_external_count"], 1)
+        # Absent 0.9.13 keys stay false (I8 — key presence, not content)
+        self.assertFalse(block["has_llm_routing"])
+        self.assertFalse(block["has_llm_token_usage"])
+
+    def test_coordinator_llm_routing_and_token_usage_key_presence(self):
+        """Coordinator flags llm_routing / llm_token_usage from /health key presence."""
+        with patch("sm_telemetry_monitor.doctor.get_health", return_value={
+            "status": "ok",
+            "version": "0.9.13",
+            "api_version": 4,
+            "llm_pool": {"http://localhost:5000": {"inflight": 0}},
+            "llm_routing": {},
+            "llm_token_usage": {},
+        }):
+            from sm_telemetry_monitor.doctor import _check_coordinator
+            block = _check_coordinator()
+        self.assertTrue(block["has_llm_pool"])
+        self.assertTrue(block["has_llm_routing"])
+        self.assertTrue(block["has_llm_token_usage"])
 
     def test_telemetry_panel_flags(self):
         with patch("sm_telemetry_monitor.doctor.get_telemetry", return_value={
@@ -144,6 +163,46 @@ class DoctorTests(unittest.TestCase):
         # Panel string still uses + join style
         self.assertRegex(text, r"telemetry: ok · .*llm_faults")
         self.assertRegex(text, r"telemetry: ok · .*credentials")
+
+    def test_format_report_names_llm_routing_and_token_usage(self):
+        report = {
+            "monitor_root": "/tmp/mon",
+            "gateway_client": {
+                "mode": "httpx",
+                "coordinator_url": "http://localhost:8888",
+                "agent_token_source": "monitor",
+            },
+            "env_sources": [],
+            "keys": {"AGENT_TOKEN": "set", "agent_token_source": "monitor"},
+            "local_data": {"samples": 0, "last_at": None},
+            "connectivity": {
+                "coordinator": {
+                    "ok": True,
+                    "version": "0.9.13",
+                    "api_version": 4,
+                    "client_api_version": 4,
+                    "compat": "ok",
+                    "has_llm_pool": True,
+                    "has_llm_routing": True,
+                    "has_llm_token_usage": True,
+                },
+                "telemetry": {"ok": True},
+                "neo4j_breakdown": {"ok": True},
+                "read_role": {"ok": True},
+            },
+            "logs": {
+                "log_paths": {"log_dir_exists": True, "log_dir": "/tmp"},
+                "journal": {"ok": True, "unit": "x", "scope": "user"},
+            },
+            "features": [],
+        }
+        text = format_report(report)
+        self.assertIn("llm_pool", text)
+        self.assertIn("llm_routing", text)
+        self.assertIn("llm_token_usage", text)
+        self.assertRegex(text, r"coordinator: ok · .*llm_pool")
+        self.assertRegex(text, r"coordinator: ok · .*llm_routing")
+        self.assertRegex(text, r"coordinator: ok · .*llm_token_usage")
 
     def test_dashboard_history_ready_when_samples(self):
         checks = {
