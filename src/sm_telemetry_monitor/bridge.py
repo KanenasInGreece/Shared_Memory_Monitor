@@ -1,6 +1,6 @@
 """Sole gateway client — all telemetry on screen comes through here.
 
-Reads GET /memory/telemetry, GET /health, POST /memory/graph only.
+Reads GET /memory/telemetry, GET /health, GET /pool/status, POST /memory/graph only.
 No parallel monitor metrics API; no framework imports; no Postgres/Neo4j.
 """
 
@@ -117,3 +117,23 @@ def get_health() -> dict:
         return r.json()
     except Exception as exc:
         return {"status": "unreachable", "error": sanitize_error(str(exc)) or "coordinator unreachable"}
+
+
+def get_pool_status() -> dict:
+    """GET /pool/status — dream-job free_slots + per-backend serves_all.
+
+    Authenticated on modern gateways (S-10: anonymous body is ``{}``).
+    Missing, 401, error, or empty dict → ``{}`` so callers omit the surface
+    instead of inventing ``free_slots: 0``.
+    """
+    try:
+        r = _http().get(
+            f"{_coordinator_base()}/pool/status",
+            headers=_request_headers(),
+        )
+        if r.status_code >= 400:
+            return {}
+        payload = r.json()
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}

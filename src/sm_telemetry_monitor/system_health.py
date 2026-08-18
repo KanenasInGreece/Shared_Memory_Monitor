@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from .analytics import rem_drain_signal
 from .backup_reader import latest_backup_manifest
-from .bridge import get_health, get_telemetry
+from .bridge import get_health, get_pool_status, get_telemetry
 from .config import REM_STALL_WINDOW_S
 from .consolidation import consolidation_from_payload
 from .sanitize import sanitize_error
@@ -378,6 +378,51 @@ def _join_llm_faults(
     _join_token_usage_onto_backends(backends, health_raw)
     backends.sort(key=_placement_sort_key)
     return _recompute_pool_totals(backends), credentials
+
+
+def _dream_free_slots(status_raw) -> int | None:
+    """Gateway /pool/status free_slots — int only; bool rejected; missing → None."""
+    if not isinstance(status_raw, dict):
+        return None
+    free = status_raw.get("free_slots")
+    if isinstance(free, bool) or not isinstance(free, int):
+        return None
+    return free
+
+
+def _join_pool_status(llm_pool: dict | None, status_raw) -> dict | None:
+    """Copy serves_all / counts_free_slot onto matching pool backends (I19)."""
+    if not isinstance(llm_pool, dict):
+        return llm_pool
+    if not isinstance(status_raw, dict):
+        return llm_pool
+    backends_raw = status_raw.get("backends")
+    if not isinstance(backends_raw, dict) or not backends_raw:
+        return llm_pool
+    by_norm: dict[str, dict] = {}
+    for url, entry in backends_raw.items():
+        if not isinstance(entry, dict):
+            continue
+        url_s = str(url)
+        by_norm[url_s.rstrip("/")] = entry
+        by_norm[url_s] = entry
+    backends = list(llm_pool.get("backends") or [])
+    if not backends:
+        return llm_pool
+    joined: list[dict] = []
+    for b in backends:
+        row = dict(b)
+        url = row.get("url")
+        entry = None
+        if url is not None:
+            entry = by_norm.get(str(url).rstrip("/")) or by_norm.get(str(url))
+        if isinstance(entry, dict):
+            if "serves_all" in entry:
+                row["serves_all"] = entry["serves_all"]
+            if "counts_free_slot" in entry:
+                row["counts_free_slot"] = entry["counts_free_slot"]
+        joined.append(row)
+    return _recompute_pool_totals(joined)
 
 
 def _oldest_inflight_age_s(raw: dict) -> float | None:
@@ -1046,6 +1091,9 @@ def system_health_snapshot() -> dict:
     # Join additive telemetry.llm_faults / credentials after pool summary.
     # Fault counts never feed _overall_state / _status_summary (I2).
     llm_pool, credentials = _join_llm_faults(llm_pool, telemetry_payload, raw)
+    pool_status_raw = get_pool_status()
+    llm_pool = _join_pool_status(llm_pool, pool_status_raw)
+    dream_free_slots = _dream_free_slots(pool_status_raw)
     gateway_config = _gateway_config(raw)
     rem_trend = _rem_trend()
     components = [
@@ -1091,6 +1139,8 @@ def system_health_snapshot() -> dict:
         "graph_integrity": (telemetry_payload or {}).get("telemetry", {}).get("graph_integrity"),
         "credentials": credentials,
     }
+    if dream_free_slots is not None:
+        out["dream_free_slots"] = dream_free_slots
     # I12/I13: flat passthrough — absent keys stay absent; never invent zeros.
     if "llm_routing" in raw and isinstance(raw.get("llm_routing"), dict):
         out["llm_routing"] = raw["llm_routing"]

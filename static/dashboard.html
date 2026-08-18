@@ -1426,6 +1426,10 @@ function poolDescriptorBits(b) {
   const bits = [];
   if (!b || typeof b !== "object") return bits;
   if (b.private_ok != null) bits.push(b.private_ok ? "private_ok" : "private_ok=false");
+  if (typeof b.serves_all === "boolean") bits.push(b.serves_all ? "serves_all" : "serves_all=false");
+  if (typeof b.counts_free_slot === "boolean") {
+    bits.push(b.counts_free_slot ? "counts_free_slot" : "counts_free_slot=false");
+  }
   if (b.roles != null) {
     const roles = Array.isArray(b.roles) ? b.roles.join(",") : String(b.roles);
     bits.push(`roles ${roles}`);
@@ -1449,7 +1453,11 @@ function poolTokenBits(b) {
   // Number(null)===0 is finite — treat null/undefined/"" as no price (A7).
   const rawIn = b.price_per_mtok_in;
   const rawOut = b.price_per_mtok_out;
-  const hasPrice = (v) => v != null && v !== "" && Number.isFinite(Number(v));
+  const hasPrice = (v) => {
+    if (typeof v === "number") return Number.isFinite(v);
+    if (typeof v === "string" && v.trim() !== "") return Number.isFinite(Number(v));
+    return false;
+  };
   if (hasPrice(rawIn) && hasPrice(rawOut)) {
     const pin = Number(rawIn);
     const pout = Number(rawOut);
@@ -1555,6 +1563,8 @@ function renderLlmPool(H) {
   const noEligible = Number(routing?.routing_no_eligible_backend) || 0;
   const atCapacity = Number(routing?.routing_backend_at_capacity) || 0;
   const fitRejected = Number(routing?.routing_fit_rejected) || 0;
+  const dreamFree = H?.dream_free_slots;
+  const hasDreamFree = typeof dreamFree === "number" && Number.isFinite(dreamFree);
   const extractN = Number(routing?.routed_role_extract) || 0;
   const verifyN = Number(routing?.routed_role_verify) || 0;
   const judgeN = Number(routing?.routed_role_judge) || 0;
@@ -1564,7 +1574,7 @@ function renderLlmPool(H) {
   const hasRoutingQuiet = !routingRefuseWarn && (extractN > 0 || verifyN > 0 || judgeN > 0);
   const poolLineWarn = hasWedge || credsWarn || routingRefuseWarn;
 
-  if (!hasPool && !hasAge && !hasAff && !hasWedge && !credsWarn && !routingRefuseWarn && !hasRoutingQuiet) {
+  if (!hasPool && !hasAge && !hasAff && !hasWedge && !credsWarn && !routingRefuseWarn && !hasRoutingQuiet && !hasDreamFree) {
     panel.hidden = true;
     list.innerHTML = "";
     line.textContent = "";
@@ -1580,6 +1590,9 @@ function renderLlmPool(H) {
     bits.push(`${pool.busy}/${pool.total} inferring`);
     bits.push(`${pool.free} free`);
     bits.push(`${pool.up}/${pool.total} up`);
+  }
+  if (hasDreamFree) {
+    bits.push(`${dreamFree} dream-ready`);
   }
   if (hasAge) {
     const ageTxt = fmtInflightAge(age);

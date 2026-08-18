@@ -11,6 +11,10 @@ from sm_telemetry_monitor.system_health import (
     _workload_part,
     system_health_snapshot,
 )
+import sm_telemetry_monitor.system_health as _system_health_mod
+
+# Existing snapshot tests do not patch get_pool_status; default is absent.
+_system_health_mod.get_pool_status = lambda: {}
 
 
 def _healthy_gateway(*, backup_in_progress=False):
@@ -1065,6 +1069,74 @@ class LlmFaultsCredentialsJoinTests(unittest.TestCase):
         self.assertTrue(usage is None or "llm_token_usage" not in snap)
         for b in snap["llm_pool"]["backends"]:
             self.assertNotIn("tokens", b)
+
+    def test_i18_dream_free_slots_passthrough(self):
+        """I18: dream_free_slots pins the gateway int; bool rejected; {} omits."""
+        status = {
+            "free_slots": 3,
+            "backends": {
+                "http://localhost:5000": {
+                    "available": True, "serves_all": True, "counts_free_slot": True,
+                },
+                "http://localhost:4000": {
+                    "available": True, "serves_all": True, "counts_free_slot": True,
+                },
+            },
+        }
+        with patch("sm_telemetry_monitor.system_health.get_pool_status",
+                   return_value=status):
+            snap = self._snap(_pool_gateway(), self._base_telemetry(llm_faults={}))
+        self.assertEqual(snap["dream_free_slots"], 3)
+
+        with patch("sm_telemetry_monitor.system_health.get_pool_status",
+                   return_value={"free_slots": True}):
+            snap_bool = self._snap(_pool_gateway(), self._base_telemetry(llm_faults={}))
+        self.assertNotIn("dream_free_slots", snap_bool)
+
+        with patch("sm_telemetry_monitor.system_health.get_pool_status",
+                   return_value={}):
+            snap_empty = self._snap(_pool_gateway(), self._base_telemetry(llm_faults={}))
+        self.assertNotIn("dream_free_slots", snap_empty)
+
+    def test_i19_serves_all_joined_not_invented(self):
+        """I19: serves_all / counts_free_slot only on matching backends."""
+        status = {
+            "free_slots": 1,
+            "backends": {
+                "http://localhost:5000": {
+                    "serves_all": True, "counts_free_slot": True,
+                },
+            },
+        }
+        with patch("sm_telemetry_monitor.system_health.get_pool_status",
+                   return_value=status):
+            snap = self._snap(_pool_gateway(), self._base_telemetry(llm_faults={}))
+        by_url = {b["url"]: b for b in snap["llm_pool"]["backends"]}
+        self.assertIs(by_url["http://localhost:5000"]["serves_all"], True)
+        self.assertIs(by_url["http://localhost:5000"]["counts_free_slot"], True)
+        self.assertNotIn("serves_all", by_url["http://localhost:4000"])
+        self.assertNotIn("counts_free_slot", by_url["http://localhost:4000"])
+
+    def test_i20_idle_free_unchanged_when_dream_slots_present(self):
+        """I20: llm_pool.free stays inflight-idle, not free_slots."""
+        health = _pool_gateway(inflight5000=1)
+        status = {"free_slots": 3, "backends": {}}
+        with patch("sm_telemetry_monitor.system_health.get_pool_status",
+                   return_value=status):
+            snap = self._snap(health, self._base_telemetry(llm_faults={}))
+        self.assertEqual(snap["dream_free_slots"], 3)
+        self.assertEqual(snap["llm_pool"]["busy"], 1)
+        self.assertEqual(snap["llm_pool"]["free"], 1)
+
+    def test_i2_dream_free_slots_do_not_change_status(self):
+        status = {"free_slots": 0, "backends": {
+            "http://localhost:5000": {"serves_all": False, "counts_free_slot": False},
+        }}
+        with patch("sm_telemetry_monitor.system_health.get_pool_status",
+                   return_value=status):
+            snap = self._snap(_pool_gateway(), self._base_telemetry(llm_faults={}))
+        self.assertEqual(snap["status"], "ok")
+        self.assertEqual(snap["dream_free_slots"], 0)
 
     def test_i2_routing_tokens_route_denied_do_not_change_status(self):
         """I2: routing refuses, tokens, credentialed_route_denied leave status ok."""

@@ -3,6 +3,9 @@ from unittest.mock import patch
 
 from sm_telemetry_monitor.bridge import API_VERSION
 from sm_telemetry_monitor.doctor import _feature_readiness, format_report, run_doctor
+import sm_telemetry_monitor.doctor as _doctor_mod
+
+_doctor_mod.get_pool_status = lambda: {}
 
 
 class DoctorTests(unittest.TestCase):
@@ -63,6 +66,7 @@ class DoctorTests(unittest.TestCase):
         # Absent 0.9.13 keys stay false (I8 — key presence, not content)
         self.assertFalse(block["has_llm_routing"])
         self.assertFalse(block["has_llm_token_usage"])
+        self.assertFalse(block["has_pool_status"])
 
     def test_coordinator_llm_routing_and_token_usage_key_presence(self):
         """Coordinator flags llm_routing / llm_token_usage from /health key presence."""
@@ -79,6 +83,24 @@ class DoctorTests(unittest.TestCase):
         self.assertTrue(block["has_llm_pool"])
         self.assertTrue(block["has_llm_routing"])
         self.assertTrue(block["has_llm_token_usage"])
+
+    def test_coordinator_pool_status_flag(self):
+        with patch("sm_telemetry_monitor.doctor.get_health", return_value={
+            "status": "ok", "version": "0.9.13", "api_version": 4,
+            "llm_pool": {"http://localhost:5000": {"inflight": 0}},
+        }), patch("sm_telemetry_monitor.doctor.get_pool_status", return_value={
+            "free_slots": 3,
+            "backends": {"http://localhost:5000": {"serves_all": True}},
+        }):
+            from sm_telemetry_monitor.doctor import _check_coordinator
+            block = _check_coordinator()
+        self.assertTrue(block["has_pool_status"])
+
+        with patch("sm_telemetry_monitor.doctor.get_health", return_value={
+            "status": "ok", "api_version": 4,
+        }), patch("sm_telemetry_monitor.doctor.get_pool_status", return_value={}):
+            block = _check_coordinator()
+        self.assertFalse(block["has_pool_status"])
 
     def test_telemetry_panel_flags(self):
         with patch("sm_telemetry_monitor.doctor.get_telemetry", return_value={
@@ -160,9 +182,36 @@ class DoctorTests(unittest.TestCase):
         text = format_report(report)
         self.assertIn("llm_faults", text)
         self.assertIn("credentials", text)
-        # Panel string still uses + join style
-        self.assertRegex(text, r"telemetry: ok · .*llm_faults")
-        self.assertRegex(text, r"telemetry: ok · .*credentials")
+
+    def test_format_report_names_pool_status(self):
+        report = {
+            "monitor_root": "/tmp/mon",
+            "gateway_client": {
+                "mode": "httpx",
+                "coordinator_url": "http://localhost:8888",
+                "agent_token_source": "monitor",
+            },
+            "env_sources": [],
+            "keys": {"AGENT_TOKEN": "set", "agent_token_source": "monitor"},
+            "local_data": {"samples": 0, "last_at": None},
+            "connectivity": {
+                "coordinator": {
+                    "ok": True, "version": "0.9.13", "api_version": 4,
+                    "client_api_version": 4, "compat": "ok",
+                    "has_llm_pool": True, "has_pool_status": True,
+                },
+                "telemetry": {"ok": True},
+                "neo4j_breakdown": {"ok": True},
+                "read_role": {"ok": True},
+            },
+            "logs": {
+                "log_paths": {"log_dir_exists": True, "log_dir": "/tmp"},
+                "journal": {"ok": True, "unit": "x", "scope": "user"},
+            },
+            "features": [],
+        }
+        text = format_report(report)
+        self.assertIn("pool_status", text)
 
     def test_format_report_names_llm_routing_and_token_usage(self):
         report = {

@@ -10,7 +10,7 @@ from typing import Any
 
 import httpx
 
-from .bridge import API_VERSION, get_health, get_telemetry, query_graph
+from .bridge import API_VERSION, get_health, get_pool_status, get_telemetry, query_graph
 from .config import DATA_DIR, DB_FILE, ROOT, STATIC_DIR
 from .env_loader import (
     MONITOR_ROOT,
@@ -135,6 +135,13 @@ def _check_coordinator() -> dict[str, Any]:
     # 0.9.13 surfaces: key presence on /health (empty {} still counts — I8 style).
     has_llm_routing = "llm_routing" in raw
     has_llm_token_usage = "llm_token_usage" in raw
+    pool_status = get_pool_status()
+    free_slots = pool_status.get("free_slots") if isinstance(pool_status, dict) else None
+    backends_st = pool_status.get("backends") if isinstance(pool_status, dict) else None
+    has_pool_status = (
+        (isinstance(free_slots, int) and not isinstance(free_slots, bool))
+        or (isinstance(backends_st, dict) and bool(backends_st))
+    )
 
     return {
         "ok": ok,
@@ -150,6 +157,7 @@ def _check_coordinator() -> dict[str, Any]:
         "has_llm_placement": has_placement,
         "has_llm_routing": has_llm_routing,
         "has_llm_token_usage": has_llm_token_usage,
+        "has_pool_status": has_pool_status,
         "llm_local_count": n_local if has_placement else None,
         "llm_external_count": n_external if has_placement else None,
         "has_consolidation_health": isinstance(raw.get("consolidation"), dict),
@@ -411,6 +419,8 @@ def format_report(report: dict[str, Any]) -> str:
                 bits.append(f"{n} LLM backend" + ("s" if n != 1 else ""))
             if block.get("has_llm_pool"):
                 bits.append("llm_pool")
+            if block.get("has_pool_status"):
+                bits.append("pool_status")
             if block.get("has_llm_routing"):
                 bits.append("llm_routing")
             if block.get("has_llm_token_usage"):
