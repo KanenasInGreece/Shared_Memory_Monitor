@@ -6,6 +6,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.15] - 2026-08-18
+
+### Fixed
+- Synthesize single-backend LLM pool from config when omitted by gateway, preventing fallback to nvtop.
+
 ## [0.9.14] - 2026-08-18
 
 ### Added
