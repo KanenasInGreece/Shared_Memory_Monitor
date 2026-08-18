@@ -194,14 +194,33 @@ def _llm_pool_summary(raw: dict) -> dict | None:
     """
     pool = raw.get("llm_pool")
     if not isinstance(pool, dict) or not pool:
-        return None
-    reach = raw.get("llm_backends") if isinstance(raw.get("llm_backends"), dict) else {}
+        cfg = raw.get("config") if isinstance(raw.get("config"), dict) else {}
+        cfg_backends = cfg.get("llm_backends") if isinstance(cfg.get("llm_backends"), list) else None
+        if cfg_backends:
+            inflight_val = 1 if _inference_busy_state(raw) == "busy" else 0
+            pool = {}
+            for b in cfg_backends:
+                if not isinstance(b, dict):
+                    continue
+                url = b.get("url")
+                if not url:
+                    continue
+                pool[url] = {
+                    "inflight": inflight_val,
+                    "weight": b.get("weight"),
+                }
+        if not isinstance(pool, dict) or not pool:
+            return None
+    reach = raw.get("llm_backends") if isinstance(raw.get("llm_backends"), dict) else None
     meta_by_url = _config_backend_index(raw)
     backends = []
     for url, p in pool.items():
         if not isinstance(p, dict):
             continue
-        status = str(reach.get(url, "")).lower() or "unknown"
+        if reach is not None:
+            status = str(reach.get(url, "")).lower() or "unknown"
+        else:
+            status = str(raw.get("llm", "")).lower() or "unknown"
         inflight = int(p.get("inflight") or 0)
         cooldown = float(p.get("cooldown") or 0.0)
         reserved = bool(p.get("reserved"))

@@ -560,8 +560,86 @@ class LlmPoolTests(unittest.TestCase):
         self.assertEqual(pool["local"], 1)
         self.assertEqual(pool["external"], 1)
 
-    def test_single_backend_health_has_no_pool(self):
+    def test_single_backend_health_has_no_pool_without_config(self):
         self.assertIsNone(_llm_pool_summary(_healthy_gateway()))
+
+    def test_synthetic_pool_from_config_idle(self):
+        health = {
+            **_healthy_gateway(),
+            "inference_busy": "idle",
+            "config": {
+                "llm_backends": [
+                    {"url": "http://localhost:5000", "weight": 1.0,
+                     "has_credential": False, "model": "local-model"},
+                ],
+            },
+        }
+        pool = _llm_pool_summary(health)
+        self.assertIsNotNone(pool)
+        self.assertEqual(pool["total"], 1)
+        self.assertEqual(pool["up"], 1)
+        self.assertEqual(pool["busy"], 0)
+        self.assertEqual(pool["free"], 1)
+        self.assertEqual(pool["local"], 1)
+        self.assertEqual(pool["external"], 0)
+        b = pool["backends"][0]
+        self.assertEqual(b["url"], "http://localhost:5000")
+        self.assertEqual(b["label"], "localhost:5000")
+        self.assertEqual(b["status"], "ok")
+        self.assertEqual(b["inflight"], 0)
+        self.assertTrue(b["available"])
+        self.assertEqual(b["placement"], "local")
+        self.assertEqual(b["model"], "local-model")
+
+    def test_synthetic_pool_from_config_busy(self):
+        health = {
+            **_healthy_gateway(),
+            "inference_busy": "busy",
+            "config": {
+                "llm_backends": [
+                    {"url": "https://api.openai.com/v1", "weight": 1.0,
+                     "has_credential": True, "model": "gpt-4o",
+                     "n_ctx": 128000, "private_ok": False},
+                ],
+            },
+        }
+        pool = _llm_pool_summary(health)
+        self.assertIsNotNone(pool)
+        self.assertEqual(pool["total"], 1)
+        self.assertEqual(pool["up"], 1)
+        self.assertEqual(pool["busy"], 1)
+        self.assertEqual(pool["free"], 0)
+        self.assertEqual(pool["local"], 0)
+        self.assertEqual(pool["external"], 1)
+        b = pool["backends"][0]
+        self.assertEqual(b["url"], "https://api.openai.com/v1")
+        self.assertEqual(b["status"], "ok")
+        self.assertEqual(b["inflight"], 1)
+        self.assertFalse(b["available"])
+        self.assertEqual(b["placement"], "external")
+        self.assertEqual(b["model"], "gpt-4o")
+        self.assertEqual(b["n_ctx"], 128000)
+        self.assertFalse(b["private_ok"])
+
+    def test_synthetic_pool_backend_down_status(self):
+        health = {
+            **_healthy_gateway(),
+            "llm": "down",
+            "config": {
+                "llm_backends": [
+                    {"url": "http://localhost:5000", "weight": 1.0},
+                ],
+            },
+        }
+        pool = _llm_pool_summary(health)
+        self.assertIsNotNone(pool)
+        self.assertEqual(pool["total"], 1)
+        self.assertEqual(pool["up"], 0)
+        self.assertEqual(pool["busy"], 0)
+        self.assertEqual(pool["free"], 0)
+        b = pool["backends"][0]
+        self.assertEqual(b["status"], "down")
+        self.assertFalse(b["available"])
 
     def test_second_backend_busy_shows_on_tile(self):
         w, _ = self._llm_workload(_pool_gateway(inflight4000=2))
