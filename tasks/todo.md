@@ -9,7 +9,7 @@
 
 ## Phase 2 — Release (Grok 4.6)
 - [x] Five-axis review against `tasks/plan.md` (Required: null-price cost guard — fixed `b618fcb`)
-- [ ] Task 3: Merge to main, version 0.9.13, push, tag, `gh release create`
+- [x] Task 3: Merge to main, version 0.9.13, push, tag, `gh release create`
 
 ## Standing Definition of Done (every task)
 - [ ] Acceptance criteria met
