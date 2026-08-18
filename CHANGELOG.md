@@ -6,6 +6,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.13] - 2026-08-18
+
+### Added
+- Consume framework **0.9.9** `credentials.credentialed_route_denied` (+
+  `*_last_ts`) on the LLM pool line (`route denied N` + relative age), and
+  surface `config.allow_unauthenticated_provider_keys` on the Infrastructure
+  hint only when the gateway sent `true` (`fact:1337`).
+- Consume framework **0.9.13** `/health.llm_routing` (role totals + refuse
+  counters with last-event age) and `/health.llm_token_usage` (per-backend
+  prompt/completion totals in the chip popover). Join backend descriptors
+  (`roles`, `n_ctx`, `private_ok`, `max_inflight`, `price_per_mtok_*`) when
+  present. Cost is shown only when both prices are numeric — JSON `null` is
+  not a price (`fact:1359`). `api_version` stays **4**.
+
 ## [0.9.12] - 2026-08-17
 
 ### Added
