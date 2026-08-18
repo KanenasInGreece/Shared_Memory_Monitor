@@ -6,6 +6,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.14] - 2026-08-18
+
+### Added
+- Consume framework **0.9.13** `GET /pool/status`: `dream_free_slots` on the
+  LLM pool line as `N dream-ready` (distinct from inflight-idle `free`), and
+  `serves_all` / `counts_free_slot` on the chip popover. Empty or
+  unauthenticated payloads omit the surface — never invent `0`.
+  `api_version` stays **4** (`fact:1359`).
+
+### Fixed
+- `hasPrice` no longer treats JSON `null`/boolean as a numeric price (CQ-01).
+
 ## [0.9.13] - 2026-08-18
 
 ### Added

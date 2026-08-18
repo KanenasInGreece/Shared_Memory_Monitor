@@ -8,5 +8,5 @@
 - [x] Tests pass; version files not yet bumped
 
 ## Phase 2
-- [ ] Review
+- [x] Review (AGY Security: no Critical/Required)
 - [ ] Task 3: v0.9.14 release
