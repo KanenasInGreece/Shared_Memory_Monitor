@@ -1,34 +1,41 @@
-# Implementation Plan: Consume framework 0.9.8 credential last-event timestamps
+# Implementation Plan: Consume framework 0.9.9–0.9.13 LLM + credential surfaces
 
 ## Overview
 
-Framework **v0.9.8** (`fact:1314`, main `dc9b122`, PR #248) amended `fact:1307`.
-`GET /memory/telemetry` `credentials` is still the three integer counters from
-`fact:1297`, plus three **flat additive** sibling timestamps:
+Monitor **v0.9.12** (`fact:1361`) already consumes framework **0.9.8**
+`credentials.*_last_ts` on the pool line. The gateway on this workstation is
+now **0.9.13** (`api_version` still **4**). Two adoption-suggestion facts
+were filed for this repo after that release:
 
-- `token_verify_failed_last_ts`
-- `daemon_tokens_issued_last_ts`
-- `audit_log_dropped_last_ts`
+- **`fact:1337`** (gateway **0.9.9**, `fact:1335` on the framework side).
+  S-10 auth slimming is already satisfied (monitor sends the bearer; first
+  post-deploy poll was the authenticated shape). Two remaining suggestions:
+  render `credentialed_route_denied` + `*_last_ts`; surface
+  `config.allow_unauthenticated_provider_keys` when present **and true**.
+- **`fact:1359`** (gateway **0.9.13**, 2026-08-18). LLM contract notes:
+  401/403 on a *credentialed* liveness probe is now `ok`; `/health` gained
+  `llm_routing` and `llm_token_usage`; `config.llm_backends` gained additive
+  descriptors (`roles`, `n_ctx`, `private_ok`, `max_inflight`,
+  `price_per_mtok_*`). `/pool/status` `free_slots` / `serves_all` /
+  `counts_free_slot` are a **different** endpoint.
 
-A `null` last_ts means “not in this process”, distinct from “just now”. The
-shape is **not** `{count, last:{ts}}` — 1297 stays additive, `api_version`
-stays **4**. The skill `status` human renderer now prints non-zero
-`credentials` / `llm_faults` (the other 16 Aug finding). That client is
-already shipped; this cycle is the **monitor**.
+Live on this host (measured 2026-08-18, monitor `/api/health` vs raw
+`bridge.get_health()`):
 
-Live on this workstation (gateway 0.9.8, already joined onto `/api/health`):
+| Surface | Raw `/health` or telemetry | Monitor `/api/health` today |
+|---------|----------------------------|-----------------------------|
+| `credentials.credentialed_route_denied` (+ last_ts) | 0 / null (passthrough) | present, **not rendered** |
+| `allow_unauthenticated_provider_keys` | **absent** (auth on) | absent |
+| `llm_routing` (6 counters + 6 last_ts) | present; extract=4 | **dropped** |
+| `llm_token_usage` per backend | 5000 has 5711/2003 tokens | **dropped** |
+| backend `roles` / `n_ctx` / prices / `max_inflight` | keys present, values null | **dropped** |
+| backend `private_ok` | `true` on all three | **dropped** |
+| DeepSeek chip `status` | `ok` (401-as-ok shipped) | `ok` — no special-case to retire |
+| `/pool/status` free_slots | not fetched | n/a |
 
-```text
-token_verify_failed=0 / last_ts=null
-daemon_tokens_issued=2 / last_ts=2026-08-16T21:12:04Z
-audit_log_dropped=0 / last_ts=null
-llm_faults={}
-```
-
-`system_health._join_llm_faults` already passes the credentials dict through.
-The product gap is presentation: `token_verify_failed` is never rendered, and
-`audit_log_dropped` has no age. `fact:1307` + `fact:1314`: pair the count with
-last-event age so a stale one-off reads as historical.
+`system_health` only copies known config/pool fields and never puts
+`llm_routing` / `llm_token_usage` on the snapshot. The credentials dict is
+already passed through wholesale (I10).
 
 Roles (`decision:1300` grounded on `fact:1184`):
 
@@ -43,91 +50,145 @@ Do **not** commit `search_results.json` or `telemetry.json`.
 
 - **A1. Division of surfaces (locked — `decision:1295`).** Dashboard carries
   counters + last-event context only. Log lines stay on `/logs`.
-- **A2. Flat siblings, not a restructure (`fact:1314`).** Do not nest
-  credentials into `{count, last}`. Pass the dict through. Missing last_ts
-  keys on older gateways stay missing — never invent timestamps.
-- **A3. Own-door auth stays off LLM chips (locked — plan A4 / I3).**
-  `token_verify_failed` is own-door. It never appears on a pool backend chip
-  or in a chip popover. `audit_log_dropped` stays on the **pool line**.
-- **A4. Age lives on the pool line.** When `token_verify_failed > 0`, append
-  `token verify failed N` plus a relative age when `token_verify_failed_last_ts`
-  is a parseable ISO string. When `audit_log_dropped > 0`, keep
-  `audit log dropped` and append the same age form from
-  `audit_log_dropped_last_ts` if present. Count 0 stays quiet (match skill
-  `status`). Do **not** surface `daemon_tokens_issued` (normal start mint).
-- **A5. Relative age, not a second clock.** Reuse the existing
-  `fmtInflightAge` idea: “12m ago”, “2h ago”. Clock-skew / unparseable → omit
-  the age, keep the count. Null last_ts + count > 0 (old gateway or
-  never-stamped) → count only.
-- **A6. Visibility.** If the only signal is a credentials warn (no pool / age /
-  affinity / wedge), the pool panel must still show so the line is not hidden.
-  Today `auditDropped` is computed then ignored in the hide predicate — fix
-  that in the same `renderLlmPool` edit.
-- **A7. No deck-critical.** These counters still must not flip `_overall_state`
-  / the hero pill (I2).
-- **A8. Deep link.** A credentials warn on the pool line may add a small link
-  `/logs?source=credential_audit` (no backend filter — own-door). Do not invent
-  a new Status-deck card.
-- **A9. Secrets.** Never render tokens. last_ts is an ISO timestamp only.
+- **A2. No new HTTP client this cycle.** Stay on `bridge.get_health()` +
+  `get_telemetry()`. Do **not** add `GET /pool/status`. Gateway
+  `free_slots` / `serves_all` / `counts_free_slot` stay out of scope; the
+  pool line `free` remains the existing inflight-based count. Escalate if a
+  later fact puts those fields on `/health`.
+- **A3. Flat passthrough, no reshape.** `llm_routing` and `llm_token_usage`
+  go onto `/api/health` as the gateway sent them (values not rewritten;
+  `null` last_ts stays `null`; missing keys stay missing). Credentials
+  remain the telemetry dict (already includes `credentialed_route_denied`).
+- **A4. Own-door stays off chips (locked — plan A3 / I3 / I11).**
+  `token_verify_failed` and `credentialed_route_denied` never appear on a
+  pool backend chip or in a chip popover. `audit_log_dropped` stays on the
+  pool line. `daemon_tokens_issued` stays hidden.
+- **A5. Pool-line warns (count 0 quiet).** When `credentialed_route_denied > 0`,
+  append `route denied N` plus relative age from
+  `credentialed_route_denied_last_ts` (same `fmtLastEventAge` as 0.9.12).
+  When `routing_no_eligible_backend`, `routing_backend_at_capacity`, or
+  `routing_fit_rejected` is `> 0`, append a short label + age from the
+  matching `*_last_ts`. Warn class if any of those or the existing
+  credential warns fire. Hide predicate includes these warns (A6 of 0.9.12).
+- **A6. Quiet routing totals.** If any `routed_role_extract|verify|judge > 0`
+  and no routing-refuse warn, show a compact `extract N` (etc.) on the pool
+  line **without** warn class. Count 0 stays off the line.
+- **A7. Token usage lives in the chip popover, not the chip face.** Join
+  `llm_token_usage[url]` onto the matching backend as
+  `tokens: {prompt_total, completion_total, last_ts}` when that URL has an
+  entry; omit the key when absent. Do **not** compute a poll-to-poll delta
+  (in-process counters reset on gateway restart — `fact:1359`). Optional
+  cost line only when that backend has a numeric `price_per_mtok_in` /
+  `price_per_mtok_out` **and** token totals: `(prompt/1e6)*in +
+  (completion/1e6)*out`. Never invent prices.
+- **A8. Descriptor join.** Pass `roles`, `n_ctx`, `private_ok`,
+  `max_inflight`, `price_per_mtok_in`, `price_per_mtok_out` from
+  `config.llm_backends` onto `config.backends[]` and the matching pool
+  chip. Render in the popover when the value is not `null` / missing. Chip
+  face stays compact (placement + model + existing inflight/routed meta).
+- **A9. Unauth-keys beacon.** If `config.allow_unauthenticated_provider_keys`
+  is present and `true` on raw `/health.config` (or a top-level boolean of
+  the same name), put `allow_unauthenticated_provider_keys: true` on
+  `snapshot.config` and append a warn fragment on the Infrastructure hint
+  (`gatewayConfigHint`). Absent or `false` stays silent — do not invent the
+  key.
+- **A10. 401-as-ok is a no-op.** Monitor already trusts `/health.llm_backends`
+  status. Live DeepSeek is `ok`. Do not add a 401 special-case; do not
+  treat `llm_faults.credential` as chip-down. No lore to delete in code.
+- **A11. No deck-critical.** New counters / beacons do not flip
+  `_overall_state` / the hero pill (I2).
+- **A12. Doctor.** Coordinator block reports `has_llm_routing` /
+  `has_llm_token_usage` from key presence on `/health`. Human line names
+  them next to `llm_pool` when present. `has_credentials` already covers
+  the new credential counter.
+- **A13. Secrets.** Never render tokens or provider keys. last_ts is ISO
+  only. Prices are public config numbers, not secrets.
+- **A14. `api_version` stays 4.**
 
 ## Numbered invariants (mutation-tested)
 
 | Id | Rule | Test lives in |
 |----|------|----------------|
-| I10 | `/api/health.credentials` preserves `*_last_ts` sibling keys when present; absent keys stay absent; values are not rewritten; `null` stays `null`. | `tests/test_system_health.py` |
-| I11 | `token_verify_failed` and any `*_last_ts` never appear on `llm_pool.backends[]` (extends I3). | `tests/test_system_health.py` |
-| I2 | Unchanged: credential counters / last_ts do not change `_overall_state`. | existing I2 + last_ts fixture |
-| I3 | Unchanged: `audit_log_dropped` stays top-level credentials, not a chip. | existing |
+| I10 | Unchanged: credentials dict including new siblings is not rewritten. | existing + I14 |
+| I14 | `/api/health.credentials` preserves `credentialed_route_denied` and `credentialed_route_denied_last_ts` when present; absent keys stay absent; `null` stays `null`. | `tests/test_system_health.py` |
+| I11 | Own-door keys (`token_verify_failed`, `credentialed_route_denied`, all `*_last_ts`) never appear on `llm_pool.backends[]`. | `tests/test_system_health.py` |
+| I12 | `/api/health.llm_routing` is the `/health.llm_routing` dict when present (pin every counter + every last_ts value); absent key → snapshot key absent or null, never invented zeros. | `tests/test_system_health.py` |
+| I13 | `/api/health.llm_token_usage` preserves per-URL totals + `tokens_last_ts`; backends without an entry are not invented. Joined `tokens` on a pool backend matches that URL's blob. | `tests/test_system_health.py` |
+| I16 | Descriptor fields on `config.backends[]` and pool backends are copied when present; missing/null stay missing/null; never inferred from URL. | `tests/test_system_health.py` |
+| I17 | `config.allow_unauthenticated_provider_keys` appears on the snapshot only when the gateway sent it. | `tests/test_system_health.py` |
+| I2 | Unchanged: credential / routing / token counters do not change `_overall_state`. | existing I2 + new fixtures |
+| I3 | Unchanged: own-door credentials stay top-level, not a chip. | existing |
 
-UI A4–A6 are browser-verified (no JS test harness). Mutation on I10: a test
-that only checks `token_verify_failed` still passes if last_ts is dropped —
-pin the **value** of each last_ts key.
+UI A5–A9 are browser-verified after merger restart (no JS test harness).
+Mutation on I12/I13: a test that only checks key presence still passes if
+values are rewritten — pin the **values**.
 
 ## File ownership
 
 | Unit | Owner files | Must not touch |
 |------|-------------|----------------|
-| **A — passthrough tests** | `tests/test_system_health.py`; `src/sm_telemetry_monitor/system_health.py` **only if** a test proves the dict is stripped (today it is not) | version files, CHANGELOG, static UI, docs |
-| **B — pool-line age** (after A) | `static/dashboard.html`; `static/theme.css` only if the line needs a link class that does not already exist | Python, `logs.html`, version files |
+| **A — passthrough + join** | `tests/test_system_health.py`, `src/sm_telemetry_monitor/system_health.py`; `tests/test_doctor.py`, `src/sm_telemetry_monitor/doctor.py` | version files, CHANGELOG, static UI, docs |
+| **B — pool line / popover / hint** (after A) | `static/dashboard.html`; `static/theme.css` only if a new warn class is required | Python, `logs.html`, version files |
 | **M — merge / release** | `pyproject.toml`, `src/sm_telemetry_monitor/__init__.py`, `CHANGELOG.md`, `README.md`, `AGENTS.md`, `GEMINI.md` if it pins a version, `docs/SISTER_PROJECT.md`, `.env.example`, `.grok/skills/shared-memory-monitor/SKILL.md` if the compatibility line is listed | feature code |
 
 ## Task List
 
-### Task 1: Pin last_ts passthrough (I10, I11)
+### Task 1: Pin passthrough + join (I12–I17, I2, I11)
 
-**Description:** Extend `LlmFaultsCredentialsJoinTests` so a credentials blob
-with the three 0.9.8 last_ts siblings survives `_join_llm_faults` / the
-snapshot unchanged. Older fixture without those keys still has no invented
-timestamps.
+**Description:** Extend `LlmFaultsCredentialsJoinTests` / `GatewayConfigTests`
+so 0.9.9 credential siblings, 0.9.13 `llm_routing`, `llm_token_usage`,
+backend descriptors, and the unauth-keys boolean survive
+`system_health_snapshot` unchanged. Older fixtures without those keys still
+have no invented fields. Then implement the minimum `system_health.py`
+(and doctor flags) to make the tests pass.
 
 **Acceptance criteria:**
-- [ ] I10 and I11 fail before any Python change (or stay green if passthrough
-      already holds — then no `system_health.py` edit).
-- [ ] I2 still green with last_ts populated and `token_verify_failed > 0`.
+- [ ] I14 pins `credentialed_route_denied` + last_ts value (including `null`).
+- [ ] I12 pins all six routing counters and six last_ts values from a
+      fixture copied from live 0.9.13 shape.
+- [ ] I13 pins per-URL token totals; a backend with no usage entry has no
+      invented `tokens` object.
+- [ ] I16 pins `private_ok=True` and `roles is None` without dropping the
+      keys when the gateway sent them; a pre-0.9.13 fixture has none of
+      the new descriptor keys.
+- [ ] I17: key absent → not on `config`; key `true` → on `config`.
+- [ ] I2 still green with routing refuses > 0, tokens populated, and
+      `credentialed_route_denied > 0`.
+- [ ] I11 includes `credentialed_route_denied` / its last_ts.
+- [ ] Doctor coordinator JSON has `has_llm_routing` / `has_llm_token_usage`;
+      `format_report` names them when true.
 
-**Verification:** `uv run pytest -q tests/test_system_health.py`
+**Verification:** `uv run pytest -q tests/test_system_health.py tests/test_doctor.py`
 
 **Dependencies:** None
-**Estimated scope:** S
+**Estimated scope:** M
 
-### Task 2: Pool-line last-failure age
+### Task 2: Pool line, popover, infrastructure hint
 
-**Description:** In `renderLlmPool`, implement A4–A8. Count 0 stays quiet.
-Warn class if `audit_log_dropped > 0` **or** `token_verify_failed > 0`.
+**Description:** In `renderLlmPool` / `fillLlmPoolPopover` / `gatewayConfigHint`,
+implement A5–A9. Count 0 stays quiet. Reuse `fmtLastEventAge`.
 
 **Acceptance criteria:**
-- [ ] Injected `token_verify_failed=2` + last_ts ~12 minutes ago shows
-      `token verify failed 2` and a relative age; no LLM chip warn from this.
-- [ ] Injected count>0 without last_ts shows the count only.
-- [ ] `audit_log_dropped > 0` still warns the line and can show age.
-- [ ] Hide predicate includes credentials warns (A6).
+- [ ] Injected `credentialed_route_denied=2` + last_ts ~12 minutes ago shows
+      `route denied 2` and a relative age; no LLM chip warn from this.
+- [ ] Injected `routing_no_eligible_backend=1` (+ last_ts) warns the pool
+      line; `routed_role_extract=4` with refuses=0 shows `extract 4` without
+      warn.
+- [ ] Popover shows token totals + last age when `tokens` present; shows
+      `private_ok` / `roles` / `n_ctx` / `max_inflight` only when set;
+      cost line only when prices are numeric.
+- [ ] `config.allow_unauthenticated_provider_keys === true` adds a warn
+      fragment on the Infrastructure hint; absent/false does not.
+- [ ] Hide predicate includes credential + routing warns.
 - [ ] Hero / deck status unchanged (I2).
-- [ ] Desktop and ~400px sidebar: line wraps, does not overflow.
+- [ ] Desktop and ~400px sidebar: line wraps, popover does not overflow.
 
-**Verification:** Browser on `http://127.0.0.1:8765/` after merger restarts the
-user unit. Live today is count=0 — use a console fixture on `H.credentials`
-or a temporary health override documented in the handoff. Check `/logs` still
-loads. Do not leave a temporary override in the commit.
+**Verification:** Browser on `http://127.0.0.1:8765/` after merger restarts
+the user unit. Live today is refuses=0 and route-denied=0 — use a console
+fixture on `H.credentials` / `H.llm_routing` or a temporary health override
+documented in the handoff. Check `/logs` still loads. Do not leave a
+temporary override in the commit. Tokens on localhost:5000 are live and
+can be checked without a fixture.
 
 **Dependencies:** Task 1
 **Estimated scope:** S
@@ -136,39 +197,41 @@ loads. Do not leave a temporary override in the commit.
 - [ ] `uv run pytest -q`
 - [ ] No version/CHANGELOG edits from the builder
 
-### Task 3: Review + merge + v0.9.12 (merger only)
+### Task 3: Review + merge + v0.9.13 (merger only)
 
 **Description:** Five-axis review against this plan. Then merger: bump
-**0.9.11 → 0.9.12**, CHANGELOG, docs that name framework **0.9.8** last_ts
-and fix the stale installer bits (SISTER_PROJECT telemetry table,
-AGENTS Phase-3 example, `.env.example` still says `api_version 3`).
-Screenshots only if the pool line layout actually changed. Restart user
-unit, smoke, `pre-publish-check.sh`, `uv build`, push `origin main`,
-`gh release create v0.9.12`.
+**0.9.12 → 0.9.13**, CHANGELOG, docs that name framework **0.9.9**
+`credentialed_route_denied` and **0.9.13** `llm_routing` /
+`llm_token_usage` / backend descriptors. Screenshots only if the pool
+line or popover layout actually changed. Restart user unit, smoke,
+`pre-publish-check.sh`, `uv build`, push `origin main`,
+`gh release create v0.9.13`.
 
 **Acceptance criteria:**
 - [ ] Critical/Required review findings resolved or operator-overruled.
 - [ ] Version consistent in pyproject, `__init__`, CHANGELOG, README, AGENTS,
       SISTER_PROJECT (and GEMINI if it pins).
-- [ ] Tag `v0.9.12` + GitHub release with wheel/sdist.
+- [ ] Tag `v0.9.13` + GitHub release with wheel/sdist.
 
 **Dependencies:** Tasks 1–2 + review
 **Estimated scope:** M
 
 ## Out of scope
 
-- Framework / skill edits (already shipped in 0.9.8).
+- `GET /pool/status` and `free_slots` / `serves_all` / `counts_free_slot`.
+- Framework / skill edits.
 - Reshaping credentials to `{count, last}`.
-- Painting `token_verify_failed` on LLM chips.
-- Surfacing `daemon_tokens_issued` on the dashboard.
-- A5 `/health` slimming.
-- Inventing monitor-side timestamps or reading the credential log to recover age.
+- Painting own-door counters on LLM chips.
+- Surfacing `daemon_tokens_issued`.
+- Inventing monitor-side timestamps, prices, or token deltas.
+- Special-casing DeepSeek / 401 probe (already `ok` on the wire).
 - Committing `search_results.json` / `telemetry.json`.
 
 ## Risks
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| Live count is 0 — cannot see the warn path | Med | Console fixture / documented inject; tests pin the payload |
-| Relative-age wording vs skill `_age_phrase` | Low | Same idea, not a shared module — do not import framework code |
-| Screenshot / layout drift | Low | Recapture `docs/images/dashboard.png` only if the line is visibly new |
+| Live refuse/denied counts are 0 | Med | Console fixture / documented inject; tests pin the payload |
+| Token totals reset on gateway restart | Med | Never subtract consecutive polls; show totals + last_ts only |
+| Descriptor/price fields are null on this host | Low | Hide empty; tests pin both present-null and absent |
+| Screenshot / layout drift | Low | Recapture `docs/images/dashboard.png` only if the line/popover is visibly new |
