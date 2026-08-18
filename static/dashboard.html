@@ -1446,9 +1446,13 @@ function poolTokenBits(b) {
   let line = `tokens prompt ${prompt ?? "—"} · completion ${completion ?? "—"}`;
   if (ageTxt) line += ` · ${ageTxt}`;
   bits.push(line);
-  const pin = Number(b.price_per_mtok_in);
-  const pout = Number(b.price_per_mtok_out);
-  if (Number.isFinite(pin) && Number.isFinite(pout)) {
+  // Number(null)===0 is finite — treat null/undefined/"" as no price (A7).
+  const rawIn = b.price_per_mtok_in;
+  const rawOut = b.price_per_mtok_out;
+  const hasPrice = (v) => v != null && v !== "" && Number.isFinite(Number(v));
+  if (hasPrice(rawIn) && hasPrice(rawOut)) {
+    const pin = Number(rawIn);
+    const pout = Number(rawOut);
     const p = Number(prompt) || 0;
     const c = Number(completion) || 0;
     const cost = (p / 1e6) * pin + (c / 1e6) * pout;
