@@ -1316,6 +1316,7 @@ function renderBackup(H) {
 
 function gatewayConfigHint(H) {
   // Non-secret live config from /health.config (v0.6.1+) + version contract.
+  // A9: unauth-keys beacon only when snapshot.config sent true (absent/false silent).
   if (!H || H.reachable === false) return H?.error || "gateway unreachable";
   const bits = [];
   if (H.version) bits.push(`Gateway ${H.version}`);
@@ -1324,6 +1325,9 @@ function gatewayConfigHint(H) {
   if (cfg?.summary) bits.push(cfg.summary);
   else if (cfg?.backend_count) {
     bits.push(`${cfg.backend_count} LLM backend${cfg.backend_count === 1 ? "" : "s"}`);
+  }
+  if (cfg?.allow_unauthenticated_provider_keys === true) {
+    bits.push("allow_unauthenticated_provider_keys: true");
   }
   return bits.join(" · ");
 }
@@ -1417,6 +1421,42 @@ function positionLlmPoolPopover(btn) {
   pop.style.right = "0";
 }
 
+function poolDescriptorBits(b) {
+  // A8: only when value is not null / missing — never invent.
+  const bits = [];
+  if (!b || typeof b !== "object") return bits;
+  if (b.private_ok != null) bits.push(b.private_ok ? "private_ok" : "private_ok=false");
+  if (b.roles != null) {
+    const roles = Array.isArray(b.roles) ? b.roles.join(",") : String(b.roles);
+    bits.push(`roles ${roles}`);
+  }
+  if (b.n_ctx != null) bits.push(`n_ctx ${b.n_ctx}`);
+  if (b.max_inflight != null) bits.push(`max_inflight ${b.max_inflight}`);
+  return bits;
+}
+
+function poolTokenBits(b) {
+  // A7: totals + last age when tokens present; cost only with numeric prices.
+  const bits = [];
+  const tok = b?.tokens;
+  if (!tok || typeof tok !== "object") return bits;
+  const prompt = tok.prompt_total;
+  const completion = tok.completion_total;
+  const ageTxt = fmtLastEventAge(tok.last_ts);
+  let line = `tokens prompt ${prompt ?? "—"} · completion ${completion ?? "—"}`;
+  if (ageTxt) line += ` · ${ageTxt}`;
+  bits.push(line);
+  const pin = Number(b.price_per_mtok_in);
+  const pout = Number(b.price_per_mtok_out);
+  if (Number.isFinite(pin) && Number.isFinite(pout)) {
+    const p = Number(prompt) || 0;
+    const c = Number(completion) || 0;
+    const cost = (p / 1e6) * pin + (c / 1e6) * pout;
+    bits.push(`est. cost ${cost.toPrecision(4)} (per-mtok in ${pin} / out ${pout})`);
+  }
+  return bits;
+}
+
 function fillLlmPoolPopover(b) {
   const pop = document.getElementById("llm-pool-popover");
   if (!pop || !b) return;
@@ -1440,11 +1480,19 @@ function fillLlmPoolPopover(b) {
     </div>`;
   }
 
+  const descBits = poolDescriptorBits(b);
+  const tokBits = poolTokenBits(b);
+  const metaBits = [...descBits, ...tokBits];
+  const metaHtml = metaBits.length
+    ? `<div class="pool-pop-meta">${metaBits.map(t => `<div class="pool-pop-meta-row">${esc(t)}</div>`).join("")}</div>`
+    : "";
+
   pop.innerHTML = `
     <div class="pool-pop-head">
       <div class="pool-pop-title">${esc(b.label || url || "backend")}</div>
       <div class="pool-pop-sub">${esc(url || "—")}${place !== "—" ? ` · ${esc(place)}` : ""}</div>
     </div>
+    ${metaHtml}
     ${body}
     <p class="pool-pop-cue">Chip warning is a cue to read logs — not a deck-critical by itself.</p>
     <div class="pool-pop-links">
@@ -1491,6 +1539,7 @@ function renderLlmPool(H) {
   const wedged = H?.llm_suspect_wedged || [];
   const aff = H?.llm_affinity_live;
   const creds = H?.credentials;
+  const routing = H?.llm_routing;
   const hasPool = !!(pool && pool.backends && pool.backends.length);
   const hasAge = age != null;
   const hasAff = !!(aff && (aff.hits != null || aff.misses != null || aff.hit_rate != null
@@ -1498,9 +1547,20 @@ function renderLlmPool(H) {
   const hasWedge = Array.isArray(wedged) && wedged.length > 0;
   const tokenFailed = Number(creds?.token_verify_failed) || 0;
   const auditDropped = Number(creds?.audit_log_dropped) || 0;
-  const credsWarn = tokenFailed > 0 || auditDropped > 0;
+  const routeDenied = Number(creds?.credentialed_route_denied) || 0;
+  const noEligible = Number(routing?.routing_no_eligible_backend) || 0;
+  const atCapacity = Number(routing?.routing_backend_at_capacity) || 0;
+  const fitRejected = Number(routing?.routing_fit_rejected) || 0;
+  const extractN = Number(routing?.routed_role_extract) || 0;
+  const verifyN = Number(routing?.routed_role_verify) || 0;
+  const judgeN = Number(routing?.routed_role_judge) || 0;
+  // A5: own-door + routing refuses warn; A6 quiet role totals only when no refuse.
+  const routingRefuseWarn = noEligible > 0 || atCapacity > 0 || fitRejected > 0;
+  const credsWarn = tokenFailed > 0 || auditDropped > 0 || routeDenied > 0;
+  const hasRoutingQuiet = !routingRefuseWarn && (extractN > 0 || verifyN > 0 || judgeN > 0);
+  const poolLineWarn = hasWedge || credsWarn || routingRefuseWarn;
 
-  if (!hasPool && !hasAge && !hasAff && !hasWedge && !credsWarn) {
+  if (!hasPool && !hasAge && !hasAff && !hasWedge && !credsWarn && !routingRefuseWarn && !hasRoutingQuiet) {
     panel.hidden = true;
     list.innerHTML = "";
     line.textContent = "";
@@ -1531,8 +1591,29 @@ function renderLlmPool(H) {
     const ageTxt = fmtLastEventAge(creds?.audit_log_dropped_last_ts);
     bits.push("audit log dropped" + (ageTxt ? ` ${ageTxt}` : ""));
   }
+  if (routeDenied > 0) {
+    const ageTxt = fmtLastEventAge(creds?.credentialed_route_denied_last_ts);
+    bits.push(`route denied ${routeDenied}` + (ageTxt ? ` ${ageTxt}` : ""));
+  }
+  if (noEligible > 0) {
+    const ageTxt = fmtLastEventAge(routing?.routing_no_eligible_backend_last_ts);
+    bits.push(`no eligible ${noEligible}` + (ageTxt ? ` ${ageTxt}` : ""));
+  }
+  if (atCapacity > 0) {
+    const ageTxt = fmtLastEventAge(routing?.routing_backend_at_capacity_last_ts);
+    bits.push(`at capacity ${atCapacity}` + (ageTxt ? ` ${ageTxt}` : ""));
+  }
+  if (fitRejected > 0) {
+    const ageTxt = fmtLastEventAge(routing?.routing_fit_rejected_last_ts);
+    bits.push(`fit rejected ${fitRejected}` + (ageTxt ? ` ${ageTxt}` : ""));
+  }
+  if (hasRoutingQuiet) {
+    if (extractN > 0) bits.push(`extract ${extractN}`);
+    if (verifyN > 0) bits.push(`verify ${verifyN}`);
+    if (judgeN > 0) bits.push(`judge ${judgeN}`);
+  }
   const text = bits.join(" · ");
-  line.className = "pool-line" + (hasWedge || credsWarn ? " warn" : "");
+  line.className = "pool-line" + (poolLineWarn ? " warn" : "");
   if (credsWarn) {
     const sep = text ? " · " : "";
     line.innerHTML = `${esc(text)}${sep}<a class="pool-pop-link" href="/logs?source=credential_audit">credential audit</a>`;
@@ -1718,7 +1799,12 @@ function renderSystemHealth(H) {
   });
 
   const hint = document.getElementById("system-hint");
-  hint.textContent = gatewayConfigHint(H);
+  const hintText = gatewayConfigHint(H);
+  const unauthWarn = H?.config?.allow_unauthenticated_provider_keys === true;
+  if (hint) {
+    hint.className = "hint sidebar-hint" + (unauthWarn ? " warn" : "");
+    hint.textContent = hintText;
+  }
   // Richer title: per-backend list + pool tuning when present (no secrets).
   const cfg = H?.config;
   if (hint && cfg?.present) {

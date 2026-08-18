@@ -621,6 +621,7 @@ body.consolidation-open { overflow: hidden; }
   line-height: 1.25;
 }
 .sidebar-hint { font-size: .68rem; margin-top: -.15rem; }
+.sidebar-hint.warn { color: var(--warn-bright); font-weight: 600; }
 .section-title-tight {
   margin: .35rem 0 .25rem;
   padding-bottom: .25rem;
@@ -768,6 +769,14 @@ button.pool-chip:focus-visible {
   white-space: nowrap;
   min-width: 0;
 }
+.pool-pop-meta {
+  margin: .25rem 0 .4rem;
+  font-size: .72rem;
+  color: var(--muted);
+  line-height: 1.35;
+  word-break: break-word;
+}
+.pool-pop-meta-row + .pool-pop-meta-row { margin-top: .15rem; }
 .pool-pop-empty {
   margin: .2rem 0 .35rem;
   color: var(--muted);
