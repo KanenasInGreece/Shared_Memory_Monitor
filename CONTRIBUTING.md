@@ -41,7 +41,7 @@ gh release create vX.Y.Z --title "vX.Y.Z" --notes-file CHANGELOG.md
 ## Credits
 
 See [README — Contributors](README.md#contributors). Human authors remain
-responsible for what is merged; AI collaborators (e.g. Grok) may be listed
+responsible for what is merged; AI collaborators (e.g. Grok, Antigravity) may be listed
 there as assistants without implying joint copyright or git co-authorship.
 
 ## License
