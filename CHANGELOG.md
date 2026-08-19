@@ -6,6 +6,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.16] - 2026-08-19
+
+### Added
+- Consume framework **0.9.15** telemetry: explicitly verify and report `llm_oldest_inflight_age_s` and `llm_suspect_wedged` in `check-env.sh` (doctor).
+
 ## [0.9.15] - 2026-08-18
 
 ### Fixed
