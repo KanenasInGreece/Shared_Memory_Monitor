@@ -135,6 +135,8 @@ def _check_coordinator() -> dict[str, Any]:
     # 0.9.13 surfaces: key presence on /health (empty {} still counts — I8 style).
     has_llm_routing = "llm_routing" in raw
     has_llm_token_usage = "llm_token_usage" in raw
+    has_llm_oldest_inflight = "llm_oldest_inflight_age_s" in raw
+    has_llm_suspect_wedged = "llm_suspect_wedged" in raw
     pool_status = get_pool_status()
     free_slots = pool_status.get("free_slots") if isinstance(pool_status, dict) else None
     backends_st = pool_status.get("backends") if isinstance(pool_status, dict) else None
@@ -157,6 +159,8 @@ def _check_coordinator() -> dict[str, Any]:
         "has_llm_placement": has_placement,
         "has_llm_routing": has_llm_routing,
         "has_llm_token_usage": has_llm_token_usage,
+        "has_llm_oldest_inflight": has_llm_oldest_inflight,
+        "has_llm_suspect_wedged": has_llm_suspect_wedged,
         "has_pool_status": has_pool_status,
         "llm_local_count": n_local if has_placement else None,
         "llm_external_count": n_external if has_placement else None,
@@ -425,6 +429,10 @@ def format_report(report: dict[str, Any]) -> str:
                 bits.append("llm_routing")
             if block.get("has_llm_token_usage"):
                 bits.append("llm_token_usage")
+            if block.get("has_llm_oldest_inflight"):
+                bits.append("oldest_inflight")
+            if block.get("has_llm_suspect_wedged"):
+                bits.append("suspect_wedged")
             if block.get("has_llm_placement"):
                 loc = block.get("llm_local_count") or 0
                 ext = block.get("llm_external_count") or 0

@@ -133,12 +133,14 @@ On a modern gateway (verified against **framework ≥0.8.9**), doctor should als
 telemetry panels and LLM placement, e.g.:
 
 ```text
-coordinator: ok · gateway 0.9.13 · api server=4 client=4 compat=ok · 3 LLM backends · llm_pool · pool_status · llm_routing · llm_token_usage · placement 2 local/1 external
+coordinator: ok · gateway 0.9.15 · api server=4 client=4 compat=ok · 3 LLM backends · llm_pool · pool_status · llm_routing · llm_token_usage · oldest_inflight · suspect_wedged · placement 2 local/1 external
 telemetry: ok · nrem+breakdown+consolidation+entity_graph+latency+spine+compliance+graph_integrity+llm_faults+credentials
 ```
 
 | Doctor signal | What the user sees on the dashboard |
 |---------------|-------------------------------------|
+| `oldest_inflight` | Hung-call age surfaced in pool summary and LLM caption (**≥ 0.9.15**) |
+| `suspect_wedged` | Wedge suspect labels render as warn on the LLM pool chips (**≥ 0.9.15**) |
 | `placement local` / `external` | Infrastructure config line + **LLM pool** chips badge local/external (`has_credential`) |
 | `llm_pool` | Multi-backend pool panel (in-flight / routed % / free) |
 | `nrem` + `breakdown` | Backlog / NREM + Schema drawer Postgres panels |

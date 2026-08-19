@@ -66,23 +66,28 @@ class DoctorTests(unittest.TestCase):
         # Absent 0.9.13 keys stay false (I8 — key presence, not content)
         self.assertFalse(block["has_llm_routing"])
         self.assertFalse(block["has_llm_token_usage"])
+        # Absent 0.9.15 keys stay false
+        self.assertFalse(block.get("has_llm_oldest_inflight", False))
+        self.assertFalse(block.get("has_llm_suspect_wedged", False))
         self.assertFalse(block["has_pool_status"])
 
     def test_coordinator_llm_routing_and_token_usage_key_presence(self):
         """Coordinator flags llm_routing / llm_token_usage from /health key presence."""
         with patch("sm_telemetry_monitor.doctor.get_health", return_value={
-            "status": "ok",
-            "version": "0.9.13",
-            "api_version": 4,
+            "status": "ok", "version": "0.9.15", "api_version": 4,
             "llm_pool": {"http://localhost:5000": {"inflight": 0}},
             "llm_routing": {},
             "llm_token_usage": {},
+            "llm_oldest_inflight_age_s": 12.5,
+            "llm_suspect_wedged": []
         }):
             from sm_telemetry_monitor.doctor import _check_coordinator
             block = _check_coordinator()
         self.assertTrue(block["has_llm_pool"])
         self.assertTrue(block["has_llm_routing"])
         self.assertTrue(block["has_llm_token_usage"])
+        self.assertTrue(block["has_llm_oldest_inflight"])
+        self.assertTrue(block["has_llm_suspect_wedged"])
 
     def test_coordinator_pool_status_flag(self):
         with patch("sm_telemetry_monitor.doctor.get_health", return_value={
