@@ -135,6 +135,7 @@ def _check_coordinator() -> dict[str, Any]:
     # 0.9.13 surfaces: key presence on /health (empty {} still counts — I8 style).
     has_llm_routing = "llm_routing" in raw
     has_llm_token_usage = "llm_token_usage" in raw
+    has_llm_latency = "llm_latency" in raw or ("llm_latency" in cfg if isinstance(cfg, dict) else False)
     has_llm_oldest_inflight = "llm_oldest_inflight_age_s" in raw
     has_llm_suspect_wedged = "llm_suspect_wedged" in raw
     pool_status = get_pool_status()
@@ -159,6 +160,7 @@ def _check_coordinator() -> dict[str, Any]:
         "has_llm_placement": has_placement,
         "has_llm_routing": has_llm_routing,
         "has_llm_token_usage": has_llm_token_usage,
+        "has_llm_latency": has_llm_latency,
         "has_llm_oldest_inflight": has_llm_oldest_inflight,
         "has_llm_suspect_wedged": has_llm_suspect_wedged,
         "has_pool_status": has_pool_status,
@@ -429,6 +431,8 @@ def format_report(report: dict[str, Any]) -> str:
                 bits.append("llm_routing")
             if block.get("has_llm_token_usage"):
                 bits.append("llm_token_usage")
+            if block.get("has_llm_latency"):
+                bits.append("llm_latency")
             if block.get("has_llm_oldest_inflight"):
                 bits.append("oldest_inflight")
             if block.get("has_llm_suspect_wedged"):

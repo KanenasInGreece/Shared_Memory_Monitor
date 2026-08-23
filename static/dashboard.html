@@ -1439,6 +1439,28 @@ function poolDescriptorBits(b) {
   return bits;
 }
 
+
+function poolLatencyBits(b) {
+  const bits = [];
+  const lat = b?.latency;
+  if (!lat || typeof lat !== "object") return bits;
+  const sum = Number(lat.latency_sum_s);
+  const total = Number(lat.requests_total);
+  const max = Number(lat.latency_max_s);
+  const failed = Number(lat.requests_failed_total);
+  if (Number.isFinite(total) && total > 0 && Number.isFinite(sum)) {
+    const avg = sum / total;
+    let line = `latency avg ${avg.toFixed(2)}s`;
+    if (Number.isFinite(max) && max > 0) line += ` · max ${max.toFixed(2)}s`;
+    line += ` · ${total} req${total === 1 ? "" : "s"}`;
+    if (Number.isFinite(failed) && failed > 0) line += ` (${failed} failed)`;
+    bits.push(line);
+  } else if (Number.isFinite(total) && total === 0) {
+    bits.push("latency 0 requests");
+  }
+  return bits;
+}
+
 function poolTokenBits(b) {
   // A7: totals + last age when tokens present; cost only with numeric prices.
   const bits = [];
@@ -1494,7 +1516,8 @@ function fillLlmPoolPopover(b) {
 
   const descBits = poolDescriptorBits(b);
   const tokBits = poolTokenBits(b);
-  const metaBits = [...descBits, ...tokBits];
+  const latBits = poolLatencyBits(b);
+  const metaBits = [...descBits, ...tokBits, ...latBits];
   const metaHtml = metaBits.length
     ? `<div class="pool-pop-meta">${metaBits.map(t => `<div class="pool-pop-meta-row">${esc(t)}</div>`).join("")}</div>`
     : "";

@@ -149,6 +149,32 @@ def _apply_meta_descriptors(backend: dict, meta: dict) -> None:
     _copy_backend_descriptors(meta, backend)
 
 
+
+def _join_llm_latency_onto_backends(backends: list[dict], health_raw: dict) -> None:
+    lat = None
+    if "llm_latency" in health_raw and isinstance(health_raw["llm_latency"], dict):
+        lat = health_raw["llm_latency"]
+    else:
+        cfg = health_raw.get("config")
+        if isinstance(cfg, dict) and "llm_latency" in cfg and isinstance(cfg["llm_latency"], dict):
+            lat = cfg["llm_latency"]
+    if not lat:
+        return
+    for b in backends:
+        url = b.get("url")
+        if not url:
+            continue
+        entry = lat.get(url) or lat.get(url.rstrip("/"))
+        if not isinstance(entry, dict):
+            continue
+        b["latency"] = {
+            "latency_sum_s": entry.get("latency_sum_s"),
+            "latency_max_s": entry.get("latency_max_s"),
+            "requests_total": entry.get("requests_total"),
+            "requests_failed_total": entry.get("requests_failed_total"),
+            "latency_last_ts": entry.get("latency_last_ts"),
+        }
+
 def _join_token_usage_onto_backends(backends: list[dict], health_raw: dict) -> None:
     """Attach tokens:{prompt_total,completion_total,last_ts} when URL has usage."""
     usage = health_raw.get("llm_token_usage")
@@ -267,6 +293,7 @@ def _llm_pool_summary(raw: dict) -> dict | None:
     if not backends:
         return None
     _join_token_usage_onto_backends(backends, raw)
+    _join_llm_latency_onto_backends(backends, raw)
     return {
         "backends": backends,
         "total": len(backends),
@@ -596,6 +623,11 @@ def _gateway_config(raw: dict) -> dict | None:
     # I17: only when gateway sent it (config preferred, else top-level health bool).
     if "allow_unauthenticated_provider_keys" in cfg:
         out["allow_unauthenticated_provider_keys"] = cfg["allow_unauthenticated_provider_keys"]
+    
+    if "llm_latency" in cfg and isinstance(cfg["llm_latency"], dict):
+        out["llm_latency"] = cfg["llm_latency"]
+    elif "llm_latency" in raw and isinstance(raw["llm_latency"], dict):
+        out["llm_latency"] = raw["llm_latency"]
     elif "allow_unauthenticated_provider_keys" in raw:
         out["allow_unauthenticated_provider_keys"] = raw["allow_unauthenticated_provider_keys"]
     return out
@@ -1165,4 +1197,6 @@ def system_health_snapshot() -> dict:
         out["llm_routing"] = raw["llm_routing"]
     if "llm_token_usage" in raw and isinstance(raw.get("llm_token_usage"), dict):
         out["llm_token_usage"] = raw["llm_token_usage"]
+    if "llm_latency" in raw and isinstance(raw.get("llm_latency"), dict):
+        out["llm_latency"] = raw["llm_latency"]
     return out

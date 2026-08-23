@@ -1,0 +1,724 @@
+{
+  "status": "success",
+  "telemetry": {
+    "timestamp": "2026-08-11T19:27:40.172373+00:00",
+    "postgres": {
+      "technical_docs": 1142,
+      "technical_docs_superseded": 49,
+      "outbox": {
+        "rem_reviewed": 258,
+        "applied": 57
+      },
+      "outbox_failed_oldest_age_seconds": null,
+      "community_summaries": {
+        "total": 70,
+        "superseded": 20,
+        "insight": 13
+      }
+    },
+    "neo4j": {
+      "facts_total": 673,
+      "facts_rem_pending": 2,
+      "facts_unconsolidated": 142,
+      "decisions_total": 285,
+      "decisions_rem_pending": 0,
+      "rem_dead_lettered": 2,
+      "rem_failing": 0,
+      "rem_max_attempts": 5,
+      "rem_passed_over_total": 0,
+      "rem_starved_pending": 0
+    },
+    "nrem": {
+      "fact_cycles": 2,
+      "decision_cycles": 0,
+      "total_cycles": 2,
+      "fact_threshold": 3
+    },
+    "breakdown": {
+      "record_types": [
+        {
+          "key": "(untagged)",
+          "count": 602
+        },
+        {
+          "key": "decision",
+          "count": 287
+        },
+        {
+          "key": "retrospective",
+          "count": 181
+        },
+        {
+          "key": "fact",
+          "count": 14
+        },
+        {
+          "key": "measurement",
+          "count": 7
+        },
+        {
+          "key": "architecture",
+          "count": 7
+        },
+        {
+          "key": "lesson",
+          "count": 5
+        },
+        {
+          "key": "session_insight",
+          "count": 4
+        },
+        {
+          "key": "code_review",
+          "count": 3
+        },
+        {
+          "key": "system_spec",
+          "count": 3
+        },
+        {
+          "key": "bug_fix",
+          "count": 2
+        },
+        {
+          "key": "observation",
+          "count": 2
+        },
+        {
+          "key": "session_summary",
+          "count": 1
+        },
+        {
+          "key": "researched",
+          "count": 1
+        },
+        {
+          "key": "research",
+          "count": 1
+        },
+        {
+          "key": "correction",
+          "count": 1
+        },
+        {
+          "key": "project_status",
+          "count": 1
+        },
+        {
+          "key": "concurrency_fix",
+          "count": 1
+        },
+        {
+          "key": "architecture_summary",
+          "count": 1
+        },
+        {
+          "key": "security_review",
+          "count": 1
+        },
+        {
+          "key": "session_result",
+          "count": 1
+        },
+        {
+          "key": "architecture_artifact",
+          "count": 1
+        },
+        {
+          "key": "cross_project_analysis",
+          "count": 1
+        },
+        {
+          "key": "deploy_status",
+          "count": 1
+        },
+        {
+          "key": "architecture_audit",
+          "count": 1
+        },
+        {
+          "key": "security_patch",
+          "count": 1
+        },
+        {
+          "key": "release",
+          "count": 1
+        },
+        {
+          "key": "config_alignment",
+          "count": 1
+        },
+        {
+          "key": "stack_audit",
+          "count": 1
+        },
+        {
+          "key": "discussion",
+          "count": 1
+        },
+        {
+          "key": "project",
+          "count": 1
+        },
+        {
+          "key": "review",
+          "count": 1
+        },
+        {
+          "key": "diagnostic",
+          "count": 1
+        },
+        {
+          "key": "architecture_fix",
+          "count": 1
+        },
+        {
+          "key": "build_summary",
+          "count": 1
+        },
+        {
+          "key": "design",
+          "count": 1
+        },
+        {
+          "key": "workflow_optimization",
+          "count": 1
+        }
+      ],
+      "agents": [
+        {
+          "key": "claude",
+          "count": 640
+        },
+        {
+          "key": "gemini",
+          "count": 184
+        },
+        {
+          "key": "unknown",
+          "count": 87
+        },
+        {
+          "key": "lm_studio",
+          "count": 78
+        },
+        {
+          "key": "grok",
+          "count": 73
+        },
+        {
+          "key": "legacy",
+          "count": 34
+        },
+        {
+          "key": "antigravity",
+          "count": 18
+        },
+        {
+          "key": "chromebook-antigravity",
+          "count": 12
+        },
+        {
+          "key": "chromebook-claude",
+          "count": 8
+        },
+        {
+          "key": "claude-sonnet-4-6",
+          "count": 5
+        },
+        {
+          "key": "claude_code",
+          "count": 3
+        }
+      ],
+      "sources": [
+        {
+          "key": "claude",
+          "count": 678
+        },
+        {
+          "key": "gemini",
+          "count": 200
+        },
+        {
+          "key": "unknown",
+          "count": 87
+        },
+        {
+          "key": "lm_studio",
+          "count": 82
+        },
+        {
+          "key": "grok",
+          "count": 73
+        },
+        {
+          "key": "chromebook-antigravity",
+          "count": 12
+        },
+        {
+          "key": "chromebook-claude",
+          "count": 8
+        },
+        {
+          "key": "antigravity",
+          "count": 2
+        }
+      ],
+      "domains": [
+        {
+          "key": "shared-memory-GitHub",
+          "count": 851
+        },
+        {
+          "key": "tier3",
+          "count": 167
+        },
+        {
+          "key": "shared-memory-monitor",
+          "count": 73
+        },
+        {
+          "key": "cloe-consult",
+          "count": 27
+        },
+        {
+          "key": "a-to-a",
+          "count": 6
+        },
+        {
+          "key": "calibre-librarian",
+          "count": 5
+        },
+        {
+          "key": "cloe-multichannel-hub",
+          "count": 5
+        },
+        {
+          "key": "optimise-openclaw",
+          "count": 3
+        },
+        {
+          "key": "email-scanner",
+          "count": 3
+        },
+        {
+          "key": "kids-study",
+          "count": 1
+        },
+        {
+          "key": "workstation",
+          "count": 1
+        }
+      ],
+      "summaries": [
+        {
+          "kind": "thematic",
+          "superseded": 13,
+          "active": 41
+        },
+        {
+          "kind": "insight",
+          "superseded": 7,
+          "active": 6
+        },
+        {
+          "kind": "community_summary",
+          "superseded": 0,
+          "active": 3
+        }
+      ]
+    },
+    "entity_graph": {
+      "entities_total": 1144,
+      "orphan_entities": 0,
+      "unmentioned_entities": 17,
+      "singleton_entities": 521,
+      "genuinely_referenced_entities": 1127,
+      "alias_edges": 296,
+      "alias_covered_entities": 373,
+      "alias_components": 149,
+      "largest_alias_component": 15,
+      "top_hubs": [
+        {
+          "name": "SharedMemory",
+          "degree": 141
+        },
+        {
+          "name": "NREM",
+          "degree": 131
+        },
+        {
+          "name": "REM",
+          "degree": 123
+        },
+        {
+          "name": "Neo4j",
+          "degree": 121
+        },
+        {
+          "name": "SharedMemoryFramework",
+          "degree": 55
+        },
+        {
+          "name": "Cloe",
+          "degree": 51
+        },
+        {
+          "name": "SharedMemoryMonitor",
+          "degree": 50
+        },
+        {
+          "name": "ConsolidationDaemon",
+          "degree": 48
+        }
+      ]
+    },
+    "compliance": {
+      "predicate_distribution": {
+        "MENTIONS": 4829,
+        "SUMMARIZED_BY": 985,
+        "PROJECT_OF": 979,
+        "WAS_ATTRIBUTED_TO": 602,
+        "ALIASES": 296,
+        "WAS_ASSISTED_BY": 285,
+        "GROUNDED_IN": 236,
+        "DOMAIN_OF": 226,
+        "HAD_OUTCOME": 181,
+        "REFERENCES": 109,
+        "SUPERSEDES": 58,
+        "INFORMED_BY": 54,
+        "CONSIDERED": 25,
+        "ACTED_ON_BEHALF_OF": 15,
+        "NEXT_STEP": 8,
+        "HAS_STEP": 4,
+        "REQUIRES": 4,
+        "FIRST_MESSAGE": 3,
+        "HAS_MESSAGE": 3,
+        "RELATED_TO": 3,
+        "BELONGS_TO": 2,
+        "CONSUMES_EMBEDDINGS_FROM": 2,
+        "REPORTS_ON": 2,
+        "WRITES_TO": 2,
+        "APPLIES_TO": 1,
+        "CONSUMES_RERANKING_FROM": 1,
+        "FEEDS_EMBEDDINGS_TO": 1,
+        "IMPLEMENTS": 1,
+        "NORMALIZES": 1,
+        "QUERIES": 1,
+        "UNDER_CONDITIONS": 1,
+        "USES_WORKFLOW": 1
+      },
+      "label_compliance": "non-compliant",
+      "invalid_labels": [
+        {
+          "name": "Conversation",
+          "count": 5
+        },
+        {
+          "name": "DockerContainer",
+          "count": 4
+        },
+        {
+          "name": "Message",
+          "count": 3
+        },
+        {
+          "name": "Object",
+          "count": 3
+        },
+        {
+          "name": "OrchestrationTool",
+          "count": 2
+        },
+        {
+          "name": "LocalEmbedding",
+          "count": 1
+        },
+        {
+          "name": "MCPServer",
+          "count": 1
+        },
+        {
+          "name": "SharedMemoryStack",
+          "count": 1
+        }
+      ],
+      "relationship_compliance": "non-compliant",
+      "invalid_relationships": [
+        {
+          "name": "HAS_STEP",
+          "count": 4
+        },
+        {
+          "name": "REQUIRES",
+          "count": 4
+        },
+        {
+          "name": "FIRST_MESSAGE",
+          "count": 3
+        },
+        {
+          "name": "HAS_MESSAGE",
+          "count": 3
+        },
+        {
+          "name": "RELATED_TO",
+          "count": 3
+        },
+        {
+          "name": "BELONGS_TO",
+          "count": 2
+        },
+        {
+          "name": "CONSUMES_EMBEDDINGS_FROM",
+          "count": 2
+        },
+        {
+          "name": "WRITES_TO",
+          "count": 2
+        },
+        {
+          "name": "APPLIES_TO",
+          "count": 1
+        },
+        {
+          "name": "CONSUMES_RERANKING_FROM",
+          "count": 1
+        },
+        {
+          "name": "FEEDS_EMBEDDINGS_TO",
+          "count": 1
+        },
+        {
+          "name": "NORMALIZES",
+          "count": 1
+        },
+        {
+          "name": "QUERIES",
+          "count": 1
+        },
+        {
+          "name": "USES_WORKFLOW",
+          "count": 1
+        }
+      ]
+    },
+    "graph_integrity": {
+      "invalid_nodes": 0,
+      "by_reason": {},
+      "by_label": {},
+      "clean": true
+    },
+    "consolidation": {
+      "stall_threshold_seconds": 9000,
+      "insight": {
+        "last_outcome": "completed",
+        "last_success_age_seconds": 22654,
+        "in_flight": false,
+        "consecutive_failures": 0,
+        "backlog": 0,
+        "stalled": false,
+        "last_error": {
+          "class": "OrphanedRun",
+          "msg": "daemon restarted while cycle was in-flight"
+        },
+        "eligible_clusters": 0,
+        "eligible_oldest_age_seconds": 6173,
+        "dead_lettered_clusters": 0,
+        "truncation_failures": 0,
+        "slot_failures": 0,
+        "last_deferred_reason": "pool_busy",
+        "cycle_seconds_avg": 69.6,
+        "runs_24h": 18,
+        "deferred_24h": 0,
+        "idle_24h": 0,
+        "folds_succeeded_24h": 9,
+        "folds_attempted_24h": 12,
+        "truncation_failures_24h": 0,
+        "slot_failures_24h": 0,
+        "last_started": "2026-08-11T19:16:45.074682+00:00"
+      },
+      "fact_consolidation": {
+        "last_outcome": "completed",
+        "last_success_age_seconds": 473,
+        "in_flight": false,
+        "consecutive_failures": 0,
+        "backlog": 2,
+        "stalled": false,
+        "last_error": {
+          "class": "OrphanedRun",
+          "msg": "daemon restarted while cycle was in-flight"
+        },
+        "eligible_clusters": 2,
+        "eligible_oldest_age_seconds": 2546,
+        "dead_lettered_clusters": null,
+        "truncation_failures": 0,
+        "slot_failures": null,
+        "last_deferred_reason": "pool_busy",
+        "cycle_seconds_avg": 36.1,
+        "runs_24h": 89,
+        "deferred_24h": 0,
+        "idle_24h": 0,
+        "folds_succeeded_24h": 174,
+        "folds_attempted_24h": 174,
+        "truncation_failures_24h": 0,
+        "slot_failures_24h": 0,
+        "last_started": "2026-08-11T19:19:29.485171+00:00"
+      },
+      "stalled": false,
+      "stalled_types": [],
+      "last_success_age_seconds": 473,
+      "last_success_cycle_type": "fact_consolidation",
+      "last_outcome": "completed",
+      "last_deferred_reason": "pool_busy",
+      "last_active_cycle_type": "fact_consolidation"
+    },
+    "refold_ledger": {
+      "by_status_reason": [
+        {
+          "status": "refolded",
+          "closed_reason": "constituent_folded",
+          "count": 6
+        },
+        {
+          "status": "dropped",
+          "closed_reason": "out_of_scan",
+          "count": 37
+        }
+      ],
+      "by_trigger_kind": {
+        "technical_docs": 43
+      },
+      "insight_reconciliation_stuck": 0
+    },
+    "spine": {
+      "decisions": {
+        "total": 283,
+        "grounded_in_pct": 33.9,
+        "alternatives_pct": 84.1,
+        "confidence_pct": 88.3,
+        "elicited_pct": 25.1
+      },
+      "alternative_vectors": {
+        "entries": 530,
+        "decisions": 240,
+        "embedded": 530,
+        "pending": 0,
+        "failing": 0,
+        "embedded_pct": 100.0,
+        "oldest_pending_age_s": null
+      },
+      "facts": {
+        "total": 629,
+        "source_ref_pct": 98.3,
+        "elicited_pct": 21.3
+      },
+      "retrospectives": {
+        "total": 181,
+        "rating_pct": 100.0,
+        "target_pg_id_pct": 100.0,
+        "grounded_in_pct": 29.3,
+        "elicited_pct": 22.1
+      },
+      "emergent_unprojected_fields": [
+        {
+          "key": "project",
+          "n": 1093
+        },
+        {
+          "key": "principal",
+          "n": 702
+        },
+        {
+          "key": "connected_from",
+          "n": 702
+        },
+        {
+          "key": "date",
+          "n": 186
+        },
+        {
+          "key": "domains",
+          "n": 128
+        },
+        {
+          "key": "original_rating",
+          "n": 125
+        },
+        {
+          "key": "migrated",
+          "n": 125
+        },
+        {
+          "key": "grounded_roles",
+          "n": 117
+        },
+        {
+          "key": "domain",
+          "n": 80
+        },
+        {
+          "key": "tags",
+          "n": 11
+        },
+        {
+          "key": "record_type",
+          "n": 9
+        },
+        {
+          "key": "relates_to_pg_id",
+          "n": 8
+        }
+      ],
+      "alias": {
+        "adjudications": 4176,
+        "by_verdict": {
+          "alias": 2420,
+          "distinct": 1756
+        }
+      }
+    },
+    "latency": {
+      "rem_ms": {
+        "note": "service_ms = model/hardware (anchor); contention_ms = capacity",
+        "by_model": [
+          {
+            "model": "Qwen3-14B-Q4_K_M.gguf",
+            "n": 81,
+            "max_batch_size": 5,
+            "service_ms": {
+              "p50": 51004.7,
+              "p95": 921297.3
+            },
+            "contention_ms": {
+              "p50": 128.3,
+              "p95": 965.3
+            }
+          },
+          {
+            "model": "gemma-4-12B-it-Q4_K_M.gguf",
+            "n": 39,
+            "max_batch_size": 4,
+            "service_ms": {
+              "p50": 1105275.1,
+              "p95": 1223055.5
+            },
+            "contention_ms": {
+              "p50": 279.5,
+              "p95": 30626.7
+            }
+          }
+        ]
+      },
+      "nrem_cycle_seconds": {
+        "window_days": 7,
+        "n": 109,
+        "p50": 17.2,
+        "p95": 579.3,
+        "note": "synthesis cycles only (folds_succeeded>0); excludes deferred/no-op sweeps"
+      }
+    },
+    "inference_busy": "idle"
+  }
+}

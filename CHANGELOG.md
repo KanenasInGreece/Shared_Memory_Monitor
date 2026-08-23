@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.18] - 2026-08-23
+### Added
+- Adopted framework v0.9.14 telemetry updates: passthrough of `llm_latency` via `/health`.
+- The Throughput & Latency drawer and LLM pool chips now securely extract and display numeric latency bounds (avg and max) and request fault tallies.
+- Single-backend fleets (such as cloud-only configurations) now correctly render LLM pool chips and placement metrics, following framework presence adjustments.
+
 ## [0.9.17] - 2026-08-23
 
 ### Fixed

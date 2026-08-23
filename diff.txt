@@ -1,0 +1,1397 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index f474b3b..0ab2d80 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -133,7 +133,7 @@ On a modern gateway (verified against **framework ≥0.8.9**), doctor should als
+ telemetry panels and LLM placement, e.g.:
+ 
+ ```text
+-coordinator: ok · gateway 0.9.8 · api server=4 client=4 compat=ok · 2 LLM backends · llm_pool · placement local
++coordinator: ok · gateway 0.9.13 · api server=4 client=4 compat=ok · 3 LLM backends · llm_pool · llm_routing · llm_token_usage · placement 2 local/1 external
+ telemetry: ok · nrem+breakdown+consolidation+entity_graph+latency+spine+compliance+graph_integrity+llm_faults+credentials
+ ```
+ 
+@@ -148,7 +148,8 @@ telemetry: ok · nrem+breakdown+consolidation+entity_graph+latency+spine+complia
+ | `spine` / `compliance` | First-write quality / schema conformance bands |
+ | `graph_integrity` | Graph integrity band in Schema drawer (write-path defect detection) |
+ | `llm_faults` | Per-backend fault counts on pool chips (framework **≥ 0.9.4**) |
+-| `credentials` | Own-door `token_verify_failed` / `audit_log_dropped` on the pool line; **≥ 0.9.8** pairs each with `*_last_ts` age |
++| `credentials` | Own-door `token_verify_failed` / `audit_log_dropped` / **≥ 0.9.9** `credentialed_route_denied` on the pool line; **≥ 0.9.8** pairs each with `*_last_ts` age |
++| `llm_routing` / `llm_token_usage` | Pool-line role totals + refuse warns; chip-popover token totals (framework **≥ 0.9.13**) |
+ 
+ Missing panel names mean an older gateway — the UI degrades (omits bands), not a hard fail.
+ `placement n/a (gateway <0.8.9)` means config backends exist but without `has_credential`.
+@@ -224,7 +225,7 @@ If only running foreground, stop and re-run `./scripts/run-loop.sh --serve --int
+ 
+ ```bash
+ ./scripts/agent-upgrade.sh           # pull main, uv sync, restart unit if present, status
+-# or pin: ./scripts/agent-upgrade.sh --ref v0.9.12   # example tag
++# or pin: ./scripts/agent-upgrade.sh --ref v0.9.13   # example tag
+ ```
+ 
+ After upgrade, confirm `compat=ok` if the gateway bumped `api_version` — the monitor
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 0e93d6d..e617ea7 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -6,6 +6,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+ 
+ ## [Unreleased]
+ 
++## [0.9.13] - 2026-08-18
++
++### Added
++- Consume framework **0.9.9** `credentials.credentialed_route_denied` (+
++  `*_last_ts`) on the LLM pool line (`route denied N` + relative age), and
++  surface `config.allow_unauthenticated_provider_keys` on the Infrastructure
++  hint only when the gateway sent `true` (`fact:1337`).
++- Consume framework **0.9.13** `/health.llm_routing` (role totals + refuse
++  counters with last-event age) and `/health.llm_token_usage` (per-backend
++  prompt/completion totals in the chip popover). Join backend descriptors
++  (`roles`, `n_ctx`, `private_ok`, `max_inflight`, `price_per_mtok_*`) when
++  present. Cost is shown only when both prices are numeric — JSON `null` is
++  not a price (`fact:1359`). `api_version` stays **4**.
++
+ ## [0.9.12] - 2026-08-17
+ 
+ ### Added
+diff --git a/README.md b/README.md
+index 3b980f7..6a88b8a 100644
+--- a/README.md
++++ b/README.md
+@@ -13,7 +13,7 @@ This sister repository is that picture. It does not install databases or daemons
+ | **What you get** | Live ops view over framework telemetry and logs |
+ | **What you do not get** | A second metrics store, DB credentials, or write access to memory |
+ | **Dashboard** | **http://127.0.0.1:8765/** |
+-| **This release** | **v0.9.12** — API **v4** client · wire-compatible with framework **≥ 0.8.33** · full panels on **≥ 0.8.9** · alternative vectors on **≥ 0.8.40** · credential-audit / `llm_faults` on **≥ 0.9.4** · credential last-event age on **≥ 0.9.8** |
++| **This release** | **v0.9.13** — API **v4** client · wire-compatible with framework **≥ 0.8.33** · full panels on **≥ 0.8.9** · alternative vectors on **≥ 0.8.40** · credential-audit / `llm_faults` on **≥ 0.9.4** · credential last-event age on **≥ 0.9.8** · `credentialed_route_denied` on **≥ 0.9.9** · LLM routing / token usage / backend descriptors on **≥ 0.9.13** |
+ 
+ ---
+ 
+@@ -116,7 +116,7 @@ Everything on screen is one of those two upstreams, or a **poll cache** of past
+ | **Upstream data** | Serves telemetry; writes journal + audit JSONL | Reads those — never Postgres/Neo4j |
+ | **Wire contract** | `api_version` on `GET /health` | Client advertises **API 4** (`X-SM-Api-Version: 4`) |
+ 
+-**Compatibility:** Monitor **v0.9.12** speaks **API v4** against framework **≥ 0.8.33** (`compat=ok` from doctor). Prefer **≥ 0.8.9** for the full Status picture (LLM local/external placement, entity census, latency drawer), **≥ 0.8.40** for alternative-vectors on first-write quality, **≥ 0.9.4** for credential-audit tails and `llm_faults` on pool chips, and **≥ 0.9.8** for `credentials.*_last_ts` last-failure age on the pool line. Older gateways stay on the wire; missing panels simply omit fields rather than fail hard.
++**Compatibility:** Monitor **v0.9.13** speaks **API v4** against framework **≥ 0.8.33** (`compat=ok` from doctor). Prefer **≥ 0.8.9** for the full Status picture (LLM local/external placement, entity census, latency drawer), **≥ 0.8.40** for alternative-vectors on first-write quality, **≥ 0.9.4** for credential-audit tails and `llm_faults` on pool chips, **≥ 0.9.8** for `credentials.*_last_ts` last-failure age on the pool line, **≥ 0.9.9** for `credentialed_route_denied`, and **≥ 0.9.13** for `llm_routing` / `llm_token_usage` / backend descriptors. Older gateways stay on the wire; missing panels simply omit fields rather than fail hard.
+ 
+ Where a number on the screen comes from is always the framework payload or a log line. For the field-level mapping of telemetry keys to UI bands, see [docs/SISTER_PROJECT.md](docs/SISTER_PROJECT.md) and the framework’s own telemetry docs — this README stays on the operator path, not the catalog.
+ 
+@@ -164,7 +164,7 @@ Four tabs: **Gateway daemons** (journal), **REM audit**, **Agent audit**, **Cred
+ 
+ The framework gateway must be running and reachable (`COORDINATOR_URL`, default `http://localhost:8888`), with a **`monitor:read`** token minted on that host. Python **3.11+** and [uv](https://docs.astral.sh/uv/) for install and CLI.
+ 
+-Panel richness depends on gateway version: full Status and LLM placement on **≥ 0.8.9**, alternative vectors on **≥ 0.8.40**, credential-audit / `llm_faults` on **≥ 0.9.4**, credential last-event timestamps on **≥ 0.9.8**. `./scripts/check-env.sh` lists which telemetry panels and placement signals are present. Missing names mean an older gateway — the UI degrades, it does not hard-fail.
++Panel richness depends on gateway version: full Status and LLM placement on **≥ 0.8.9**, alternative vectors on **≥ 0.8.40**, credential-audit / `llm_faults` on **≥ 0.9.4**, credential last-event timestamps on **≥ 0.9.8**, `credentialed_route_denied` on **≥ 0.9.9**, LLM routing / token usage / backend descriptors on **≥ 0.9.13**. `./scripts/check-env.sh` lists which telemetry panels and placement signals are present. Missing names mean an older gateway — the UI degrades, it does not hard-fail.
+ 
+ ### Local logs (for `/logs` and diagram flow lines)
+ 
+@@ -373,7 +373,7 @@ Long-running processes do **not** hot-reload after `.env` or code changes — re
+ | Doc | Topic |
+ |-----|-------|
+ | [SISTER_PROJECT.md](docs/SISTER_PROJECT.md) | Framework boundary and wire contract |
+-| [CHANGELOG.md](CHANGELOG.md) | Releases (current: **v0.9.12**) |
++| [CHANGELOG.md](CHANGELOG.md) | Releases (current: **v0.9.13**) |
+ | [SECURITY.md](SECURITY.md) | Secrets policy |
+ | [AGENTS.md](AGENTS.md) | Agent install / status / upgrade |
+ 
+diff --git a/docs/SISTER_PROJECT.md b/docs/SISTER_PROJECT.md
+index 0333b1d..a7630b9 100644
+--- a/docs/SISTER_PROJECT.md
++++ b/docs/SISTER_PROJECT.md
+@@ -21,18 +21,19 @@ The monitor never imports framework Python code. **No third data path** in monit
+ 
+ | Route | Purpose |
+ |-------|---------|
+-| `GET /health` | Infrastructure grid (embedder, LLM, daemons); `version` + `api_version` for client compat; non-secret `config` (LLM backends + weights; **≥0.8.9** `has_credential` + optional `model`); multi-backend `llm_pool` / affinity |
+-| `GET /memory/telemetry` | Pipeline metrics, `nrem`, `breakdown`, `spine`, `compliance`, `latency`, `entity_graph`, `consolidation`; **≥0.9.4** `llm_faults` + `credentials`; **≥0.9.8** `credentials.*_last_ts` siblings |
++| `GET /health` | Infrastructure grid (embedder, LLM, daemons); `version` + `api_version` for client compat; non-secret `config` (LLM backends + weights; **≥0.8.9** `has_credential` + optional `model`; **≥0.9.13** roles / `n_ctx` / `private_ok` / prices); multi-backend `llm_pool` / affinity; **≥0.9.13** `llm_routing` + `llm_token_usage` |
++| `GET /memory/telemetry` | Pipeline metrics, `nrem`, `breakdown`, `spine`, `compliance`, `latency`, `entity_graph`, `consolidation`; **≥0.9.4** `llm_faults` + `credentials`; **≥0.9.8** `credentials.*_last_ts` siblings; **≥0.9.9** `credentialed_route_denied` |
+ | `POST /memory/graph` | Neo4j schema panels (read-only Cypher, server-side guard) |
+ 
+-**Client API version:** Monitor **v0.9.12** sets `bridge.API_VERSION = 4` to match
++**Client API version:** Monitor **v0.9.13** sets `bridge.API_VERSION = 4` to match
+ the **deployed** gateway `api_version` (framework **≥ 0.8.33** / projects registry
+ + sentinel + telemetry enhancements). **Alternative vectors** on first-write quality
+ expects **framework ≥ 0.8.40** (`telemetry.spine.alternative_vectors`). Full Status +
+ diagram telemetry (LLM local/external placement, entity-graph census, latency drawer)
+ expects **framework ≥ 0.8.9**. Credential last-event age on the pool line expects
+-**framework ≥ 0.9.8** (`credentials.*_last_ts`). Do not jump the wire contract ahead
+-of what live `/health` reports.
++**framework ≥ 0.9.8** (`credentials.*_last_ts`). `credentialed_route_denied` expects
++**≥ 0.9.9**. `llm_routing` / `llm_token_usage` / backend descriptors expect
++**≥ 0.9.13**. Do not jump the wire contract ahead of what live `/health` reports.
+ 
+ **Out of scope for `monitor:read`:** `POST /memory/relations/review` and
+ `/memory/relations/label` are the operator calibration oracle for machine-minted
+diff --git a/docs/images/dashboard.png b/docs/images/dashboard.png
+index c52e7d2..682c508 100644
+Binary files a/docs/images/dashboard.png and b/docs/images/dashboard.png differ
+diff --git a/pyproject.toml b/pyproject.toml
+index ea550a8..55b3d38 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -1,6 +1,6 @@
+ [project]
+ name = "sm-telemetry-monitor"
+-version = "0.9.12"
++version = "0.9.13"
+ description = "Read-only view over Shared Memory gateway telemetry and framework logs — no separate data interfaces"
+ readme = "README.md"
+ license = "MIT"
+diff --git a/src/sm_telemetry_monitor/__init__.py b/src/sm_telemetry_monitor/__init__.py
+index 120ce41..4c58c63 100644
+--- a/src/sm_telemetry_monitor/__init__.py
++++ b/src/sm_telemetry_monitor/__init__.py
+@@ -1,3 +1,3 @@
+ """Read-only view over gateway telemetry and framework logs — no separate data interfaces."""
+ 
+-__version__ = "0.9.12"
+\ No newline at end of file
++__version__ = "0.9.13"
+\ No newline at end of file
+diff --git a/src/sm_telemetry_monitor/doctor.py b/src/sm_telemetry_monitor/doctor.py
+index 61b5b3c..9d5753c 100644
+--- a/src/sm_telemetry_monitor/doctor.py
++++ b/src/sm_telemetry_monitor/doctor.py
+@@ -132,6 +132,9 @@ def _check_coordinator() -> dict[str, Any]:
+                 n_local += 1
+     pool = raw.get("llm_pool")
+     has_llm_pool = isinstance(pool, dict) and bool(pool)
++    # 0.9.13 surfaces: key presence on /health (empty {} still counts — I8 style).
++    has_llm_routing = "llm_routing" in raw
++    has_llm_token_usage = "llm_token_usage" in raw
+ 
+     return {
+         "ok": ok,
+@@ -145,6 +148,8 @@ def _check_coordinator() -> dict[str, Any]:
+         "llm_backend_count": n_backends,
+         "has_llm_pool": has_llm_pool,
+         "has_llm_placement": has_placement,
++        "has_llm_routing": has_llm_routing,
++        "has_llm_token_usage": has_llm_token_usage,
+         "llm_local_count": n_local if has_placement else None,
+         "llm_external_count": n_external if has_placement else None,
+         "has_consolidation_health": isinstance(raw.get("consolidation"), dict),
+@@ -406,6 +411,10 @@ def format_report(report: dict[str, Any]) -> str:
+                 bits.append(f"{n} LLM backend" + ("s" if n != 1 else ""))
+             if block.get("has_llm_pool"):
+                 bits.append("llm_pool")
++            if block.get("has_llm_routing"):
++                bits.append("llm_routing")
++            if block.get("has_llm_token_usage"):
++                bits.append("llm_token_usage")
+             if block.get("has_llm_placement"):
+                 loc = block.get("llm_local_count") or 0
+                 ext = block.get("llm_external_count") or 0
+diff --git a/src/sm_telemetry_monitor/system_health.py b/src/sm_telemetry_monitor/system_health.py
+index 8d5182c..894a80f 100644
+--- a/src/sm_telemetry_monitor/system_health.py
++++ b/src/sm_telemetry_monitor/system_health.py
+@@ -93,8 +93,26 @@ def _backend_placement(has_credential) -> str | None:
+     return None
+ 
+ 
++# Additive config.llm_backends descriptors (framework ≥0.9.13). Copy only when
++# the gateway sent the key — including explicit null — never invent.
++_BACKEND_DESCRIPTOR_KEYS = (
++    "roles",
++    "n_ctx",
++    "private_ok",
++    "max_inflight",
++    "price_per_mtok_in",
++    "price_per_mtok_out",
++)
++
++
++def _copy_backend_descriptors(src: dict, dest: dict) -> None:
++    for key in _BACKEND_DESCRIPTOR_KEYS:
++        if key in src:
++            dest[key] = src[key]
++
++
+ def _config_backend_index(raw: dict) -> dict[str, dict]:
+-    """url → {has_credential, model, placement} from /health.config.llm_backends."""
++    """url → {has_credential, model, placement, descriptors…} from config.llm_backends."""
+     cfg = raw.get("config")
+     if not isinstance(cfg, dict):
+         return {}
+@@ -114,16 +132,49 @@ def _config_backend_index(raw: dict) -> dict[str, dict]:
+             has_cred = None
+         model = b.get("model")
+         model_s = str(model) if model not in (None, "") else None
+-        out[url_s] = {
++        meta = {
+             "has_credential": has_cred,
+             "model": model_s,
+             "placement": _backend_placement(has_cred),
+         }
++        _copy_backend_descriptors(b, meta)
++        out[url_s] = meta
+         # also index with trailing slash variants if gateway ever differs
+         out[str(url)] = out[url_s]
+     return out
+ 
+ 
++def _apply_meta_descriptors(backend: dict, meta: dict) -> None:
++    """Copy descriptor keys from config index onto a pool/config backend row."""
++    _copy_backend_descriptors(meta, backend)
++
++
++def _join_token_usage_onto_backends(backends: list[dict], health_raw: dict) -> None:
++    """Attach tokens:{prompt_total,completion_total,last_ts} when URL has usage."""
++    usage = health_raw.get("llm_token_usage")
++    if not isinstance(usage, dict):
++        return
++    by_norm: dict[str, dict] = {}
++    for url, entry in usage.items():
++        if not isinstance(entry, dict):
++            continue
++        url_s = str(url)
++        by_norm[url_s.rstrip("/")] = entry
++        by_norm[url_s] = entry
++    for b in backends:
++        url = b.get("url")
++        if url is None:
++            continue
++        entry = by_norm.get(str(url).rstrip("/")) or by_norm.get(str(url))
++        if entry is None:
++            continue
++        b["tokens"] = {
++            "prompt_total": entry.get("tokens_prompt_total"),
++            "completion_total": entry.get("tokens_completion_total"),
++            "last_ts": entry.get("tokens_last_ts"),
++        }
++
++
+ def _llm_pool_summary(raw: dict) -> dict | None:
+     """Multi-backend LLM pool state from /health.llm_pool + /health.llm_backends.
+ 
+@@ -175,7 +226,7 @@ def _llm_pool_summary(raw: dict) -> dict | None:
+         except (TypeError, ValueError):
+             fails_i = None
+         meta = meta_by_url.get(str(url).rstrip("/")) or meta_by_url.get(str(url)) or {}
+-        backends.append({
++        row = {
+             "url": url,
+             # short label for UI chips: strip scheme, keep host:port tail
+             "label": _backend_label(url),
+@@ -191,9 +242,12 @@ def _llm_pool_summary(raw: dict) -> dict | None:
+             "has_credential": meta.get("has_credential"),
+             "model": meta.get("model"),
+             "placement": meta.get("placement"),
+-        })
++        }
++        _apply_meta_descriptors(row, meta)
++        backends.append(row)
+     if not backends:
+         return None
++    _join_token_usage_onto_backends(backends, raw)
+     return {
+         "backends": backends,
+         "total": len(backends),
+@@ -298,7 +352,7 @@ def _join_llm_faults(
+             if nurl in seen_norm:
+                 continue
+             meta = meta_by_url.get(nurl) or meta_by_url.get(orig_url) or {}
+-            backends.append({
++            row = {
+                 "url": orig_url,
+                 "label": _backend_label(orig_url),
+                 "status": "unknown",
+@@ -314,11 +368,14 @@ def _join_llm_faults(
+                 "model": meta.get("model"),
+                 "placement": meta.get("placement"),
+                 "faults": _backend_faults_from_entry(entry),
+-            })
++            }
++            _apply_meta_descriptors(row, meta)
++            backends.append(row)
+ 
+     if not backends:
+         return llm_pool, credentials
+ 
++    _join_token_usage_onto_backends(backends, health_raw)
+     backends.sort(key=_placement_sort_key)
+     return _recompute_pool_totals(backends), credentials
+ 
+@@ -409,14 +466,16 @@ def _gateway_config(raw: dict) -> dict | None:
+                 has_cred = None
+             model = b.get("model")
+             model_s = str(model) if model not in (None, "") else None
+-            backends.append({
++            row = {
+                 "url": str(url),
+                 "label": str(url).split("//", 1)[-1],
+                 "weight": b.get("weight"),
+                 "has_credential": has_cred,
+                 "model": model_s,
+                 "placement": _backend_placement(has_cred),
+-            })
++            }
++            _copy_backend_descriptors(b, row)
++            backends.append(row)
+ 
+     pool_tuning = cfg.get("llm_pool_tuning") if isinstance(cfg.get("llm_pool_tuning"), dict) else {}
+     affinity = cfg.get("llm_affinity") if isinstance(cfg.get("llm_affinity"), dict) else {}
+@@ -450,7 +509,7 @@ def _gateway_config(raw: dict) -> dict | None:
+         except (TypeError, ValueError):
+             bits.append(f"embed {embed_max}")
+ 
+-    return {
++    out = {
+         "present": True,
+         "backend_count": n,
+         "backends": backends,
+@@ -470,6 +529,12 @@ def _gateway_config(raw: dict) -> dict | None:
+         } if affinity else None,
+         "summary": " · ".join(bits) if bits else "configured",
+     }
++    # I17: only when gateway sent it (config preferred, else top-level health bool).
++    if "allow_unauthenticated_provider_keys" in cfg:
++        out["allow_unauthenticated_provider_keys"] = cfg["allow_unauthenticated_provider_keys"]
++    elif "allow_unauthenticated_provider_keys" in raw:
++        out["allow_unauthenticated_provider_keys"] = raw["allow_unauthenticated_provider_keys"]
++    return out
+ 
+ 
+ def _rem_trend() -> str:
+@@ -1026,4 +1091,9 @@ def system_health_snapshot() -> dict:
+         "graph_integrity": (telemetry_payload or {}).get("telemetry", {}).get("graph_integrity"),
+         "credentials": credentials,
+     }
+-    return out
+\ No newline at end of file
++    # I12/I13: flat passthrough — absent keys stay absent; never invent zeros.
++    if "llm_routing" in raw and isinstance(raw.get("llm_routing"), dict):
++        out["llm_routing"] = raw["llm_routing"]
++    if "llm_token_usage" in raw and isinstance(raw.get("llm_token_usage"), dict):
++        out["llm_token_usage"] = raw["llm_token_usage"]
++    return out
+diff --git a/static/dashboard.html b/static/dashboard.html
+index cdd6999..1df6d85 100644
+--- a/static/dashboard.html
++++ b/static/dashboard.html
+@@ -1316,6 +1316,7 @@ function renderBackup(H) {
+ 
+ function gatewayConfigHint(H) {
+   // Non-secret live config from /health.config (v0.6.1+) + version contract.
++  // A9: unauth-keys beacon only when snapshot.config sent true (absent/false silent).
+   if (!H || H.reachable === false) return H?.error || "gateway unreachable";
+   const bits = [];
+   if (H.version) bits.push(`Gateway ${H.version}`);
+@@ -1325,6 +1326,9 @@ function gatewayConfigHint(H) {
+   else if (cfg?.backend_count) {
+     bits.push(`${cfg.backend_count} LLM backend${cfg.backend_count === 1 ? "" : "s"}`);
+   }
++  if (cfg?.allow_unauthenticated_provider_keys === true) {
++    bits.push("allow_unauthenticated_provider_keys: true");
++  }
+   return bits.join(" · ");
+ }
+ 
+@@ -1417,6 +1421,46 @@ function positionLlmPoolPopover(btn) {
+   pop.style.right = "0";
+ }
+ 
++function poolDescriptorBits(b) {
++  // A8: only when value is not null / missing — never invent.
++  const bits = [];
++  if (!b || typeof b !== "object") return bits;
++  if (b.private_ok != null) bits.push(b.private_ok ? "private_ok" : "private_ok=false");
++  if (b.roles != null) {
++    const roles = Array.isArray(b.roles) ? b.roles.join(",") : String(b.roles);
++    bits.push(`roles ${roles}`);
++  }
++  if (b.n_ctx != null) bits.push(`n_ctx ${b.n_ctx}`);
++  if (b.max_inflight != null) bits.push(`max_inflight ${b.max_inflight}`);
++  return bits;
++}
++
++function poolTokenBits(b) {
++  // A7: totals + last age when tokens present; cost only with numeric prices.
++  const bits = [];
++  const tok = b?.tokens;
++  if (!tok || typeof tok !== "object") return bits;
++  const prompt = tok.prompt_total;
++  const completion = tok.completion_total;
++  const ageTxt = fmtLastEventAge(tok.last_ts);
++  let line = `tokens prompt ${prompt ?? "—"} · completion ${completion ?? "—"}`;
++  if (ageTxt) line += ` · ${ageTxt}`;
++  bits.push(line);
++  // Number(null)===0 is finite — treat null/undefined/"" as no price (A7).
++  const rawIn = b.price_per_mtok_in;
++  const rawOut = b.price_per_mtok_out;
++  const hasPrice = (v) => v != null && v !== "" && Number.isFinite(Number(v));
++  if (hasPrice(rawIn) && hasPrice(rawOut)) {
++    const pin = Number(rawIn);
++    const pout = Number(rawOut);
++    const p = Number(prompt) || 0;
++    const c = Number(completion) || 0;
++    const cost = (p / 1e6) * pin + (c / 1e6) * pout;
++    bits.push(`est. cost ${cost.toPrecision(4)} (per-mtok in ${pin} / out ${pout})`);
++  }
++  return bits;
++}
++
+ function fillLlmPoolPopover(b) {
+   const pop = document.getElementById("llm-pool-popover");
+   if (!pop || !b) return;
+@@ -1440,11 +1484,19 @@ function fillLlmPoolPopover(b) {
+     </div>`;
+   }
+ 
++  const descBits = poolDescriptorBits(b);
++  const tokBits = poolTokenBits(b);
++  const metaBits = [...descBits, ...tokBits];
++  const metaHtml = metaBits.length
++    ? `<div class="pool-pop-meta">${metaBits.map(t => `<div class="pool-pop-meta-row">${esc(t)}</div>`).join("")}</div>`
++    : "";
++
+   pop.innerHTML = `
+     <div class="pool-pop-head">
+       <div class="pool-pop-title">${esc(b.label || url || "backend")}</div>
+       <div class="pool-pop-sub">${esc(url || "—")}${place !== "—" ? ` · ${esc(place)}` : ""}</div>
+     </div>
++    ${metaHtml}
+     ${body}
+     <p class="pool-pop-cue">Chip warning is a cue to read logs — not a deck-critical by itself.</p>
+     <div class="pool-pop-links">
+@@ -1491,6 +1543,7 @@ function renderLlmPool(H) {
+   const wedged = H?.llm_suspect_wedged || [];
+   const aff = H?.llm_affinity_live;
+   const creds = H?.credentials;
++  const routing = H?.llm_routing;
+   const hasPool = !!(pool && pool.backends && pool.backends.length);
+   const hasAge = age != null;
+   const hasAff = !!(aff && (aff.hits != null || aff.misses != null || aff.hit_rate != null
+@@ -1498,9 +1551,20 @@ function renderLlmPool(H) {
+   const hasWedge = Array.isArray(wedged) && wedged.length > 0;
+   const tokenFailed = Number(creds?.token_verify_failed) || 0;
+   const auditDropped = Number(creds?.audit_log_dropped) || 0;
+-  const credsWarn = tokenFailed > 0 || auditDropped > 0;
+-
+-  if (!hasPool && !hasAge && !hasAff && !hasWedge && !credsWarn) {
++  const routeDenied = Number(creds?.credentialed_route_denied) || 0;
++  const noEligible = Number(routing?.routing_no_eligible_backend) || 0;
++  const atCapacity = Number(routing?.routing_backend_at_capacity) || 0;
++  const fitRejected = Number(routing?.routing_fit_rejected) || 0;
++  const extractN = Number(routing?.routed_role_extract) || 0;
++  const verifyN = Number(routing?.routed_role_verify) || 0;
++  const judgeN = Number(routing?.routed_role_judge) || 0;
++  // A5: own-door + routing refuses warn; A6 quiet role totals only when no refuse.
++  const routingRefuseWarn = noEligible > 0 || atCapacity > 0 || fitRejected > 0;
++  const credsWarn = tokenFailed > 0 || auditDropped > 0 || routeDenied > 0;
++  const hasRoutingQuiet = !routingRefuseWarn && (extractN > 0 || verifyN > 0 || judgeN > 0);
++  const poolLineWarn = hasWedge || credsWarn || routingRefuseWarn;
++
++  if (!hasPool && !hasAge && !hasAff && !hasWedge && !credsWarn && !routingRefuseWarn && !hasRoutingQuiet) {
+     panel.hidden = true;
+     list.innerHTML = "";
+     line.textContent = "";
+@@ -1531,8 +1595,29 @@ function renderLlmPool(H) {
+     const ageTxt = fmtLastEventAge(creds?.audit_log_dropped_last_ts);
+     bits.push("audit log dropped" + (ageTxt ? ` ${ageTxt}` : ""));
+   }
++  if (routeDenied > 0) {
++    const ageTxt = fmtLastEventAge(creds?.credentialed_route_denied_last_ts);
++    bits.push(`route denied ${routeDenied}` + (ageTxt ? ` ${ageTxt}` : ""));
++  }
++  if (noEligible > 0) {
++    const ageTxt = fmtLastEventAge(routing?.routing_no_eligible_backend_last_ts);
++    bits.push(`no eligible ${noEligible}` + (ageTxt ? ` ${ageTxt}` : ""));
++  }
++  if (atCapacity > 0) {
++    const ageTxt = fmtLastEventAge(routing?.routing_backend_at_capacity_last_ts);
++    bits.push(`at capacity ${atCapacity}` + (ageTxt ? ` ${ageTxt}` : ""));
++  }
++  if (fitRejected > 0) {
++    const ageTxt = fmtLastEventAge(routing?.routing_fit_rejected_last_ts);
++    bits.push(`fit rejected ${fitRejected}` + (ageTxt ? ` ${ageTxt}` : ""));
++  }
++  if (hasRoutingQuiet) {
++    if (extractN > 0) bits.push(`extract ${extractN}`);
++    if (verifyN > 0) bits.push(`verify ${verifyN}`);
++    if (judgeN > 0) bits.push(`judge ${judgeN}`);
++  }
+   const text = bits.join(" · ");
+-  line.className = "pool-line" + (hasWedge || credsWarn ? " warn" : "");
++  line.className = "pool-line" + (poolLineWarn ? " warn" : "");
+   if (credsWarn) {
+     const sep = text ? " · " : "";
+     line.innerHTML = `${esc(text)}${sep}<a class="pool-pop-link" href="/logs?source=credential_audit">credential audit</a>`;
+@@ -1718,7 +1803,12 @@ function renderSystemHealth(H) {
+   });
+ 
+   const hint = document.getElementById("system-hint");
+-  hint.textContent = gatewayConfigHint(H);
++  const hintText = gatewayConfigHint(H);
++  const unauthWarn = H?.config?.allow_unauthenticated_provider_keys === true;
++  if (hint) {
++    hint.className = "hint sidebar-hint" + (unauthWarn ? " warn" : "");
++    hint.textContent = hintText;
++  }
+   // Richer title: per-backend list + pool tuning when present (no secrets).
+   const cfg = H?.config;
+   if (hint && cfg?.present) {
+diff --git a/static/theme.css b/static/theme.css
+index 5be9387..ecb2e95 100644
+--- a/static/theme.css
++++ b/static/theme.css
+@@ -621,6 +621,7 @@ body.consolidation-open { overflow: hidden; }
+   line-height: 1.25;
+ }
+ .sidebar-hint { font-size: .68rem; margin-top: -.15rem; }
++.sidebar-hint.warn { color: var(--warn-bright); font-weight: 600; }
+ .section-title-tight {
+   margin: .35rem 0 .25rem;
+   padding-bottom: .25rem;
+@@ -768,6 +769,14 @@ button.pool-chip:focus-visible {
+   white-space: nowrap;
+   min-width: 0;
+ }
++.pool-pop-meta {
++  margin: .25rem 0 .4rem;
++  font-size: .72rem;
++  color: var(--muted);
++  line-height: 1.35;
++  word-break: break-word;
++}
++.pool-pop-meta-row + .pool-pop-meta-row { margin-top: .15rem; }
+ .pool-pop-empty {
+   margin: .2rem 0 .35rem;
+   color: var(--muted);
+diff --git a/tasks/plan.md b/tasks/plan.md
+index f3ffa23..a5e03ee 100644
+--- a/tasks/plan.md
++++ b/tasks/plan.md
+@@ -1,34 +1,41 @@
+-# Implementation Plan: Consume framework 0.9.8 credential last-event timestamps
++# Implementation Plan: Consume framework 0.9.9–0.9.13 LLM + credential surfaces
+ 
+ ## Overview
+ 
+-Framework **v0.9.8** (`fact:1314`, main `dc9b122`, PR #248) amended `fact:1307`.
+-`GET /memory/telemetry` `credentials` is still the three integer counters from
+-`fact:1297`, plus three **flat additive** sibling timestamps:
+-
+-- `token_verify_failed_last_ts`
+-- `daemon_tokens_issued_last_ts`
+-- `audit_log_dropped_last_ts`
+-
+-A `null` last_ts means “not in this process”, distinct from “just now”. The
+-shape is **not** `{count, last:{ts}}` — 1297 stays additive, `api_version`
+-stays **4**. The skill `status` human renderer now prints non-zero
+-`credentials` / `llm_faults` (the other 16 Aug finding). That client is
+-already shipped; this cycle is the **monitor**.
+-
+-Live on this workstation (gateway 0.9.8, already joined onto `/api/health`):
+-
+-```text
+-token_verify_failed=0 / last_ts=null
+-daemon_tokens_issued=2 / last_ts=2026-08-16T21:12:04Z
+-audit_log_dropped=0 / last_ts=null
+-llm_faults={}
+-```
+-
+-`system_health._join_llm_faults` already passes the credentials dict through.
+-The product gap is presentation: `token_verify_failed` is never rendered, and
+-`audit_log_dropped` has no age. `fact:1307` + `fact:1314`: pair the count with
+-last-event age so a stale one-off reads as historical.
++Monitor **v0.9.12** (`fact:1361`) already consumes framework **0.9.8**
++`credentials.*_last_ts` on the pool line. The gateway on this workstation is
++now **0.9.13** (`api_version` still **4**). Two adoption-suggestion facts
++were filed for this repo after that release:
++
++- **`fact:1337`** (gateway **0.9.9**, `fact:1335` on the framework side).
++  S-10 auth slimming is already satisfied (monitor sends the bearer; first
++  post-deploy poll was the authenticated shape). Two remaining suggestions:
++  render `credentialed_route_denied` + `*_last_ts`; surface
++  `config.allow_unauthenticated_provider_keys` when present **and true**.
++- **`fact:1359`** (gateway **0.9.13**, 2026-08-18). LLM contract notes:
++  401/403 on a *credentialed* liveness probe is now `ok`; `/health` gained
++  `llm_routing` and `llm_token_usage`; `config.llm_backends` gained additive
++  descriptors (`roles`, `n_ctx`, `private_ok`, `max_inflight`,
++  `price_per_mtok_*`). `/pool/status` `free_slots` / `serves_all` /
++  `counts_free_slot` are a **different** endpoint.
++
++Live on this host (measured 2026-08-18, monitor `/api/health` vs raw
++`bridge.get_health()`):
++
++| Surface | Raw `/health` or telemetry | Monitor `/api/health` today |
++|---------|----------------------------|-----------------------------|
++| `credentials.credentialed_route_denied` (+ last_ts) | 0 / null (passthrough) | present, **not rendered** |
++| `allow_unauthenticated_provider_keys` | **absent** (auth on) | absent |
++| `llm_routing` (6 counters + 6 last_ts) | present; extract=4 | **dropped** |
++| `llm_token_usage` per backend | 5000 has 5711/2003 tokens | **dropped** |
++| backend `roles` / `n_ctx` / prices / `max_inflight` | keys present, values null | **dropped** |
++| backend `private_ok` | `true` on all three | **dropped** |
++| DeepSeek chip `status` | `ok` (401-as-ok shipped) | `ok` — no special-case to retire |
++| `/pool/status` free_slots | not fetched | n/a |
++
++`system_health` only copies known config/pool fields and never puts
++`llm_routing` / `llm_token_usage` on the snapshot. The credentials dict is
++already passed through wholesale (I10).
+ 
+ Roles (`decision:1300` grounded on `fact:1184`):
+ 
+@@ -43,91 +50,145 @@ Do **not** commit `search_results.json` or `telemetry.json`.
+ 
+ - **A1. Division of surfaces (locked — `decision:1295`).** Dashboard carries
+   counters + last-event context only. Log lines stay on `/logs`.
+-- **A2. Flat siblings, not a restructure (`fact:1314`).** Do not nest
+-  credentials into `{count, last}`. Pass the dict through. Missing last_ts
+-  keys on older gateways stay missing — never invent timestamps.
+-- **A3. Own-door auth stays off LLM chips (locked — plan A4 / I3).**
+-  `token_verify_failed` is own-door. It never appears on a pool backend chip
+-  or in a chip popover. `audit_log_dropped` stays on the **pool line**.
+-- **A4. Age lives on the pool line.** When `token_verify_failed > 0`, append
+-  `token verify failed N` plus a relative age when `token_verify_failed_last_ts`
+-  is a parseable ISO string. When `audit_log_dropped > 0`, keep
+-  `audit log dropped` and append the same age form from
+-  `audit_log_dropped_last_ts` if present. Count 0 stays quiet (match skill
+-  `status`). Do **not** surface `daemon_tokens_issued` (normal start mint).
+-- **A5. Relative age, not a second clock.** Reuse the existing
+-  `fmtInflightAge` idea: “12m ago”, “2h ago”. Clock-skew / unparseable → omit
+-  the age, keep the count. Null last_ts + count > 0 (old gateway or
+-  never-stamped) → count only.
+-- **A6. Visibility.** If the only signal is a credentials warn (no pool / age /
+-  affinity / wedge), the pool panel must still show so the line is not hidden.
+-  Today `auditDropped` is computed then ignored in the hide predicate — fix
+-  that in the same `renderLlmPool` edit.
+-- **A7. No deck-critical.** These counters still must not flip `_overall_state`
+-  / the hero pill (I2).
+-- **A8. Deep link.** A credentials warn on the pool line may add a small link
+-  `/logs?source=credential_audit` (no backend filter — own-door). Do not invent
+-  a new Status-deck card.
+-- **A9. Secrets.** Never render tokens. last_ts is an ISO timestamp only.
++- **A2. No new HTTP client this cycle.** Stay on `bridge.get_health()` +
++  `get_telemetry()`. Do **not** add `GET /pool/status`. Gateway
++  `free_slots` / `serves_all` / `counts_free_slot` stay out of scope; the
++  pool line `free` remains the existing inflight-based count. Escalate if a
++  later fact puts those fields on `/health`.
++- **A3. Flat passthrough, no reshape.** `llm_routing` and `llm_token_usage`
++  go onto `/api/health` as the gateway sent them (values not rewritten;
++  `null` last_ts stays `null`; missing keys stay missing). Credentials
++  remain the telemetry dict (already includes `credentialed_route_denied`).
++- **A4. Own-door stays off chips (locked — plan A3 / I3 / I11).**
++  `token_verify_failed` and `credentialed_route_denied` never appear on a
++  pool backend chip or in a chip popover. `audit_log_dropped` stays on the
++  pool line. `daemon_tokens_issued` stays hidden.
++- **A5. Pool-line warns (count 0 quiet).** When `credentialed_route_denied > 0`,
++  append `route denied N` plus relative age from
++  `credentialed_route_denied_last_ts` (same `fmtLastEventAge` as 0.9.12).
++  When `routing_no_eligible_backend`, `routing_backend_at_capacity`, or
++  `routing_fit_rejected` is `> 0`, append a short label + age from the
++  matching `*_last_ts`. Warn class if any of those or the existing
++  credential warns fire. Hide predicate includes these warns (A6 of 0.9.12).
++- **A6. Quiet routing totals.** If any `routed_role_extract|verify|judge > 0`
++  and no routing-refuse warn, show a compact `extract N` (etc.) on the pool
++  line **without** warn class. Count 0 stays off the line.
++- **A7. Token usage lives in the chip popover, not the chip face.** Join
++  `llm_token_usage[url]` onto the matching backend as
++  `tokens: {prompt_total, completion_total, last_ts}` when that URL has an
++  entry; omit the key when absent. Do **not** compute a poll-to-poll delta
++  (in-process counters reset on gateway restart — `fact:1359`). Optional
++  cost line only when that backend has a numeric `price_per_mtok_in` /
++  `price_per_mtok_out` **and** token totals: `(prompt/1e6)*in +
++  (completion/1e6)*out`. Never invent prices.
++- **A8. Descriptor join.** Pass `roles`, `n_ctx`, `private_ok`,
++  `max_inflight`, `price_per_mtok_in`, `price_per_mtok_out` from
++  `config.llm_backends` onto `config.backends[]` and the matching pool
++  chip. Render in the popover when the value is not `null` / missing. Chip
++  face stays compact (placement + model + existing inflight/routed meta).
++- **A9. Unauth-keys beacon.** If `config.allow_unauthenticated_provider_keys`
++  is present and `true` on raw `/health.config` (or a top-level boolean of
++  the same name), put `allow_unauthenticated_provider_keys: true` on
++  `snapshot.config` and append a warn fragment on the Infrastructure hint
++  (`gatewayConfigHint`). Absent or `false` stays silent — do not invent the
++  key.
++- **A10. 401-as-ok is a no-op.** Monitor already trusts `/health.llm_backends`
++  status. Live DeepSeek is `ok`. Do not add a 401 special-case; do not
++  treat `llm_faults.credential` as chip-down. No lore to delete in code.
++- **A11. No deck-critical.** New counters / beacons do not flip
++  `_overall_state` / the hero pill (I2).
++- **A12. Doctor.** Coordinator block reports `has_llm_routing` /
++  `has_llm_token_usage` from key presence on `/health`. Human line names
++  them next to `llm_pool` when present. `has_credentials` already covers
++  the new credential counter.
++- **A13. Secrets.** Never render tokens or provider keys. last_ts is ISO
++  only. Prices are public config numbers, not secrets.
++- **A14. `api_version` stays 4.**
+ 
+ ## Numbered invariants (mutation-tested)
+ 
+ | Id | Rule | Test lives in |
+ |----|------|----------------|
+-| I10 | `/api/health.credentials` preserves `*_last_ts` sibling keys when present; absent keys stay absent; values are not rewritten; `null` stays `null`. | `tests/test_system_health.py` |
+-| I11 | `token_verify_failed` and any `*_last_ts` never appear on `llm_pool.backends[]` (extends I3). | `tests/test_system_health.py` |
+-| I2 | Unchanged: credential counters / last_ts do not change `_overall_state`. | existing I2 + last_ts fixture |
+-| I3 | Unchanged: `audit_log_dropped` stays top-level credentials, not a chip. | existing |
+-
+-UI A4–A6 are browser-verified (no JS test harness). Mutation on I10: a test
+-that only checks `token_verify_failed` still passes if last_ts is dropped —
+-pin the **value** of each last_ts key.
++| I10 | Unchanged: credentials dict including new siblings is not rewritten. | existing + I14 |
++| I14 | `/api/health.credentials` preserves `credentialed_route_denied` and `credentialed_route_denied_last_ts` when present; absent keys stay absent; `null` stays `null`. | `tests/test_system_health.py` |
++| I11 | Own-door keys (`token_verify_failed`, `credentialed_route_denied`, all `*_last_ts`) never appear on `llm_pool.backends[]`. | `tests/test_system_health.py` |
++| I12 | `/api/health.llm_routing` is the `/health.llm_routing` dict when present (pin every counter + every last_ts value); absent key → snapshot key absent or null, never invented zeros. | `tests/test_system_health.py` |
++| I13 | `/api/health.llm_token_usage` preserves per-URL totals + `tokens_last_ts`; backends without an entry are not invented. Joined `tokens` on a pool backend matches that URL's blob. | `tests/test_system_health.py` |
++| I16 | Descriptor fields on `config.backends[]` and pool backends are copied when present; missing/null stay missing/null; never inferred from URL. | `tests/test_system_health.py` |
++| I17 | `config.allow_unauthenticated_provider_keys` appears on the snapshot only when the gateway sent it. | `tests/test_system_health.py` |
++| I2 | Unchanged: credential / routing / token counters do not change `_overall_state`. | existing I2 + new fixtures |
++| I3 | Unchanged: own-door credentials stay top-level, not a chip. | existing |
++
++UI A5–A9 are browser-verified after merger restart (no JS test harness).
++Mutation on I12/I13: a test that only checks key presence still passes if
++values are rewritten — pin the **values**.
+ 
+ ## File ownership
+ 
+ | Unit | Owner files | Must not touch |
+ |------|-------------|----------------|
+-| **A — passthrough tests** | `tests/test_system_health.py`; `src/sm_telemetry_monitor/system_health.py` **only if** a test proves the dict is stripped (today it is not) | version files, CHANGELOG, static UI, docs |
+-| **B — pool-line age** (after A) | `static/dashboard.html`; `static/theme.css` only if the line needs a link class that does not already exist | Python, `logs.html`, version files |
++| **A — passthrough + join** | `tests/test_system_health.py`, `src/sm_telemetry_monitor/system_health.py`; `tests/test_doctor.py`, `src/sm_telemetry_monitor/doctor.py` | version files, CHANGELOG, static UI, docs |
++| **B — pool line / popover / hint** (after A) | `static/dashboard.html`; `static/theme.css` only if a new warn class is required | Python, `logs.html`, version files |
+ | **M — merge / release** | `pyproject.toml`, `src/sm_telemetry_monitor/__init__.py`, `CHANGELOG.md`, `README.md`, `AGENTS.md`, `GEMINI.md` if it pins a version, `docs/SISTER_PROJECT.md`, `.env.example`, `.grok/skills/shared-memory-monitor/SKILL.md` if the compatibility line is listed | feature code |
+ 
+ ## Task List
+ 
+-### Task 1: Pin last_ts passthrough (I10, I11)
++### Task 1: Pin passthrough + join (I12–I17, I2, I11)
+ 
+-**Description:** Extend `LlmFaultsCredentialsJoinTests` so a credentials blob
+-with the three 0.9.8 last_ts siblings survives `_join_llm_faults` / the
+-snapshot unchanged. Older fixture without those keys still has no invented
+-timestamps.
++**Description:** Extend `LlmFaultsCredentialsJoinTests` / `GatewayConfigTests`
++so 0.9.9 credential siblings, 0.9.13 `llm_routing`, `llm_token_usage`,
++backend descriptors, and the unauth-keys boolean survive
++`system_health_snapshot` unchanged. Older fixtures without those keys still
++have no invented fields. Then implement the minimum `system_health.py`
++(and doctor flags) to make the tests pass.
+ 
+ **Acceptance criteria:**
+-- [ ] I10 and I11 fail before any Python change (or stay green if passthrough
+-      already holds — then no `system_health.py` edit).
+-- [ ] I2 still green with last_ts populated and `token_verify_failed > 0`.
+-
+-**Verification:** `uv run pytest -q tests/test_system_health.py`
++- [ ] I14 pins `credentialed_route_denied` + last_ts value (including `null`).
++- [ ] I12 pins all six routing counters and six last_ts values from a
++      fixture copied from live 0.9.13 shape.
++- [ ] I13 pins per-URL token totals; a backend with no usage entry has no
++      invented `tokens` object.
++- [ ] I16 pins `private_ok=True` and `roles is None` without dropping the
++      keys when the gateway sent them; a pre-0.9.13 fixture has none of
++      the new descriptor keys.
++- [ ] I17: key absent → not on `config`; key `true` → on `config`.
++- [ ] I2 still green with routing refuses > 0, tokens populated, and
++      `credentialed_route_denied > 0`.
++- [ ] I11 includes `credentialed_route_denied` / its last_ts.
++- [ ] Doctor coordinator JSON has `has_llm_routing` / `has_llm_token_usage`;
++      `format_report` names them when true.
++
++**Verification:** `uv run pytest -q tests/test_system_health.py tests/test_doctor.py`
+ 
+ **Dependencies:** None
+-**Estimated scope:** S
++**Estimated scope:** M
+ 
+-### Task 2: Pool-line last-failure age
++### Task 2: Pool line, popover, infrastructure hint
+ 
+-**Description:** In `renderLlmPool`, implement A4–A8. Count 0 stays quiet.
+-Warn class if `audit_log_dropped > 0` **or** `token_verify_failed > 0`.
++**Description:** In `renderLlmPool` / `fillLlmPoolPopover` / `gatewayConfigHint`,
++implement A5–A9. Count 0 stays quiet. Reuse `fmtLastEventAge`.
+ 
+ **Acceptance criteria:**
+-- [ ] Injected `token_verify_failed=2` + last_ts ~12 minutes ago shows
+-      `token verify failed 2` and a relative age; no LLM chip warn from this.
+-- [ ] Injected count>0 without last_ts shows the count only.
+-- [ ] `audit_log_dropped > 0` still warns the line and can show age.
+-- [ ] Hide predicate includes credentials warns (A6).
++- [ ] Injected `credentialed_route_denied=2` + last_ts ~12 minutes ago shows
++      `route denied 2` and a relative age; no LLM chip warn from this.
++- [ ] Injected `routing_no_eligible_backend=1` (+ last_ts) warns the pool
++      line; `routed_role_extract=4` with refuses=0 shows `extract 4` without
++      warn.
++- [ ] Popover shows token totals + last age when `tokens` present; shows
++      `private_ok` / `roles` / `n_ctx` / `max_inflight` only when set;
++      cost line only when prices are numeric.
++- [ ] `config.allow_unauthenticated_provider_keys === true` adds a warn
++      fragment on the Infrastructure hint; absent/false does not.
++- [ ] Hide predicate includes credential + routing warns.
+ - [ ] Hero / deck status unchanged (I2).
+-- [ ] Desktop and ~400px sidebar: line wraps, does not overflow.
++- [ ] Desktop and ~400px sidebar: line wraps, popover does not overflow.
+ 
+-**Verification:** Browser on `http://127.0.0.1:8765/` after merger restarts the
+-user unit. Live today is count=0 — use a console fixture on `H.credentials`
+-or a temporary health override documented in the handoff. Check `/logs` still
+-loads. Do not leave a temporary override in the commit.
++**Verification:** Browser on `http://127.0.0.1:8765/` after merger restarts
++the user unit. Live today is refuses=0 and route-denied=0 — use a console
++fixture on `H.credentials` / `H.llm_routing` or a temporary health override
++documented in the handoff. Check `/logs` still loads. Do not leave a
++temporary override in the commit. Tokens on localhost:5000 are live and
++can be checked without a fixture.
+ 
+ **Dependencies:** Task 1
+ **Estimated scope:** S
+@@ -136,39 +197,41 @@ loads. Do not leave a temporary override in the commit.
+ - [ ] `uv run pytest -q`
+ - [ ] No version/CHANGELOG edits from the builder
+ 
+-### Task 3: Review + merge + v0.9.12 (merger only)
++### Task 3: Review + merge + v0.9.13 (merger only)
+ 
+ **Description:** Five-axis review against this plan. Then merger: bump
+-**0.9.11 → 0.9.12**, CHANGELOG, docs that name framework **0.9.8** last_ts
+-and fix the stale installer bits (SISTER_PROJECT telemetry table,
+-AGENTS Phase-3 example, `.env.example` still says `api_version 3`).
+-Screenshots only if the pool line layout actually changed. Restart user
+-unit, smoke, `pre-publish-check.sh`, `uv build`, push `origin main`,
+-`gh release create v0.9.12`.
++**0.9.12 → 0.9.13**, CHANGELOG, docs that name framework **0.9.9**
++`credentialed_route_denied` and **0.9.13** `llm_routing` /
++`llm_token_usage` / backend descriptors. Screenshots only if the pool
++line or popover layout actually changed. Restart user unit, smoke,
++`pre-publish-check.sh`, `uv build`, push `origin main`,
++`gh release create v0.9.13`.
+ 
+ **Acceptance criteria:**
+ - [ ] Critical/Required review findings resolved or operator-overruled.
+ - [ ] Version consistent in pyproject, `__init__`, CHANGELOG, README, AGENTS,
+       SISTER_PROJECT (and GEMINI if it pins).
+-- [ ] Tag `v0.9.12` + GitHub release with wheel/sdist.
++- [ ] Tag `v0.9.13` + GitHub release with wheel/sdist.
+ 
+ **Dependencies:** Tasks 1–2 + review
+ **Estimated scope:** M
+ 
+ ## Out of scope
+ 
+-- Framework / skill edits (already shipped in 0.9.8).
++- `GET /pool/status` and `free_slots` / `serves_all` / `counts_free_slot`.
++- Framework / skill edits.
+ - Reshaping credentials to `{count, last}`.
+-- Painting `token_verify_failed` on LLM chips.
+-- Surfacing `daemon_tokens_issued` on the dashboard.
+-- A5 `/health` slimming.
+-- Inventing monitor-side timestamps or reading the credential log to recover age.
++- Painting own-door counters on LLM chips.
++- Surfacing `daemon_tokens_issued`.
++- Inventing monitor-side timestamps, prices, or token deltas.
++- Special-casing DeepSeek / 401 probe (already `ok` on the wire).
+ - Committing `search_results.json` / `telemetry.json`.
+ 
+ ## Risks
+ 
+ | Risk | Impact | Mitigation |
+ |------|--------|------------|
+-| Live count is 0 — cannot see the warn path | Med | Console fixture / documented inject; tests pin the payload |
+-| Relative-age wording vs skill `_age_phrase` | Low | Same idea, not a shared module — do not import framework code |
+-| Screenshot / layout drift | Low | Recapture `docs/images/dashboard.png` only if the line is visibly new |
++| Live refuse/denied counts are 0 | Med | Console fixture / documented inject; tests pin the payload |
++| Token totals reset on gateway restart | Med | Never subtract consecutive polls; show totals + last_ts only |
++| Descriptor/price fields are null on this host | Low | Hide empty; tests pin both present-null and absent |
++| Screenshot / layout drift | Low | Recapture `docs/images/dashboard.png` only if the line/popover is visibly new |
+diff --git a/tasks/todo.md b/tasks/todo.md
+index 79bccc0..4328c39 100644
+--- a/tasks/todo.md
++++ b/tasks/todo.md
+@@ -1,18 +1,18 @@
+-# TODO: Consume framework 0.9.8 credential last-event timestamps
++# TODO: Consume framework 0.9.9–0.9.13 LLM + credential surfaces
+ 
+ ## Phase 1 — Signal
+-- [x] Task 1: Pin `*_last_ts` passthrough (I10, I11)
+-- [x] Task 2: Pool-line last-failure age (A4–A8)
++- [x] Task 1: Pin passthrough + join (I12–I17, I2, I11) + doctor flags
++- [x] Task 2: Pool line, popover, infrastructure hint (A5–A9)
+ 
+ ## Checkpoint
+ - [x] Tests pass; builder did not edit version files / CHANGELOG
+ 
+ ## Phase 2 — Release (Grok 4.6)
+-- [x] Five-axis review against `tasks/plan.md`
+-- [ ] Task 3: Merge to main, version 0.9.12, push, tag, `gh release create`
++- [x] Five-axis review against `tasks/plan.md` (Required: null-price cost guard — fixed `b618fcb`)
++- [x] Task 3: Merge to main, version 0.9.13, push, tag, `gh release create`
+ 
+ ## Standing Definition of Done (every task)
+-- [x] Acceptance criteria met
+-- [x] Tests fail without the change and pass with it (or documented already-green passthrough)
+-- [x] No unrelated files touched
+-- [x] Builders did not edit version files / CHANGELOG
++- [ ] Acceptance criteria met
++- [ ] Tests fail without the change and pass with it (or documented already-green passthrough)
++- [ ] No unrelated files touched
++- [ ] Builders did not edit version files / CHANGELOG
+diff --git a/tests/test_doctor.py b/tests/test_doctor.py
+index 4489f11..82921da 100644
+--- a/tests/test_doctor.py
++++ b/tests/test_doctor.py
+@@ -60,6 +60,25 @@ class DoctorTests(unittest.TestCase):
+         self.assertEqual(block["llm_backend_count"], 2)
+         self.assertEqual(block["llm_local_count"], 1)
+         self.assertEqual(block["llm_external_count"], 1)
++        # Absent 0.9.13 keys stay false (I8 — key presence, not content)
++        self.assertFalse(block["has_llm_routing"])
++        self.assertFalse(block["has_llm_token_usage"])
++
++    def test_coordinator_llm_routing_and_token_usage_key_presence(self):
++        """Coordinator flags llm_routing / llm_token_usage from /health key presence."""
++        with patch("sm_telemetry_monitor.doctor.get_health", return_value={
++            "status": "ok",
++            "version": "0.9.13",
++            "api_version": 4,
++            "llm_pool": {"http://localhost:5000": {"inflight": 0}},
++            "llm_routing": {},
++            "llm_token_usage": {},
++        }):
++            from sm_telemetry_monitor.doctor import _check_coordinator
++            block = _check_coordinator()
++        self.assertTrue(block["has_llm_pool"])
++        self.assertTrue(block["has_llm_routing"])
++        self.assertTrue(block["has_llm_token_usage"])
+ 
+     def test_telemetry_panel_flags(self):
+         with patch("sm_telemetry_monitor.doctor.get_telemetry", return_value={
+@@ -145,6 +164,46 @@ class DoctorTests(unittest.TestCase):
+         self.assertRegex(text, r"telemetry: ok · .*llm_faults")
+         self.assertRegex(text, r"telemetry: ok · .*credentials")
+ 
++    def test_format_report_names_llm_routing_and_token_usage(self):
++        report = {
++            "monitor_root": "/tmp/mon",
++            "gateway_client": {
++                "mode": "httpx",
++                "coordinator_url": "http://localhost:8888",
++                "agent_token_source": "monitor",
++            },
++            "env_sources": [],
++            "keys": {"AGENT_TOKEN": "set", "agent_token_source": "monitor"},
++            "local_data": {"samples": 0, "last_at": None},
++            "connectivity": {
++                "coordinator": {
++                    "ok": True,
++                    "version": "0.9.13",
++                    "api_version": 4,
++                    "client_api_version": 4,
++                    "compat": "ok",
++                    "has_llm_pool": True,
++                    "has_llm_routing": True,
++                    "has_llm_token_usage": True,
++                },
++                "telemetry": {"ok": True},
++                "neo4j_breakdown": {"ok": True},
++                "read_role": {"ok": True},
++            },
++            "logs": {
++                "log_paths": {"log_dir_exists": True, "log_dir": "/tmp"},
++                "journal": {"ok": True, "unit": "x", "scope": "user"},
++            },
++            "features": [],
++        }
++        text = format_report(report)
++        self.assertIn("llm_pool", text)
++        self.assertIn("llm_routing", text)
++        self.assertIn("llm_token_usage", text)
++        self.assertRegex(text, r"coordinator: ok · .*llm_pool")
++        self.assertRegex(text, r"coordinator: ok · .*llm_routing")
++        self.assertRegex(text, r"coordinator: ok · .*llm_token_usage")
++
+     def test_dashboard_history_ready_when_samples(self):
+         checks = {
+             "keys": {"AGENT_TOKEN": "set", "agent_token_source": "monitor"},
+diff --git a/tests/test_system_health.py b/tests/test_system_health.py
+index be75831..c7fa595 100644
+--- a/tests/test_system_health.py
++++ b/tests/test_system_health.py
+@@ -385,6 +385,125 @@ class GatewayConfigTests(unittest.TestCase):
+         self.assertTrue(snap["config"]["present"])
+         self.assertEqual(snap["config"]["backend_count"], 1)
+ 
++    def test_i16_descriptors_copied_including_explicit_null(self):
++        """I16: roles/n_ctx/private_ok/max_inflight/prices copy when present.
++
++        Mutation: checking only private_ok=True still passes if roles is dropped
++        when null — pin roles is None with the key kept.
++        """
++        health = {
++            **_pool_gateway(),
++            "config": {
++                "llm_backends": [
++                    {
++                        "url": "http://localhost:5000",
++                        "weight": 1.0,
++                        "has_credential": False,
++                        "model": None,
++                        "private_ok": True,
++                        "roles": None,
++                        "n_ctx": None,
++                        "max_inflight": None,
++                        "price_per_mtok_in": None,
++                        "price_per_mtok_out": None,
++                    },
++                    {
++                        "url": "http://localhost:4000",
++                        "weight": 1.0,
++                        "has_credential": False,
++                        "private_ok": True,
++                        "roles": None,
++                        "n_ctx": 8192,
++                        "max_inflight": 2,
++                        "price_per_mtok_in": 0.14,
++                        "price_per_mtok_out": 0.28,
++                    },
++                ],
++            },
++        }
++        cfg = _gateway_config(health)
++        by_url = {b["url"]: b for b in cfg["backends"]}
++        b5000 = by_url["http://localhost:5000"]
++        self.assertTrue(b5000["private_ok"])
++        self.assertIn("roles", b5000)
++        self.assertIsNone(b5000["roles"])
++        self.assertIn("n_ctx", b5000)
++        self.assertIsNone(b5000["n_ctx"])
++        self.assertIn("max_inflight", b5000)
++        self.assertIsNone(b5000["max_inflight"])
++        self.assertIn("price_per_mtok_in", b5000)
++        self.assertIsNone(b5000["price_per_mtok_in"])
++        self.assertIn("price_per_mtok_out", b5000)
++        self.assertIsNone(b5000["price_per_mtok_out"])
++        b4000 = by_url["http://localhost:4000"]
++        self.assertEqual(b4000["n_ctx"], 8192)
++        self.assertEqual(b4000["max_inflight"], 2)
++        self.assertEqual(b4000["price_per_mtok_in"], 0.14)
++        self.assertEqual(b4000["price_per_mtok_out"], 0.28)
++
++        pool = _llm_pool_summary(health)
++        p_by_url = {b["url"]: b for b in pool["backends"]}
++        self.assertTrue(p_by_url["http://localhost:5000"]["private_ok"])
++        self.assertIn("roles", p_by_url["http://localhost:5000"])
++        self.assertIsNone(p_by_url["http://localhost:5000"]["roles"])
++        self.assertEqual(p_by_url["http://localhost:4000"]["n_ctx"], 8192)
++        self.assertEqual(p_by_url["http://localhost:4000"]["price_per_mtok_in"], 0.14)
++
++    def test_i16_pre_0913_fixture_has_no_invented_descriptors(self):
++        """I16: older config backends must not gain invented descriptor keys."""
++        health = {
++            **_pool_gateway(),
++            "config": {
++                "llm_backends": [
++                    {"url": "http://localhost:5000", "weight": 1.0,
++                     "has_credential": False, "model": None},
++                    {"url": "http://localhost:4000", "weight": 1.0,
++                     "has_credential": True, "model": "cloud-model"},
++                ],
++            },
++        }
++        descriptor_keys = (
++            "roles", "n_ctx", "private_ok", "max_inflight",
++            "price_per_mtok_in", "price_per_mtok_out",
++        )
++        cfg = _gateway_config(health)
++        for b in cfg["backends"]:
++            for key in descriptor_keys:
++                self.assertNotIn(key, b)
++        pool = _llm_pool_summary(health)
++        for b in pool["backends"]:
++            for key in descriptor_keys:
++                self.assertNotIn(key, b)
++
++    def test_i17_allow_unauthenticated_only_when_sent(self):
++        """I17: allow_unauthenticated_provider_keys appears only when gateway sent it."""
++        base_cfg = {
++            "llm_backends": [{"url": "http://localhost:4000", "weight": 1.0}],
++        }
++        cfg_absent = _gateway_config({**_healthy_gateway(), "config": dict(base_cfg)})
++        self.assertNotIn("allow_unauthenticated_provider_keys", cfg_absent)
++
++        cfg_true = _gateway_config({
++            **_healthy_gateway(),
++            "config": {**base_cfg, "allow_unauthenticated_provider_keys": True},
++        })
++        self.assertTrue(cfg_true["allow_unauthenticated_provider_keys"])
++
++        cfg_false = _gateway_config({
++            **_healthy_gateway(),
++            "config": {**base_cfg, "allow_unauthenticated_provider_keys": False},
++        })
++        self.assertIn("allow_unauthenticated_provider_keys", cfg_false)
++        self.assertFalse(cfg_false["allow_unauthenticated_provider_keys"])
++
++        # Top-level health boolean of the same name also counts.
++        cfg_top = _gateway_config({
++            **_healthy_gateway(),
++            "allow_unauthenticated_provider_keys": True,
++            "config": dict(base_cfg),
++        })
++        self.assertTrue(cfg_top["allow_unauthenticated_provider_keys"])
++
+ 
+ class LlmPoolTests(unittest.TestCase):
+     """Multi-backend pool (v0.6.1+): per-backend busy on the LLM tile, pool-slot
+@@ -755,11 +874,16 @@ class LlmFaultsCredentialsJoinTests(unittest.TestCase):
+         self.assertNotIn("audit_log_dropped_last_ts", creds)
+ 
+     def test_i11_own_door_keys_never_on_backends(self):
+-        """I11: token_verify_failed and *_last_ts stay off llm_pool.backends[]."""
+-        last_ts_keys = (
++        """I11: own-door credential keys (incl. route denied) stay off backends[]."""
++        own_door_keys = (
++            "token_verify_failed",
+             "token_verify_failed_last_ts",
++            "daemon_tokens_issued",
+             "daemon_tokens_issued_last_ts",
++            "audit_log_dropped",
+             "audit_log_dropped_last_ts",
++            "credentialed_route_denied",
++            "credentialed_route_denied_last_ts",
+         )
+         snap = self._snap(
+             _pool_gateway(),
+@@ -772,18 +896,220 @@ class LlmFaultsCredentialsJoinTests(unittest.TestCase):
+                     "daemon_tokens_issued_last_ts": "2026-08-16T21:12:04Z",
+                     "audit_log_dropped": 2,
+                     "audit_log_dropped_last_ts": None,
++                    "credentialed_route_denied": 2,
++                    "credentialed_route_denied_last_ts": "2026-08-18T16:00:00+00:00",
+                 },
+             ),
+         )
+         for b in snap["llm_pool"]["backends"]:
+-            self.assertNotIn("token_verify_failed", b)
+-            for key in last_ts_keys:
++            for key in own_door_keys:
+                 self.assertNotIn(key, b)
+             dumped = json.dumps(b)
+-            self.assertNotIn("token_verify_failed", dumped)
+-            for key in last_ts_keys:
++            for key in own_door_keys:
+                 self.assertNotIn(key, dumped)
+ 
++    def test_i14_credentialed_route_denied_passthrough(self):
++        """I14: credentialed_route_denied + last_ts survive (including null)."""
++        denied_ts = "2026-08-18T15:50:00+00:00"
++        snap = self._snap(
++            _pool_gateway(),
++            self._base_telemetry(
++                llm_faults={},
++                credentials={
++                    "token_verify_failed": 0,
++                    "token_verify_failed_last_ts": None,
++                    "daemon_tokens_issued": 0,
++                    "daemon_tokens_issued_last_ts": None,
++                    "audit_log_dropped": 0,
++                    "audit_log_dropped_last_ts": None,
++                    "credentialed_route_denied": 2,
++                    "credentialed_route_denied_last_ts": denied_ts,
++                },
++            ),
++        )
++        creds = snap["credentials"]
++        self.assertEqual(creds["credentialed_route_denied"], 2)
++        self.assertEqual(creds["credentialed_route_denied_last_ts"], denied_ts)
++
++        snap_null = self._snap(
++            _pool_gateway(),
++            self._base_telemetry(
++                llm_faults={},
++                credentials={
++                    "credentialed_route_denied": 0,
++                    "credentialed_route_denied_last_ts": None,
++                },
++            ),
++        )
++        self.assertEqual(snap_null["credentials"]["credentialed_route_denied"], 0)
++        self.assertIn("credentialed_route_denied_last_ts", snap_null["credentials"])
++        self.assertIsNone(snap_null["credentials"]["credentialed_route_denied_last_ts"])
++
++        snap_absent = self._snap(
++            _pool_gateway(),
++            self._base_telemetry(
++                llm_faults={},
++                credentials={"token_verify_failed": 0, "audit_log_dropped": 0},
++            ),
++        )
++        self.assertNotIn("credentialed_route_denied", snap_absent["credentials"])
++        self.assertNotIn("credentialed_route_denied_last_ts", snap_absent["credentials"])
++
++    def test_i12_llm_routing_passthrough_pins_values(self):
++        """I12: llm_routing is the raw /health dict — pin every counter + last_ts."""
++        llm_routing = {
++            "routed_role_extract": 4,
++            "routed_role_extract_last_ts": "2026-08-18T16:12:40.809531+00:00",
++            "routed_role_verify": 0,
++            "routed_role_verify_last_ts": None,
++            "routed_role_judge": 0,
++            "routed_role_judge_last_ts": None,
++            "routing_no_eligible_backend": 0,
++            "routing_no_eligible_backend_last_ts": None,
++            "routing_fit_rejected": 0,
++            "routing_fit_rejected_last_ts": None,
++            "routing_backend_at_capacity": 0,
++            "routing_backend_at_capacity_last_ts": None,
++        }
++        health = {**_pool_gateway(), "llm_routing": llm_routing}
++        snap = self._snap(health, self._base_telemetry(llm_faults={}))
++        self.assertEqual(snap["llm_routing"], llm_routing)
++        # Pin values individually so a rewrite of zeros would fail.
++        r = snap["llm_routing"]
++        self.assertEqual(r["routed_role_extract"], 4)
++        self.assertEqual(
++            r["routed_role_extract_last_ts"],
++            "2026-08-18T16:12:40.809531+00:00",
++        )
++        self.assertEqual(r["routed_role_verify"], 0)
++        self.assertIsNone(r["routed_role_verify_last_ts"])
++        self.assertEqual(r["routed_role_judge"], 0)
++        self.assertIsNone(r["routed_role_judge_last_ts"])
++        self.assertEqual(r["routing_no_eligible_backend"], 0)
++        self.assertIsNone(r["routing_no_eligible_backend_last_ts"])
++        self.assertEqual(r["routing_fit_rejected"], 0)
++        self.assertIsNone(r["routing_fit_rejected_last_ts"])
++        self.assertEqual(r["routing_backend_at_capacity"], 0)
++        self.assertIsNone(r["routing_backend_at_capacity_last_ts"])
++
++    def test_i12_llm_routing_absent_not_invented(self):
++        """I12: absent llm_routing → snapshot key absent or null, never zeros."""
++        snap = self._snap(_pool_gateway(), self._base_telemetry(llm_faults={}))
++        routing = snap.get("llm_routing")
++        self.assertTrue(routing is None or "llm_routing" not in snap)
++        if isinstance(routing, dict):
++            self.fail("invented llm_routing dict must not appear when gateway omitted it")
++
++    def test_i13_llm_token_usage_passthrough_and_join(self):
++        """I13: per-URL token totals preserved; join onto matching pool backend only."""
++        llm_token_usage = {
++            "http://localhost:5000": {
++                "tokens_prompt_total": 5711,
++                "tokens_completion_total": 2003,
++                "tokens_last_ts": "2026-08-18T16:12:39.677154+00:00",
++            },
++            "http://localhost:4000": {
++                "tokens_prompt_total": 0,
++                "tokens_completion_total": 0,
++                "tokens_last_ts": None,
++            },
++        }
++        health = {**_pool_gateway(), "llm_token_usage": llm_token_usage}
++        snap = self._snap(health, self._base_telemetry(llm_faults={}))
++        self.assertEqual(snap["llm_token_usage"], llm_token_usage)
++        usage = snap["llm_token_usage"]
++        self.assertEqual(usage["http://localhost:5000"]["tokens_prompt_total"], 5711)
++        self.assertEqual(usage["http://localhost:5000"]["tokens_completion_total"], 2003)
++        self.assertEqual(
++            usage["http://localhost:5000"]["tokens_last_ts"],
++            "2026-08-18T16:12:39.677154+00:00",
++        )
++        self.assertEqual(usage["http://localhost:4000"]["tokens_prompt_total"], 0)
++        self.assertIsNone(usage["http://localhost:4000"]["tokens_last_ts"])
++
++        by_url = {b["url"]: b for b in snap["llm_pool"]["backends"]}
++        self.assertEqual(
++            by_url["http://localhost:5000"]["tokens"],
++            {
++                "prompt_total": 5711,
++                "completion_total": 2003,
++                "last_ts": "2026-08-18T16:12:39.677154+00:00",
++            },
++        )
++        self.assertEqual(
++            by_url["http://localhost:4000"]["tokens"],
++            {"prompt_total": 0, "completion_total": 0, "last_ts": None},
++        )
++
++    def test_i13_backend_without_usage_entry_has_no_tokens(self):
++        """I13: do not invent tokens or backends for URLs missing from usage."""
++        llm_token_usage = {
++            "http://localhost:5000": {
++                "tokens_prompt_total": 100,
++                "tokens_completion_total": 20,
++                "tokens_last_ts": "2026-08-18T16:00:00+00:00",
++            },
++        }
++        health = {**_pool_gateway(), "llm_token_usage": llm_token_usage}
++        snap = self._snap(health, self._base_telemetry(llm_faults={}))
++        by_url = {b["url"]: b for b in snap["llm_pool"]["backends"]}
++        self.assertIn("tokens", by_url["http://localhost:5000"])
++        self.assertNotIn("tokens", by_url["http://localhost:4000"])
++        # Never invent a usage backend that was not in the pool.
++        self.assertNotIn("https://missing.example/v1", by_url)
++        self.assertEqual(len(snap["llm_token_usage"]), 1)
++
++    def test_i13_llm_token_usage_absent_not_invented(self):
++        snap = self._snap(_pool_gateway(), self._base_telemetry(llm_faults={}))
++        usage = snap.get("llm_token_usage")
++        self.assertTrue(usage is None or "llm_token_usage" not in snap)
++        for b in snap["llm_pool"]["backends"]:
++            self.assertNotIn("tokens", b)
++
++    def test_i2_routing_tokens_route_denied_do_not_change_status(self):
++        """I2: routing refuses, tokens, credentialed_route_denied leave status ok."""
++        llm_routing = {
++            "routed_role_extract": 4,
++            "routed_role_extract_last_ts": "2026-08-18T16:12:40.809531+00:00",
++            "routed_role_verify": 0,
++            "routed_role_verify_last_ts": None,
++            "routed_role_judge": 0,
++            "routed_role_judge_last_ts": None,
++            "routing_no_eligible_backend": 3,
++            "routing_no_eligible_backend_last_ts": "2026-08-18T16:10:00+00:00",
++            "routing_fit_rejected": 1,
++            "routing_fit_rejected_last_ts": "2026-08-18T16:09:00+00:00",
++            "routing_backend_at_capacity": 2,
++            "routing_backend_at_capacity_last_ts": "2026-08-18T16:08:00+00:00",
++        }
++        llm_token_usage = {
++            "http://localhost:5000": {
++                "tokens_prompt_total": 5711,
++                "tokens_completion_total": 2003,
++                "tokens_last_ts": "2026-08-18T16:12:39.677154+00:00",
++            },
++        }
++        health = {
++            **_pool_gateway(),
++            "llm_routing": llm_routing,
++            "llm_token_usage": llm_token_usage,
++        }
++        snap = self._snap(
++            health,
++            self._base_telemetry(
++                llm_faults={},
++                credentials={
++                    "token_verify_failed": 0,
++                    "audit_log_dropped": 0,
++                    "credentialed_route_denied": 5,
++                    "credentialed_route_denied_last_ts": "2026-08-18T16:00:00+00:00",
++                },
++            ),
++        )
++        self.assertEqual(snap["status"], "ok")
++        self.assertEqual(snap["llm_routing"]["routing_no_eligible_backend"], 3)
++        self.assertEqual(snap["credentials"]["credentialed_route_denied"], 5)
++
+     def test_i4_fault_url_absent_from_pool_synthesises_backend(self):
+         remote = "https://api.example/v1"
+         faults = {
+diff --git a/uv.lock b/uv.lock
+index 4b51a13..44bdcb3 100644
+--- a/uv.lock
++++ b/uv.lock
+@@ -596,7 +596,7 @@ wheels = [
+ 
+ [[package]]
+ name = "sm-telemetry-monitor"
+-version = "0.9.12"
++version = "0.9.13"
+ source = { editable = "." }
+ dependencies = [
+     { name = "httpx" },
