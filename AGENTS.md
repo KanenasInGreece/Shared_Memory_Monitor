@@ -49,6 +49,7 @@ about to be) running on a reachable host — usually the same machine.
 | `./scripts/agent-upgrade.sh` | Status pre-check → `git pull` + `uv sync` + restart unit (if installed) + status |
 | `./scripts/install.sh` | First-time: `uv sync`, create `.env` from example, run doctor |
 | `./scripts/install-systemd-user.sh` | Persist as `shared-memory-monitor.service` (user unit) |
+| `./scripts/uninstall-systemd-user.sh` | Cleanly remove the systemd unit and disable linger |
 | `./scripts/check-env.sh` | Full doctor report (human or `--json`) |
 | `./scripts/run-loop.sh --serve --interval 600` | Foreground poll + dashboard (dev) |
 
@@ -241,7 +242,16 @@ gateways stay compatible on the wire and simply omit newer fields.
 
 ```bash
 systemctl --user stop shared-memory-monitor.service
-# disable autostart: systemctl --user disable shared-memory-monitor.service
+```
+
+### Uninstall (Teardown)
+
+```bash
+./scripts/uninstall-systemd-user.sh
+# Note: disabling linger on some distributions (e.g., Debian) may require sudo.
+# The script attempts `sudo -n loginctl disable-linger $USER`. If it fails, run manually:
+# sudo loginctl disable-linger $USER
+cd .. && rm -rf Shared_Memory_Monitor
 ```
 
 ### Token / auth problems

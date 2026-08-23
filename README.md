@@ -339,6 +339,7 @@ Duplicate polls within 60s with identical telemetry are skipped. Runtime data is
 
 ```bash
 ./scripts/install-systemd-user.sh    # template: deploy/systemd/user/shared-memory-monitor.service
+./scripts/uninstall-systemd-user.sh  # cleanly remove service and disable linger
 ```
 
 Requires user linger for persistence after logout. Keep `AGENT_TOKEN` and `COORDINATOR_URL` in the monitor `.env`. See [deploy/README.md](deploy/README.md).
