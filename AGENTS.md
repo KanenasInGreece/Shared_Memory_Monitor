@@ -321,6 +321,18 @@ Before cutting any new tag or release on GitHub, agents must verify all 4 checkp
   framework log files the gateway writes.
 - If a metric is missing, fix the **framework** telemetry surface — not a monitor-side DB.
 
+### Distribution Quirks (Linux)
+
+Our automation scripts deliberately handle the following OS-specific pitfalls you may encounter during operations:
+
+| Distribution | Known Quirk | How We Handle It |
+|--------------|-------------|------------------|
+| **Debian 13** (`d9400`) | `loginctl enable-linger` / `disable-linger` throws "Access denied" for unprivileged users. | `install-systemd-user.sh` and `uninstall-systemd-user.sh` automatically attempt a `sudo -n loginctl` fallback. |
+| **Ubuntu 26.04** (`glxvm`) | Non-interactive SSH sessions strip `~/.local/bin` from `$PATH`, hiding `uv` if installed via curl. | `agent-upgrade.sh` and `install.sh` explicitly export `~/.local/bin` and `~/.cargo/bin` to the PATH before running commands. |
+| **Fedora 44** (Host) | Generally permissive with user units, but follows the exact same script logic for cross-compatibility. | Standard execution paths apply. |
+
+---
+
 ## Boundaries
 
 - Code/docs writes: this checkout only.
