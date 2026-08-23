@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.17] - 2026-08-23
+
+### Fixed
+- **Agent installation paths**: Added explicit `PATH` exports for `~/.local/bin` and `~/.cargo/bin` in all bash scripts to ensure `uv` is found in non-interactive SSH sessions.
+- **Service Linger**: `install-systemd-user.sh` now automatically attempts to enable systemd linger using `loginctl` (unprivileged or via `sudo -n`) to prevent the monitor from stopping upon logout.
+
 ## [0.9.16] - 2026-08-19
 
 ### Added

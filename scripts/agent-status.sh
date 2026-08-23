@@ -3,6 +3,7 @@
 # Queries GitHub (origin) via git ls-remote for available updates (unless --offline).
 # Exit: 0 ready | 1 partial (optional panels or updates available) | 2 not ready | 3 usage
 set -euo pipefail
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 

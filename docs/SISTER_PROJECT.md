@@ -22,11 +22,11 @@ The monitor never imports framework Python code. **No third data path** in monit
 | Route | Purpose |
 |-------|---------|
 | `GET /health` | Infrastructure grid (embedder, LLM, daemons); `version` + `api_version` for client compat; non-secret `config` (LLM backends + weights; **≥0.8.9** `has_credential` + optional `model`; **≥0.9.13** roles / `n_ctx` / `private_ok` / prices); multi-backend `llm_pool` / affinity; **≥0.9.13** `llm_routing` + `llm_token_usage` |
-| `GET /pool/status` | Dream-job `free_slots` + per-backend `serves_all` / `counts_free_slot` (framework **≥0.9.13**; monitor v0.9.16+) |
+| `GET /pool/status` | Dream-job `free_slots` + per-backend `serves_all` / `counts_free_slot` (framework **≥0.9.13**; monitor v0.9.17+) |
 | `GET /memory/telemetry` | Pipeline metrics, `nrem`, `breakdown`, `spine`, `compliance`, `latency`, `entity_graph`, `consolidation`; **≥0.9.4** `llm_faults` + `credentials`; **≥0.9.8** `credentials.*_last_ts` siblings; **≥0.9.9** `credentialed_route_denied` |
 | `POST /memory/graph` | Neo4j schema panels (read-only Cypher, server-side guard) |
 
-**Client API version:** Monitor **v0.9.16** sets `bridge.API_VERSION = 4` to match
+**Client API version:** Monitor **v0.9.17** sets `bridge.API_VERSION = 4` to match
 the **deployed** gateway `api_version` (framework **≥ 0.8.33** / projects registry
 + sentinel + telemetry enhancements). **Alternative vectors** on first-write quality
 expects **framework ≥ 0.8.40** (`telemetry.spine.alternative_vectors`). Full Status +

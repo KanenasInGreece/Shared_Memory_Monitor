@@ -2,6 +2,7 @@
 # Upgrade monitor checkout to latest (or --ref TAG/BRANCH), reinstall deps, restart unit.
 # Idempotent. Never prints secrets.
 set -euo pipefail
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 

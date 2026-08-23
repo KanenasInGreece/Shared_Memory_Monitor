@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Bootstrap monitor on a new machine — does not copy framework secrets.
 set -euo pipefail
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 

@@ -17,6 +17,19 @@ echo "Installed → $UNIT_DST (MONITOR_ROOT=$ROOT)"
 systemctl --user daemon-reload
 systemctl --user enable shared-memory-monitor.service
 
+echo ""
+echo "Ensuring user service survives logout (linger)..."
+if loginctl enable-linger "$USER" 2>/dev/null; then
+  echo "Linger enabled."
+elif sudo -n loginctl enable-linger "$USER" 2>/dev/null; then
+  echo "Linger enabled (via sudo -n)."
+else
+  echo "WARNING: Could not enable linger."
+  echo "  Without linger, the monitor will die when you log out."
+  echo "  Please run this manually: sudo loginctl enable-linger "$USER""
+fi
+
+
 if command -v ss >/dev/null 2>&1 && ss -tln 2>/dev/null | grep -q ':8765 '; then
   echo ""
   echo "Port 8765 in use — stopping foreground listener, then starting user unit..."
