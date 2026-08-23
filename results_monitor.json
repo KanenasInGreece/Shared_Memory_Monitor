@@ -1,0 +1,851 @@
+[
+  {
+    "tier": "community_summary",
+    "record_type": "summary",
+    "ref": "summary:435",
+    "pg_id": 435,
+    "content": "[FACT kind=measured from=\"src/sm_telemetry_monitor/system_health.py\" recorded=2026-08-18 pg_id=1370] RESULTS / FIX-TRACE \u2014 monitor v0.9.13 implement-the-plan cycle (decision:1369; tag v0.9.13; HEAD 51c0981; GH https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.9.13). Work done: Task 1 passthrough+join I12\u2013I17 in system_health.py + doctor.py + tests; Task 2 pool line/popover/unauth hint in dashboard.html + theme.css; Required review fix (Number(null) invented est. cost 0) in poolTokenBits before merge. Files fixed: src/sm_telemetry_monitor/system_health.py, src/sm_telemetry_monitor/doctor.py, tests/test_system_health.py, tests/test_doctor.py, static/dashboard.html, static/theme.css. Verification executed: 173 pytest passed; Playwright A5\u2013A9 + /logs + 400px; check-env names llm_routing+llm_token_usage; live /api/health passthrough. AGY roles that ran: Architecture fact:1368, Code Quality fact:1367, Security fact:1366. Roles that did NOT run: Test & Verification, Ops & Release Integrity, Adversarial. No Critical/Required remaining. Earlier ship note: fact:1365.\n[FACT kind=tested from=\"tests/test_system_health.py\" recorded=2026-08-18 pg_id=1368] Grok Architecture Review (v0.9.13). Commit: 51c0981cb97b58fe5a45bc93dbba68a107328dee. api_version 4. Plan A1-A14 executed faithfully. Out of scope pool/status omitted. All SM pointers validated.\n[FACT kind=measured from=\"src/sm_telemetry_monitor/system_health.py\" recorded=2026-08-18 pg_id=1367] WORK COMPLETED [v0.9.13/HEAD]: Code Quality review of v0.9.12..HEAD for shared-memory-monitor. Verified flat passthrough of llm_routing and llm_token_usage without inventing empty keys (I12, I13). Confirmed safe O(N) array merges for token usage and XSS prevention in UI. Minor JS loose type coercion Nit (CQ-01) on poolTokenBits.\n[FACT kind=researched from=\"tasks/plan.md\" recorded=2026-08-18 pg_id=1363] PLAN 2026-08-18 \u2014 monitor cycle to consume framework 0.9.9\u20130.9.13 LLM/credential surfaces (decision:1300 roles). Grounded on fact:1337 (0.9.9 credentialed_route_denied + unauth-keys beacon; S-10 already ok) and fact:1359 (0.9.13 llm_routing, llm_token_usage, backend descriptors; 401-as-ok no-op; /pool/status free_slots out of scope). Live gap: credentials.credentialed_route_denied already passthrough but not rendered; llm_routing and llm_token_usage dropped from /api/health; descriptor fields dropped. Plan in tasks/plan.md commit cb315c7; builder worktree assigned Tasks 1\u20132; merger-only v0.9.13 after review. api_version stays 4.\n[FACT kind=discussion recorded=2026-08-10 pg_id=1155] Dashboard telemetry redesign for Dreaming Cycle v2. Entity graphs are no longer a gating constraint for consolidation, as entities are human-only payload. Consolidation now strictly gates on (project, domain). The NREM density vs strict-gate distinction is deprecated in the UI, as only the strict gate remains actionable.",
+    "ranked": true,
+    "rerank_payload_chars": 27768,
+    "rerank_payload_docs": 22,
+    "score": 2.693077564239502,
+    "score_normalized": 0.9366169289739558,
+    "matched_entities": [],
+    "metadata": {
+      "kind": "thematic",
+      "type": "community_summary",
+      "level": "domain",
+      "domain": "architecture",
+      "entity": "",
+      "aliases": [],
+      "project": "shared-memory-monitor",
+      "entities": [
+        "CodeQualityReview",
+        "GrokArchitectureReview"
+      ],
+      "timestamp": "2026-08-18T19:51:39.382049",
+      "cypher_query": "MATCH (f:Fact) WHERE f.pg_id IN [1155, 1363, 1367, 1368, 1370] OPTIONAL MATCH (j)-[:GROUNDED_IN|INFORMED_BY|CONSIDERED|REJECTED|UNDER_CONDITIONS]->(f) WHERE j:Decision OR j:Retrospective RETURN f, collect(DISTINCT j) AS judgements",
+      "source_pg_ids": [
+        1370,
+        1368,
+        1367,
+        1363,
+        1155
+      ]
+    },
+    "source_pg_ids": [
+      1370,
+      1368,
+      1367,
+      1363,
+      1155
+    ],
+    "graph_context": [
+      {
+        "rel_type": "SUMMARIZED_BY",
+        "direction": "in",
+        "properties": {},
+        "label": "Fact",
+        "pg_id": 1155,
+        "snippet": "Dashboard telemetry redesign for Dreaming Cycle v2. Entity graphs are no longer a gating constraint for consolidation, a",
+        "adr_props": {
+          "fact_kind": "discussion"
+        }
+      },
+      {
+        "rel_type": "SUMMARIZED_BY",
+        "direction": "in",
+        "properties": {},
+        "label": "Fact",
+        "pg_id": 1370,
+        "snippet": "RESULTS / FIX-TRACE \u2014 monitor v0.9.13 implement-the-plan cycle (decision:1369; tag v0.9.13; HEAD 51c0981; GH https://git",
+        "adr_props": {
+          "fact_kind": "measured",
+          "source_ref": "src/sm_telemetry_monitor/system_health.py"
+        }
+      },
+      {
+        "rel_type": "SUMMARIZED_BY",
+        "direction": "in",
+        "properties": {},
+        "label": "Fact",
+        "pg_id": 1363,
+        "snippet": "PLAN 2026-08-18 \u2014 monitor cycle to consume framework 0.9.9\u20130.9.13 LLM/credential surfaces (decision:1300 roles). Grounde",
+        "adr_props": {
+          "fact_kind": "researched",
+          "source_ref": "tasks/plan.md"
+        }
+      },
+      {
+        "rel_type": "SUMMARIZED_BY",
+        "direction": "in",
+        "properties": {},
+        "label": "Fact",
+        "pg_id": 1367,
+        "snippet": "WORK COMPLETED [v0.9.13/HEAD]: Code Quality review of v0.9.12..HEAD for shared-memory-monitor. Verified flat passthrough",
+        "adr_props": {
+          "fact_kind": "measured",
+          "source_ref": "src/sm_telemetry_monitor/system_health.py"
+        }
+      },
+      {
+        "rel_type": "SUMMARIZED_BY",
+        "direction": "in",
+        "properties": {},
+        "label": "Fact",
+        "pg_id": 1368,
+        "snippet": "Grok Architecture Review (v0.9.13). Commit: 51c0981cb97b58fe5a45bc93dbba68a107328dee. api_version 4. Plan A1-A14 execute",
+        "adr_props": {
+          "fact_kind": "tested",
+          "source_ref": "tests/test_system_health.py"
+        }
+      }
+    ]
+  },
+  {
+    "tier": "fact",
+    "pg_id": 1365,
+    "record_type": "fact",
+    "ref": "fact:1365",
+    "content": "RELEASED Shared Memory Monitor v0.9.13 (2026-08-18, tag v0.9.13, commit 4944eb5, GH https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.9.13). Consumes framework 0.9.9 credentialed_route_denied (+ last_ts) and allow_unauthenticated_provider_keys-when-true (fact:1337), and framework 0.9.13 llm_routing / llm_token_usage / backend descriptors (fact:1359). Cycle followed decision:1300: Grok 4.6 planned/reviewed/merged; Grok Build implemented in a worktree. Review Required: Number(null) invented est. cost 0 \u2014 fixed before merge. Out of scope: GET /pool/status free_slots. 401-as-ok was already correct (DeepSeek status ok). Live after restart: doctor names llm_routing+llm_token_usage; pool line shows extract N; popover shows token totals without cost; api_version 4. Plan fact:1363.",
+    "ranked": true,
+    "rerank_payload_chars": 27768,
+    "rerank_payload_docs": 22,
+    "score": 2.3769521713256836,
+    "score_normalized": 0.915052822527011,
+    "matched_entities": [],
+    "metadata": {
+      "domain": "operations",
+      "source": "grok",
+      "project": "shared-memory-monitor",
+      "elicited": true,
+      "principal": "xenofon",
+      "source_ref": "CHANGELOG.md",
+      "connected_from": {
+        "gid": 1000,
+        "pid": 703213,
+        "uid": 1000,
+        "session": "1",
+        "login_uid": 1000,
+        "login_user": "xenofon"
+      }
+    },
+    "created_at": "2026-08-18T16:30:28.661124+00:00",
+    "graph_context": [
+      {
+        "rel_type": "WAS_ATTRIBUTED_TO",
+        "direction": "out",
+        "properties": {},
+        "label": "AIAgent",
+        "name": "grok"
+      },
+      {
+        "rel_type": "DOMAIN_OF",
+        "direction": "out",
+        "properties": {},
+        "label": "Domain",
+        "name": "operations"
+      },
+      {
+        "rel_type": "PROJECT_OF",
+        "direction": "out",
+        "properties": {},
+        "label": "Project",
+        "name": "shared-memory-monitor"
+      }
+    ]
+  },
+  {
+    "tier": "fact",
+    "pg_id": 1367,
+    "record_type": "fact",
+    "ref": "fact:1367",
+    "content": "WORK COMPLETED [v0.9.13/HEAD]: Code Quality review of v0.9.12..HEAD for shared-memory-monitor. Verified flat passthrough of llm_routing and llm_token_usage without inventing empty keys (I12, I13). Confirmed safe O(N) array merges for token usage and XSS prevention in UI. Minor JS loose type coercion Nit (CQ-01) on poolTokenBits.",
+    "ranked": true,
+    "rerank_payload_chars": 27768,
+    "rerank_payload_docs": 22,
+    "score": 1.4751536846160889,
+    "score_normalized": 0.8138394571778118,
+    "matched_entities": [],
+    "metadata": {
+      "source": "gemini",
+      "domains": [
+        "architecture"
+      ],
+      "project": "shared-memory-monitor",
+      "entities": [
+        "CodeQualityReview"
+      ],
+      "principal": "xenofon",
+      "source_ref": "src/sm_telemetry_monitor/system_health.py",
+      "connected_from": {
+        "gid": 1000,
+        "pid": 708631,
+        "uid": 1000,
+        "session": "1",
+        "login_uid": 1000,
+        "login_user": "xenofon"
+      }
+    },
+    "created_at": "2026-08-18T16:39:00.933155+00:00",
+    "graph_context": [
+      {
+        "rel_type": "GROUNDED_IN",
+        "direction": "in",
+        "properties": {
+          "asserted_by": "operator"
+        },
+        "label": "Decision",
+        "pg_id": 1369,
+        "snippet": "Implement monitor v0.9.13 plan for framework 0.9.9\u20130.9.13 surfaces",
+        "adr_props": {
+          "alternatives": [
+            "add GET /pool/status this cycle (rejected: new HTTP client, plan A2; free_slots stays out)",
+            "defer all 0.9.13 /health sections (rejected: live gap was llm_routing and llm_token_usage dropped from /api/health)",
+            "hide the allow_unauthenticated_provider_keys beacon (rejected: fact:1337 suggestion 2 is operator need-to-know; SEC-01 is FYI not Required)",
+            "tighten hasPrice against boolean false this cycle (rejected: CQ-01 Nit; gateway never serialises boolean prices)"
+          ],
+          "confidence": "high"
+        }
+      },
+      {
+        "rel_type": "SUMMARIZED_BY",
+        "direction": "out",
+        "properties": {},
+        "label": "CommunitySummary",
+        "pg_id": 435,
+        "snippet": null
+      },
+      {
+        "rel_type": "WAS_ATTRIBUTED_TO",
+        "direction": "out",
+        "properties": {},
+        "label": "AIAgent",
+        "name": "gemini"
+      },
+      {
+        "rel_type": "DOMAIN_OF",
+        "direction": "out",
+        "properties": {},
+        "label": "Domain",
+        "name": "architecture"
+      },
+      {
+        "rel_type": "PROJECT_OF",
+        "direction": "out",
+        "properties": {},
+        "label": "Project",
+        "name": "shared-memory-monitor"
+      },
+      {
+        "rel_type": "MENTIONS",
+        "direction": "out",
+        "properties": {},
+        "label": "Entity",
+        "name": "CodeQualityReview"
+      }
+    ]
+  },
+  {
+    "tier": "fact",
+    "pg_id": 790,
+    "record_type": "fact",
+    "ref": "fact:790",
+    "content": "DISCUSSION CONTEXT (2026-07-16, Grok session on shared-memory-monitor) \u2014 basis for retrospective on decision 258 (telemetry enrichment for monitor-zero-DB) and the framework gap inventory.\n\nOperator asked to review Shared Memory Framework changes, pull prior context from shared memory, and adjust the monitor to comply with and surface what the live system now provides.\n\nWhat we established live on home-THX: gateway hive-mind 0.7.0 with api_version 3 (enrichment rebuild / rem-rebuild shipped); monitor package was still advertising API_VERSION 2 \u2192 doctor compat=incompatible. Shared memory held the prior gate (facts 773/774): do not target API v3 until live /health reports 3; that gate had just been crossed.\n\nWhat the session concluded the monitor should consume from existing read routes only (GET /health, GET /memory/telemetry, POST /memory/graph; monitor:read token \u2014 never invent DB credentials or write paths): bump client to API 3; surface /health.config (backends, pool tuning, affinity, embed_max_chars) under Infrastructure; show entity_graph.largest_alias_component on Graph health. Spine/compliance/latency/consolidation/pool_busy were already correctly consumed from earlier 0.5.x work. Shipped as monitor v0.5.4 on main + GitHub release, stating API 3 compliance and framework 0.7.0 compatibility; service restarted with server=3 client=3 compat=ok.\n\nWhat we deliberately did NOT build in the monitor (and why), for framework agents: (1) relation-calibration UI or proxy of POST /memory/relations/review|/label \u2014 write-role only, 403 for monitor:read; calibration state not on GET /memory/telemetry; elevating the monitor token rejected as breaking Gateway=authority / Monitor=observer. (2) machine-edge gate pressure (edges_awaiting_calibration, machine_edges_consumed) \u2014 present in consolidation_runs.extra / daemon cycle extras but not rolled up by coordinator into telemetry.consolidation. (3) Neo4j retrospective census \u2014 retro-as-record is live but telemetry.neo4j still facts/decisions only. Operator then asked to save a retrospective so framework agents can review those gaps (decision 258, rating mixed; inventory fact 788; retrospective 789).",
+    "ranked": true,
+    "rerank_payload_chars": 27768,
+    "rerank_payload_docs": 22,
+    "score": 1.1552670001983643,
+    "score_normalized": 0.7604716406652167,
+    "matched_entities": [],
+    "metadata": {
+      "source": "grok",
+      "project": "shared-memory-monitor",
+      "elicited": true,
+      "entities": [
+        "HiveMindGateway",
+        "Telemetry",
+        "API_VERSION"
+      ],
+      "principal": "xenofon",
+      "source_ref": "discussion_context",
+      "connected_from": {
+        "gid": 1000,
+        "pid": 2049611,
+        "uid": 1000,
+        "session": "1",
+        "login_uid": 1000,
+        "login_user": "xenofon"
+      }
+    },
+    "created_at": "2026-07-16T18:49:19.717717+00:00",
+    "graph_context": [
+      {
+        "rel_type": "GROUNDED_IN",
+        "direction": "in",
+        "properties": {
+          "asserted_by": "operator"
+        },
+        "label": "Retrospective",
+        "pg_id": 791,
+        "snippet": "In the context of server-side telemetry enrichment so the monitor never needs direct DB access (decision 258), we chose ",
+        "adr_props": {
+          "fact_kind": "discussion",
+          "source_ref": "discussion_context"
+        }
+      },
+      {
+        "rel_type": "PROJECT_OF",
+        "direction": "out",
+        "properties": {},
+        "label": "Project",
+        "name": "shared-memory-monitor"
+      },
+      {
+        "rel_type": "MENTIONS",
+        "direction": "out",
+        "properties": {},
+        "label": "Entity",
+        "name": "HiveMindGateway",
+        "aliases": [
+          "Hive-Mind Gateway"
+        ]
+      },
+      {
+        "rel_type": "MENTIONS",
+        "direction": "out",
+        "properties": {},
+        "label": "Entity",
+        "name": "Telemetry",
+        "aliases": [
+          "telemetry"
+        ]
+      },
+      {
+        "rel_type": "MENTIONS",
+        "direction": "out",
+        "properties": {},
+        "label": "Entity",
+        "name": "API_VERSION"
+      }
+    ]
+  },
+  {
+    "tier": "fact",
+    "pg_id": 1011,
+    "record_type": "fact",
+    "ref": "fact:1011",
+    "content": "Project identity, stated by Xenofon on 2026-08-04: 'shared-memory-monitor' is a SISTER PROJECT of the Shared Memory framework and MUST STAY DISTINCT. It is not a spelling variant, not a section of the framework, and must never be merged into 'shared-memory-GitHub' by an alias map or a normalisation pass. This matters because it is actively at risk: the entity-vote backfill that infers a parked fact's project from the projects of facts sharing its entities was validated by holding out 390 facts with known projects, and EVERY error it made was a sister project absorbed into the larger one \u2014 three of six were shared-memory-monitor facts read as shared-memory-GitHub, one of them at 95 percent agreement across 20 supporting facts. A sister project shares most of its vocabulary with the project beside it, so a confident vote is exactly what a misfiled sister-project fact looks like, and raising the agreement threshold does not fix it. Only unanimity measured safe (100 percent accurate on 57 holdout facts), which is why the vote writes automatically only when unanimous and otherwise proposes to the operator with the competing projects shown. Contrast with 'Shared Memory Framework', 'Shared_Memory' and 'shared-memory', which ARE the same project as shared-memory-GitHub and were merged on the same day.",
+    "ranked": true,
+    "rerank_payload_chars": 27768,
+    "rerank_payload_docs": 22,
+    "score": 1.140525221824646,
+    "score_normalized": 0.7577760573115184,
+    "matched_entities": [],
+    "metadata": {
+      "type": "fact",
+      "source": "claude",
+      "project": "shared-memory-GitHub",
+      "entities": [
+        "Project Aliases"
+      ],
+      "principal": "xenofon",
+      "source_ref": "shared-memory/scripts/entity_vote.py",
+      "connected_from": {
+        "gid": 1000,
+        "pid": 274044,
+        "uid": 1000,
+        "session": "1",
+        "login_uid": 1000,
+        "login_user": "xenofon"
+      }
+    },
+    "created_at": "2026-08-03T22:15:12.528278+00:00",
+    "graph_context": [
+      {
+        "rel_type": "PROJECT_OF",
+        "direction": "out",
+        "properties": {},
+        "label": "Project",
+        "name": "shared-memory-GitHub"
+      },
+      {
+        "rel_type": "WAS_ATTRIBUTED_TO",
+        "direction": "out",
+        "properties": {},
+        "label": "AIAgent",
+        "name": "claude"
+      },
+      {
+        "rel_type": "MENTIONS",
+        "direction": "out",
+        "properties": {},
+        "label": "Entity",
+        "name": "Project Aliases",
+        "aliases": [
+          "ProjectAliases",
+          "PROJECT_ALIASES"
+        ]
+      }
+    ]
+  },
+  {
+    "tier": "fact",
+    "pg_id": 249,
+    "record_type": "fact",
+    "ref": "fact:249",
+    "content": "Shared Memory Monitor dashboard UX lessons (project: shared-memory-monitor, domain: ui-ux):\n\nPROBLEMS DIAGNOSED: (1) Triple sticky chrome (header + alert + 7-chip KPI strip) consumes ~40% laptop viewport before content. (2) max-width 1280px wastes horizontal space on wide monitors. (3) Same metrics repeated 3\u20134\u00d7 (KPI strip, hero, primary row, pipeline queues) \u2014 increases scroll, trains users to skip (Gestalt redundancy). (4) Operational data (throughput, cumulative cleared, raw samples table) buried in collapsed <details> \u2014 violates progressive disclosure: hide complexity, not operator data. (5) Chart.js canvases inside collapsed details may render at zero width on first paint.\n\nUX PRINCIPLES TO APPLY: Shneiderman mantra \u2014 overview first, zoom/filter, details on demand (schema breakdown = on demand; trends/samples = overview). Nielsen progressive disclosure. F-pattern scanning \u2014 one canonical home per metric. Fitts law \u2014 range selector stays top bar. Tufte small multiples \u2014 throughput + cumulative side-by-side. ISA-101/HMI hierarchy \u2014 alarm \u2192 process variable \u2192 trend \u2192 diagnostic. Industrial color: green/amber/red for state only; charts grey so color signals action.\n\nSYSTEM HEALTH UX: Separate daemon/process state (live /health, display \"up\") from workload/backlog (telemetry, e.g. \"up \u00b7 20\"). Overall WARN when backlog exists even if daemons up. Single-line cells with detail in tooltips to avoid visual noise.\n\nVISUAL THEME: Dark industrial console (#2a2a2a base), high-contrast text, green #56d364 / amber #f0c14a / red #ff7b72 for status; shared theme.css for dashboard + logs.\n\nPLANNED LAYOUT (approved direction, not yet fully implemented): Two-column body \u2014 main ~68% (slim alert, backlog trend chart, throughput|cumulative grid, growth, raw samples table always visible) + sticky sidebar ~32% (backlog number+spark, bottleneck REM/NREM bar, pipeline 2\u00d72, system health, schema breakdown collapsed). Remove or slim KPI strip to \u22644 chips or merge into sidebar. Widen to min(1600px, 100%-2rem). Responsive stack under 1100px.\n\nIMPLEMENTATION BUGS FOUND: Duplicate const bn in render() broke all dashboard JS; rename backlog variable. Avoid declaring duplicate const in same function scope.\n\nFILES: shared-memory-monitor/static/dashboard.html, static/logs.html, static/theme.css, src/sm_telemetry_monitor/system_health.py.",
+    "ranked": true,
+    "rerank_payload_chars": 27768,
+    "rerank_payload_docs": 22,
+    "score": 0.09675528854131699,
+    "score_normalized": 0.5241699693064295,
+    "matched_entities": [],
+    "metadata": {
+      "domain": "ui-ux",
+      "source": "grok",
+      "project": "shared-memory-GitHub",
+      "entities": [],
+      "source_ref": "discussion_context"
+    },
+    "created_at": null,
+    "graph_context": [
+      {
+        "rel_type": "DOMAIN_OF",
+        "direction": "out",
+        "properties": {},
+        "label": "Domain",
+        "name": "ui-ux"
+      },
+      {
+        "rel_type": "PROJECT_OF",
+        "direction": "out",
+        "properties": {},
+        "label": "Project",
+        "name": "shared-memory-GitHub"
+      },
+      {
+        "rel_type": "MENTIONS",
+        "direction": "out",
+        "properties": {},
+        "label": "Entity",
+        "name": "Telemetry",
+        "aliases": [
+          "telemetry"
+        ]
+      },
+      {
+        "rel_type": "MENTIONS",
+        "direction": "out",
+        "properties": {},
+        "label": "Entity",
+        "name": "shared-memory-monitor",
+        "aliases": [
+          "Shared_Memory_Monitor",
+          "SharedMemoryMonitor",
+          "Shared Memory Monitor"
+        ]
+      }
+    ]
+  },
+  {
+    "tier": "fact",
+    "pg_id": 788,
+    "record_type": "fact",
+    "ref": "fact:788",
+    "content": "FRAMEWORK TELEMETRY GAPS for Shared Memory Monitor (measured 2026-07-16 after monitor v0.5.4 aligned to gateway 0.7.0 / API v3). Monitor remains pure observer (bridge.py + logs_reader only; monitor:read token). SURFACED on 0.7.0: health.config, spine, compliance, latency, entity_graph (incl. largest_alias_component), consolidation rollup, pool_busy. NOT surfaced \u2014 for framework agent review:\n\n1) RELATION CALIBRATION STATE \u2014 lives only on write-role POST /memory/relations/review (+ /label). monitor:read gets HTTP 403. No top-level block on GET /memory/telemetry. Families entity_relation + evidential stay invisible to synthesis until ~20 operator labels, but the monitor cannot show calibrated/uncalibrated / label counts / queue depth. ASK: add telemetry.calibration (or spine.relation_adjudications) readable by monitor:read \u2014 status per family, labels_n, threshold, edges awaiting review. Do NOT put label mutations on the monitor.\n\n2) CONSOLIDATION_RUNS.EXTRA not rolled up \u2014 daemon writes edges_awaiting_calibration, machine_edges_consumed, calibration snapshot into consolidation_runs.extra, but coordinator._compute_consolidation_health only exposes last_deferred_reason (extra->>'reason'). ASK: roll those counts into telemetry.consolidation.{insight,fact_consolidation} so the consolidation drawer can show machine-edge gate pressure without DB access.\n\n3) NEO4J RETROSPECTIVE CENSUS \u2014 telemetry.neo4j still facts_total / decisions_* only. After retro-as-record (API v2 / 0.6.5) retrospectives are first-class records (live breakdown retrospective\u2248136) but no retrospectives_total / rem_pending. Spine.facts remains the non-decision bucket (honestly labeled in monitor UI). ASK: optional neo4j.retrospectives_* or spine split if census should be type-clean.\n\nPrinciple held: if the monitor needs a metric, extend GET /health or GET /memory/telemetry \u2014 never invent a monitor-side DB path or borrow write tokens.",
+    "ranked": true,
+    "rerank_payload_chars": 27768,
+    "rerank_payload_docs": 22,
+    "score": -0.13327135145664215,
+    "score_normalized": 0.46673138858465313,
+    "matched_entities": [],
+    "metadata": {
+      "source": "grok",
+      "project": "shared-memory-monitor",
+      "elicited": true,
+      "entities": [
+        "HiveMindGateway",
+        "Telemetry",
+        "API_VERSION",
+        "Consolidation"
+      ],
+      "principal": "xenofon",
+      "source_ref": "discussion_context",
+      "connected_from": {
+        "gid": 1000,
+        "pid": 2049421,
+        "uid": 1000,
+        "session": "1",
+        "login_uid": 1000,
+        "login_user": "xenofon"
+      }
+    },
+    "created_at": "2026-07-16T18:48:20.302062+00:00",
+    "graph_context": [
+      {
+        "rel_type": "GROUNDED_IN",
+        "direction": "in",
+        "properties": {
+          "asserted_by": "operator"
+        },
+        "label": "Retrospective",
+        "pg_id": 791,
+        "snippet": "In the context of server-side telemetry enrichment so the monitor never needs direct DB access (decision 258), we chose ",
+        "adr_props": {
+          "fact_kind": "discussion",
+          "source_ref": "discussion_context"
+        }
+      },
+      {
+        "rel_type": "GROUNDED_IN",
+        "direction": "in",
+        "properties": {
+          "asserted_by": "operator"
+        },
+        "label": "Retrospective",
+        "pg_id": 789,
+        "snippet": "In the context of server-side telemetry enrichment so the monitor never needs direct DB access (decision 258), we chose ",
+        "adr_props": {
+          "fact_kind": "discussion",
+          "source_ref": "discussion_context"
+        }
+      },
+      {
+        "rel_type": "CONSIDERED",
+        "direction": "in",
+        "properties": {
+          "asserted_by": "operator"
+        },
+        "label": "Decision",
+        "pg_id": 952,
+        "snippet": "Project a dedicated retrospectives block into telemetry.spine",
+        "adr_props": {
+          "alternatives": [
+            "leave retrospectives bundled in the facts bucket",
+            "have the monitor derive the metrics itself from emergent_unprojected_fields",
+            "add a generic per-record-type breakdown rather than a named block"
+          ],
+          "confidence": "high"
+        }
+      },
+      {
+        "rel_type": "PROJECT_OF",
+        "direction": "out",
+        "properties": {},
+        "label": "Project",
+        "name": "shared-memory-monitor"
+      },
+      {
+        "rel_type": "MENTIONS",
+        "direction": "out",
+        "properties": {},
+        "label": "Entity",
+        "name": "API_VERSION"
+      },
+      {
+        "rel_type": "MENTIONS",
+        "direction": "out",
+        "properties": {},
+        "label": "Entity",
+        "name": "Consolidation",
+        "aliases": [
+          "consolidation"
+        ]
+      },
+      {
+        "rel_type": "MENTIONS",
+        "direction": "out",
+        "properties": {},
+        "label": "Entity",
+        "name": "HiveMindGateway",
+        "aliases": [
+          "Hive-Mind Gateway"
+        ]
+      },
+      {
+        "rel_type": "MENTIONS",
+        "direction": "out",
+        "properties": {},
+        "label": "Entity",
+        "name": "Telemetry",
+        "aliases": [
+          "telemetry"
+        ]
+      }
+    ]
+  },
+  {
+    "tier": "fact",
+    "pg_id": 305,
+    "record_type": "fact",
+    "ref": "fact:305",
+    "content": "shared-memory-monitor audit+log history session complete (2026-06-12). RELEASES: v0.2.0 gateway_audit+agent filter chips (0875f29); v0.3.0 agent_audit rename+archive API/UI+logrotate example (e2728e3); v0.3.1 removed save_logs tab (a743c1b). CURRENT: 4 log tabs \u2014 gateway journal, rem_audit, agent_audit (reads GATEWAY_AUDIT_LOG_PATH, legacy gateway-audit.jsonl); File picker reads logrotated .gz beside live jsonl only. OPS: deploy/logrotate/shared-memory-audit.example (copytruncate); framework merge_logs handles per-save gz separately \u2014 monitor does NOT surface those. DOCS: gitignored GITHUB.md/GATEWAY_AUDIT_HANDOFF/archive (5580ff3). DECISIONS: pg_id 303 agent_audit+archives, 302 no save_logs, 304 gitignore internal docs. Tests 24 pass; pre-publish-check before each push.",
+    "ranked": true,
+    "rerank_payload_chars": 27768,
+    "rerank_payload_docs": 22,
+    "score": -0.47992318868637085,
+    "score_normalized": 0.3822702632679754,
+    "matched_entities": [],
+    "metadata": {
+      "source": "grok",
+      "project": "shared-memory-monitor",
+      "entities": [
+        "LogRotation",
+        "auditing"
+      ],
+      "source_ref": "https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.3.1"
+    },
+    "created_at": null,
+    "graph_context": [
+      {
+        "rel_type": "PROJECT_OF",
+        "direction": "out",
+        "properties": {},
+        "label": "Project",
+        "name": "shared-memory-monitor"
+      },
+      {
+        "rel_type": "REFERENCES",
+        "direction": "out",
+        "properties": {
+          "resolved_from": "content",
+          "cue": "pg_id 303",
+          "created_at": "2026-06-29T16:51:22.062000000+00:00"
+        },
+        "label": "Decision",
+        "pg_id": 303,
+        "snippet": "Monitor agent_audit source with read-only archive browsing",
+        "adr_props": {
+          "alternatives": [
+            "keep gateway_audit naming",
+            "framework API endpoint for audit history",
+            "expose shared_memory_*.log.gz as save_logs tab"
+          ],
+          "confidence": "high"
+        }
+      },
+      {
+        "rel_type": "MENTIONS",
+        "direction": "out",
+        "properties": {},
+        "label": "Entity",
+        "name": "gateway",
+        "aliases": [
+          "Gateway"
+        ]
+      },
+      {
+        "rel_type": "MENTIONS",
+        "direction": "out",
+        "properties": {},
+        "label": "Entity",
+        "name": "LogRotation"
+      },
+      {
+        "rel_type": "MENTIONS",
+        "direction": "out",
+        "properties": {},
+        "label": "Entity",
+        "name": "auditing",
+        "aliases": [
+          "Audit"
+        ]
+      }
+    ]
+  },
+  {
+    "tier": "fact",
+    "pg_id": 1361,
+    "record_type": "fact",
+    "ref": "fact:1361",
+    "content": "RELEASED Shared Memory Monitor v0.9.12 (2026-08-17, tag v0.9.12, commit 3caa00f / 21cec5d, GH release https://github.com/KanenasInGreece/Shared_Memory_Monitor/releases/tag/v0.9.12). Consumes framework 0.9.8 credential last-event timestamps from fact:1314 (amending fact:1307 / following fact:1297). Cycle followed decision:1300: Grok 4.6 planned/reviewed/merged; Grok Build implemented in a worktree. Product: pool line pairs token_verify_failed N and audit_log_dropped with relative last-event age when *_last_ts parses; count 0 stays quiet; hide predicate includes credentials warns; own-door auth never painted on an LLM chip; daemon_tokens_issued not surfaced; I10/I11 pin last_ts passthrough (system_health.py already passed the credentials dict through unchanged). api_version stayed 4. Live at ship: token_verify_failed=0 last_ts=null, daemon_tokens_issued=2 with stamp, audit_log_dropped=0.",
+    "ranked": true,
+    "rerank_payload_chars": 27768,
+    "rerank_payload_docs": 22,
+    "score": -0.49563342332839966,
+    "score_normalized": 0.3785673779043978,
+    "matched_entities": [],
+    "metadata": {
+      "domain": "operations",
+      "source": "grok",
+      "project": "shared-memory-monitor",
+      "elicited": true,
+      "principal": "xenofon",
+      "source_ref": "CHANGELOG.md",
+      "connected_from": {
+        "gid": 1000,
+        "pid": 696318,
+        "uid": 1000,
+        "session": "1",
+        "login_uid": 1000,
+        "login_user": "xenofon"
+      }
+    },
+    "created_at": "2026-08-18T16:12:55.806567+00:00",
+    "graph_context": [
+      {
+        "rel_type": "GROUNDED_IN",
+        "direction": "in",
+        "properties": {
+          "asserted_by": "operator"
+        },
+        "label": "Decision",
+        "pg_id": 1362,
+        "snippet": "Pair credential last_ts age on the LLM pool line",
+        "adr_props": {
+          "alternatives": [
+            "new Status-deck credentials card (rejected: invents a surface decision 1295 reserved for logs/detail)",
+            "paint token_verify_failed on LLM chips (rejected: own-door auth is not a backend fault)",
+            "surface daemon_tokens_issued (rejected: normal start mint, not an operator signal)"
+          ],
+          "confidence": "high"
+        }
+      },
+      {
+        "rel_type": "WAS_ATTRIBUTED_TO",
+        "direction": "out",
+        "properties": {},
+        "label": "AIAgent",
+        "name": "grok"
+      },
+      {
+        "rel_type": "PROJECT_OF",
+        "direction": "out",
+        "properties": {},
+        "label": "Project",
+        "name": "shared-memory-monitor"
+      },
+      {
+        "rel_type": "DOMAIN_OF",
+        "direction": "out",
+        "properties": {},
+        "label": "Domain",
+        "name": "operations"
+      }
+    ]
+  },
+  {
+    "tier": "fact",
+    "pg_id": 255,
+    "record_type": "fact",
+    "ref": "fact:255",
+    "content": "Shared Memory Monitor \u2014 project catalog (sister ops surface to Shared Memory Framework).\n\nPROJECT ROOT: /home/xenofon/grok-labs/projects/shared-memory-monitor\n\nPurpose: Live operations dashboard for the framework dream cycle \u2014 REM/NREM backlog, outbox health, gateway infrastructure, log tailing. Thin HTTP client over gateway :8888; does not bundle the framework.\n\nURLs (default): http://127.0.0.1:8765/ Monitor | /diagram live topology | /logs tail\n\nStart: cd /home/xenofon/grok-labs/projects/shared-memory-monitor && ./scripts/run-loop.sh --serve --interval 600\nCheck wiring: ./scripts/check-env.sh (python -m sm_telemetry_monitor check)\n\nKey layout:\n- src/sm_telemetry_monitor/ \u2014 poll loop, SQLite store, analytics, nrem_backlog cluster queries, HTTP server :8765\n- static/ \u2014 dashboard.html, diagram.html, logs.html, theme.css\n- data/telemetry.db + telemetry.jsonl \u2014 local history\n- graphs/ \u2014 PNG exports + offline HTML copies\n\nCredential model (pending framework work \u2014 decision pg_id 254):\n- Usage: dedicated monitor AGENT_TOKEN (not borrowed agent skill token) for GET /memory/telemetry and read-only /memory/graph\n- Operations: SHARED_MEMORY_ROOT \u2192 framework .env for PG_PASSWORD, log paths\n- /health needs no token\n\nNotable implementation details:\n- NREM backlog = consolidation cycles (>=5 facts or >=2 decisions per entity/domain), not raw facts_unconsolidated\n- Diagram view: live framework topology with port-anchored SVG connectors\n- Doctor: sm_telemetry_monitor check \u2014 feature matrix, never prints secrets\n\nRelated framework repo (typical): shared-memory-GitHub checkout; set SHARED_MEMORY_ROOT in monitor .env\n\nDecision pg_id 254: dedicated read-only monitor identity and telemetry access requirements on framework side.",
+    "ranked": true,
+    "rerank_payload_chars": 27768,
+    "rerank_payload_docs": 22,
+    "score": -0.7561584115028381,
+    "score_normalized": 0.319480897101708,
+    "matched_entities": [],
+    "metadata": {
+      "source": "grok",
+      "project": "shared-memory-monitor",
+      "entities": [
+        "Telemetry",
+        "HiveMindGateway"
+      ],
+      "source_ref": "shared-memory-monitor/src/sm_telemetry_monitor/bridge.py",
+      "monitor_root": "/home/xenofon/grok-labs/projects/shared-memory-monitor",
+      "related_decision_pg_id": 254
+    },
+    "created_at": null,
+    "graph_context": [
+      {
+        "rel_type": "PROJECT_OF",
+        "direction": "out",
+        "properties": {},
+        "label": "Project",
+        "name": "shared-memory-monitor"
+      },
+      {
+        "rel_type": "REFERENCES",
+        "direction": "out",
+        "properties": {
+          "resolved_from": "content",
+          "cue": "pg_id 254",
+          "created_at": "2026-06-29T16:51:21.950000000+00:00"
+        },
+        "label": "Decision",
+        "pg_id": 254,
+        "snippet": "Dedicated read-only monitor identity and telemetry access in framework",
+        "adr_props": {
+          "alternatives": [
+            "Borrow agent skill AGENT_TOKEN (current dev fallback); localhost-only unauthenticated /memory/telemetry; full postgres superuser password in monitor .env without read role"
+          ],
+          "confidence": "high"
+        }
+      },
+      {
+        "rel_type": "MENTIONS",
+        "direction": "out",
+        "properties": {},
+        "label": "Entity",
+        "name": "outbox",
+        "aliases": [
+          "Outbox"
+        ]
+      },
+      {
+        "rel_type": "MENTIONS",
+        "direction": "out",
+        "properties": {},
+        "label": "Entity",
+        "name": "gateway",
+        "aliases": [
+          "Gateway"
+        ]
+      },
+      {
+        "rel_type": "MENTIONS",
+        "direction": "out",
+        "properties": {},
+        "label": "Entity",
+        "name": "NREM"
+      },
+      {
+        "rel_type": "MENTIONS",
+        "direction": "out",
+        "properties": {},
+        "label": "Entity",
+        "name": "127.0.0.1"
+      },
+      {
+        "rel_type": "MENTIONS",
+        "direction": "out",
+        "properties": {},
+        "label": "Entity",
+        "name": "REM",
+        "aliases": [
+          "Rem"
+        ]
+      },
+      {
+        "rel_type": "MENTIONS",
+        "direction": "out",
+        "properties": {},
+        "label": "Entity",
+        "name": "Port 8765"
+      },
+      {
+        "rel_type": "MENTIONS",
+        "direction": "out",
+        "properties": {},
+        "label": "Entity",
+        "name": "HiveMindGateway",
+        "aliases": [
+          "Hive-Mind Gateway"
+        ]
+      },
+      {
+        "rel_type": "MENTIONS",
+        "direction": "out",
+        "properties": {},
+        "label": "Entity",
+        "name": "Telemetry",
+        "aliases": [
+          "telemetry"
+        ]
+      }
+    ]
+  }
+]

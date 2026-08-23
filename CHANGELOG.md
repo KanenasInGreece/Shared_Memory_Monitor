@@ -6,6 +6,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.19] - 2026-08-23
+### Added
+- Added `scripts/uninstall-systemd-user.sh` to provide a clean, automated teardown path matching the install script.
+- Documented explicit teardown procedures in `AGENTS.md` and `README.md`, gracefully handling systemd linger disable on Debian environments.
+
 ## [0.9.18] - 2026-08-23
 ### Added
 - Adopted framework v0.9.14 telemetry updates: passthrough of `llm_latency` via `/health`.
