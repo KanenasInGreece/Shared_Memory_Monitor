@@ -6,6 +6,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- README screenshots recaptured from a live 0.9.60 gateway (including the
+  Throughput & latency drawer). Copy now names front-door vs LLM-door
+  credentials and wall-timed external models.
+
 ## [0.9.20] - 2026-08-26
 ### Changed
 - Consume framework **0.9.60** `latency.rem_ms.by_model` additive keys:

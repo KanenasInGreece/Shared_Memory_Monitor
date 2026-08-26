@@ -46,6 +46,13 @@ PAGES: list[PageSpec] = [
         "open": "#consolidation-card",
     },
     {
+        "name": "latency.png",
+        "path": "/",
+        "viewport": {"width": 1440, "height": 900},
+        "element": "#latency-drawer",
+        "open": "#latency-card",
+    },
+    {
         "name": "diagram.png",
         "path": "/diagram?capture=1",
         "viewport": {"width": 1280, "height": 900},
@@ -127,13 +134,19 @@ def main() -> None:
                 page.wait_for_timeout(600)
                 page.evaluate(_SCHEMA_EXPAND_JS)
                 page.wait_for_timeout(200)
+            if spec["name"] == "latency.png":
+                page.wait_for_timeout(400)
+                page.evaluate(_SCHEMA_EXPAND_JS.replace("schema-drawer", "latency-drawer").replace("schema-content", "latency-content"))
+                page.wait_for_timeout(200)
             opener = spec.get("open")
             if opener:
                 page.wait_for_selector(opener, timeout=60_000)
                 page.click(opener)
-                page.wait_for_selector("#consolidation-drawer.open", timeout=60_000)
-                page.wait_for_selector("#consolidation-content:not([hidden])", timeout=60_000)
-                page.wait_for_timeout(600)
+                drawer = spec.get("element") or "#consolidation-drawer"
+                page.wait_for_selector(f"{drawer}.open", timeout=60_000)
+                content = "#latency-content" if "latency" in drawer else "#consolidation-content"
+                page.wait_for_selector(f"{content}:not([hidden])", timeout=60_000)
+                page.wait_for_timeout(800)
             target = OUT / name
             element = spec.get("element")
             if element:

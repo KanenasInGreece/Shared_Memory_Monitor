@@ -22,7 +22,7 @@ This sister repository is that picture. It does not install databases or daemons
 Three browser pages, one job each:
 
 1. **See** — **Monitor** (`/`) and **Diagram** (`/diagram`). Pipeline pressure, infrastructure health, LLM pool, topology. Telemetry is the signal.
-2. **Attend** — warnings, stalled consolidation, a warning on an LLM pool chip or last-event fault on a backend. Something asks for a closer look; open a drawer or click a chip.
+2. **Attend** — warnings, stalled consolidation, a warning on an LLM pool chip, a last-event fault on a backend, or a **gateway door** hint (`token verify failed` / audit log dropped — those are skill→gateway auth, not LLM faults). Something asks for a closer look; open a drawer or click a chip.
 3. **Find the detail** — **Logs** (`/logs`). Journal, REM audit, agent audit, credential audit. Filters and a File picker for live and rotated files. Logs are the detail; the dashboard never replaces them.
 
 Telemetry = signal. Logs = detail. The monitor never blurs that line.
@@ -128,7 +128,7 @@ Captured from a running monitor (`./scripts/capture-screenshots.sh`).
 
 ### Monitor — the glance that starts the day
 
-Same frame as the hero under the title. Gateway health, a status deck (drill-downs, backlog and queues, backup and infrastructure), LLM pool chips when more than one backend is configured, and backlog charts from the poll cache. Range (`1h`–`all`) scopes history; live health still comes from `GET /health`. On framework **≥ 0.8.9**, pool chips badge **local** or **external** from non-secret `has_credential` — no API keys ever appear.
+Same frame as the hero under the title. Gateway health, a status deck (drill-downs, backlog and queues, backup and infrastructure), LLM pool chips when more than one backend is configured, and backlog charts from the poll cache. Range (`1h`–`all`) scopes history; live health still comes from `GET /health`. On framework **≥ 0.8.9**, pool chips badge **local** or **external** from non-secret `has_credential` — no API keys ever appear. Front-door `token_verify_failed` / `audit_log_dropped` land on the Infrastructure hint, not on the LLM pool line; `credentialed_route_denied` stays with the pool.
 
 ![Monitor — status deck, infrastructure, LLM pool, backlog](docs/images/dashboard.png)
 
@@ -137,6 +137,12 @@ Same frame as the hero under the title. Gateway health, a status deck (drill-dow
 From **Drill-down → Data Quality & Processing**. Consolidation liveness and last outcomes, how much of the REM-processed set is consolidated versus still waiting, first-write quality and schema-growth candidates, and REM reliability (dead-lettered, failing, fairness instruments when the gateway provides them). If the tile is quiet, you rarely need this drawer; when it is not, this is the first place to look before the journal.
 
 ![Data Quality & Processing drawer](docs/images/consolidation.png)
+
+### Throughput & latency — enrichment timing, including online models
+
+From **Drill-down → Throughput & latency**. Per-model REM bars split model compute vs queue wait when the backend reports llama.cpp `service_ms`. External OpenAI-compatible models (framework **≥ 0.9.60**) appear as `timing_source: wall` rows: wall p50/p95 with service/wait as **N/A**, not a missing row and not a fake 100% service bar. `n_service` sits beside service; `n` beside wall.
+
+![Throughput & latency drawer](docs/images/latency.png)
 
 ### Schema & Integrity — shape of the graph, not the fold
 
@@ -241,9 +247,9 @@ Charts read the **poll cache**. Live panels call `bridge.py` or `logs_reader.py`
 
 ### Monitor (`/`)
 
-Start at the status deck. **Gateway health** is the headline; hover for a short summary. **Drill-down** tiles open drawers only when you need them — consolidation when fold pressure or stalls matter, throughput when enrichment or cycle latency is the question, schema when inventory or graph hygiene is the question. **Backlog & queues** and the charts answer “is the dream cycle keeping up?” **Infrastructure** is the component grid (gateway, embed, rerank, LLM, NREM, REM) plus config summary from `/health`.
+Start at the status deck. **Gateway health** is the headline; hover for a short summary. **Drill-down** tiles open drawers only when you need them — consolidation when fold pressure or stalls matter, throughput when enrichment or cycle latency is the question (including wall-timed external models), schema when inventory or graph hygiene is the question. **Backlog & queues** and the charts answer “is the dream cycle keeping up?” **Infrastructure** is the component grid (gateway, embed, rerank, LLM, NREM, REM) plus config summary from `/health`. A **gateway door** line on that hint is a failed or missing bearer at the gateway front door — not an LLM-backend fault.
 
-When the gateway has more than one LLM backend, the **LLM pool** panel shows in-flight work, routing, and placement. A warning or last-event fault on a chip is a cue, not a full post-mortem: click through to credential or agent audit for that backend. Single-backend installs keep the simpler busy/idle picture on the LLM tile.
+When the gateway has more than one LLM backend, the **LLM pool** panel shows in-flight work, routing, and placement. A warning or last-event fault on a chip (`credentialed_route_denied`, `llm_faults`) is a cue, not a full post-mortem: click through to credential or agent audit for that backend. Single-backend installs keep the simpler busy/idle picture on the LLM tile.
 
 Range selector filters the local poll cache only; it does not change what the gateway currently reports for live tiles.
 

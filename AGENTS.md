@@ -147,7 +147,7 @@ telemetry: ok · nrem+breakdown+consolidation+entity_graph+latency+spine+complia
 | `nrem` + `breakdown` | Backlog / NREM + Schema drawer Postgres panels |
 | `consolidation` | Consolidation tile + drawer |
 | `entity_graph` | Graph health band in Consolidation drawer |
-| `latency` | Throughput & latency drawer |
+| `latency` | Throughput & latency drawer; **≥ 0.9.60** `wall_ms` / `n_service` / `timing_source` (`server`\|`wall`\|`mixed`) so external models are listed with N/A service columns |
 | `spine` / `compliance` | First-write quality / schema conformance bands |
 | `graph_integrity` | Graph integrity band in Schema drawer (write-path defect detection) |
 | `llm_faults` | Per-backend fault counts on pool chips (framework **≥ 0.9.4**) |
@@ -295,7 +295,7 @@ Before cutting any new tag or release on GitHub, agents must verify all 4 checkp
 2. **Automated Audit**:
    - Run `./scripts/pre-publish-check.sh` (fails automatically if any doc or test file is on an older version).
 3. **UI Screenshots**:
-   - If UI layout or drawers were modified, refresh all 5 screenshots in `docs/images/` (`dashboard.png`, `consolidation.png`, `schema-breakdown.png`, `diagram.png`, `logs.png`).
+   - If UI layout or drawers were modified, refresh screenshots in `docs/images/` (`dashboard.png`, `consolidation.png`, `latency.png`, `schema-breakdown.png`, `diagram.png`, `logs.png`).
 4. **Build & Release Upload**:
    - Run `uv build` to produce wheel and sdist package distributions.
    - Run `gh release create vX.Y.Z` and attach built dist files (`gh release upload vX.Y.Z dist/*`).

@@ -23,7 +23,7 @@ The monitor never imports framework Python code. **No third data path** in monit
 |-------|---------|
 | `GET /health` | Infrastructure grid (embedder, LLM, daemons); `version` + `api_version` for client compat; non-secret `config` (LLM backends + weights; **≥0.8.9** `has_credential` + optional `model`; **≥0.9.13** roles / `n_ctx` / `private_ok` / prices); multi-backend `llm_pool` / affinity; **≥0.9.13** `llm_routing` + `llm_token_usage` |
 | `GET /pool/status` | Dream-job `free_slots` + per-backend `serves_all` / `counts_free_slot` (framework **≥0.9.13**; monitor v0.9.19+) |
-| `GET /memory/telemetry` | Pipeline metrics, `nrem`, `breakdown`, `spine`, `compliance`, `latency`, `entity_graph`, `consolidation`; **≥0.9.4** `llm_faults` + `credentials`; **≥0.9.8** `credentials.*_last_ts` siblings; **≥0.9.9** `credentialed_route_denied` |
+| `GET /memory/telemetry` | Pipeline metrics, `nrem`, `breakdown`, `spine`, `compliance`, `latency` (**≥0.9.60** `rem_ms.by_model` `wall_ms` / `n_service` / `timing_source` / `backend`), `entity_graph`, `consolidation`; **≥0.9.4** `llm_faults` + `credentials`; **≥0.9.8** `credentials.*_last_ts` siblings; **≥0.9.9** `credentialed_route_denied` |
 | `POST /memory/graph` | Neo4j schema panels (read-only Cypher, server-side guard) |
 
 **Client API version:** Monitor **v0.9.20** sets `bridge.API_VERSION = 4` to match
