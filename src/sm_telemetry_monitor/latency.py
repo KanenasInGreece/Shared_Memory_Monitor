@@ -65,11 +65,16 @@ def _rem_by_model(rem_ms: dict | None) -> tuple[list[dict], int | None]:
     for entry in rem.get("by_model") or []:
         if not isinstance(entry, dict):
             continue
-        name = entry.get("model") or entry.get("backend") or entry.get("name") or "?"
+        name = entry.get("model") or entry.get("name") or "?"
         service = _anchor(entry.get("service_ms"))
         contention = _anchor(entry.get("contention_ms"))
         service_p95 = _p95(entry.get("service_ms"))
         contention_p95 = _p95(entry.get("contention_ms"))
+        wall = _anchor(entry.get("wall_ms"))
+        wall_p95 = _p95(entry.get("wall_ms"))
+        n_service = entry.get("n_service")
+        timing_source = entry.get("timing_source")
+        backend = entry.get("backend")
         total = None
         if service is not None or contention is not None:
             total = (service or 0) + (contention or 0)
@@ -81,10 +86,14 @@ def _rem_by_model(rem_ms: dict | None) -> tuple[list[dict], int | None]:
             )
         models.append({
             "model": name,
+            "backend": backend,
+            "timing_source": timing_source,
             "service_ms": service,
             "contention_ms": contention,
             "service_ms_p95": service_p95,
             "contention_ms_p95": contention_p95,
+            "wall_ms": wall,
+            "wall_ms_p95": wall_p95,
             "total_ms": total,
             # Bar-segment widths (0–100) so the client draws the split without
             # re-deriving proportions; None total → no bar, just the empty note.
@@ -93,6 +102,7 @@ def _rem_by_model(rem_ms: dict | None) -> tuple[list[dict], int | None]:
             "contention_frac": contention_pct,
             "contention_pct": contention_pct,
             "n": entry.get("n"),
+            "n_service": n_service,
             "max_batch_size": entry.get("max_batch_size"),
             "low_n": isinstance(entry.get("n"), int) and entry.get("n") < _MIN_SAMPLES,
         })

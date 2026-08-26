@@ -2913,5 +2913,8 @@ body.diagram-page { min-height: 100vh; }
 }
 .lat-key-service::before { background: #6f8db0; }
 .lat-key-contention::before { background: var(--warn); }
+.lat-key-wall::before { background: var(--muted); }
+.lat-seg-wall { background: var(--card-inset); border: 1px solid var(--border); }
+.lat-backend { font-size: .68rem; color: var(--muted); font-family: var(--mono); font-weight: normal; }
 .lat-lown { color: var(--warn-bright); }
 .lat-n { color: var(--muted); }

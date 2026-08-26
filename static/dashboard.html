@@ -1155,7 +1155,11 @@ function renderLatency(L) {
 
   // REM per-model stacked bars — model floor vs queue wait
   const remBox = document.getElementById("latency-rem");
+  const remNote = document.getElementById("latency-rem-note");
   const rem = L?.rem || {};
+  if (remNote) {
+    remNote.textContent = rem.note || "";
+  }
   if (remBox) {
     if (!L?.present) {
       remBox.innerHTML = `<p class="lat-empty">This gateway does not report processing latency yet.</p>`;
@@ -1163,28 +1167,83 @@ function renderLatency(L) {
       remBox.innerHTML = `<p class="lat-empty">No record enrichment ran in the measured window — nothing to time yet.</p>`;
     } else {
       remBox.innerHTML = rem.models.map(m => {
-        const sf = m.service_frac ?? (m.contention_frac != null ? 100 - m.contention_frac : 100);
-        const cf = m.contention_frac ?? 0;
+        const isWall = m.timing_source === "wall";
+        const isMixed = m.timing_source === "mixed";
         const badgeWarn = m.contention_pct != null && m.contention_pct >= 30;
-        const badge = m.contention_pct != null ? `<span class="lat-badge${badgeWarn ? " warn" : ""}">${m.contention_pct}% wait</span>` : "";
-        const extras = [];
-        if (m.n != null) extras.push(m.low_n ? `n=${m.n} · few samples` : `n=${m.n}`);
-        if (m.max_batch_size != null) extras.push(`batch≤${m.max_batch_size}`);
-        const lown = extras.length
-          ? `<span class="${m.low_n ? "lat-lown" : "lat-n"}">${esc(extras.join(" · "))}</span>`
-          : "";
-        const p95bits = [];
-        if (m.service_ms_p95 != null) p95bits.push(`model p95 ${fmtMs(m.service_ms_p95)}`);
-        if (m.contention_ms_p95 != null) p95bits.push(`wait p95 ${fmtMs(m.contention_ms_p95)}`);
-        const p95 = p95bits.length
-          ? `<div class="lat-bar-p95">${esc(p95bits.join(" · "))}</div>` : "";
-        return `<div class="lat-bar-row${m.low_n ? " lat-dim" : ""}">
-            <div class="lat-bar-head"><span class="lat-model">${esc(m.model)}</span>${badge}</div>
+
+        let badge = "";
+        if (isWall) {
+          badge = `<span class="lat-badge">wall</span>`;
+        } else if (isMixed) {
+          const nServ = m.n_service != null ? m.n_service : "—";
+          const nTot = m.n != null ? m.n : "—";
+          badge = `<span class="lat-badge${badgeWarn ? " warn" : ""}">mixed · ${esc(nServ)}/${esc(nTot)}</span>`;
+        } else if (m.contention_pct != null) {
+          badge = `<span class="lat-badge${badgeWarn ? " warn" : ""}">${m.contention_pct}% wait</span>`;
+        }
+
+        const sub = m.backend ? `<span class="lat-backend">${esc(m.backend)}</span>` : "";
+
+        let barHtml = "";
+        if (isWall) {
+          barHtml = "";
+        } else if (isMixed) {
+          if (typeof m.service_frac === "number" && typeof m.contention_frac === "number") {
+            barHtml = `
+            <div class="lat-bar" role="img" aria-label="model compute ${fmtMs(m.service_ms)}, queue wait ${fmtMs(m.contention_ms)}">
+              <span class="lat-seg lat-seg-service" style="width:${m.service_frac}%"></span>
+              <span class="lat-seg lat-seg-contention" style="width:${m.contention_frac}%"></span>
+            </div>`;
+          }
+        } else {
+          const sf = m.service_frac ?? (m.contention_frac != null ? 100 - m.contention_frac : 100);
+          const cf = m.contention_frac ?? 0;
+          barHtml = `
             <div class="lat-bar" role="img" aria-label="model compute ${fmtMs(m.service_ms)}, queue wait ${fmtMs(m.contention_ms)}">
               <span class="lat-seg lat-seg-service" style="width:${sf}%"></span>
               <span class="lat-seg lat-seg-contention" style="width:${cf}%"></span>
+            </div>`;
+        }
+
+        const keys = [];
+        if (isWall) {
+          keys.push(`<span class="lat-key lat-key-service">model — (N/A)</span>`);
+          keys.push(`<span class="lat-key lat-key-contention">wait — (N/A)</span>`);
+          if (m.wall_ms != null) {
+            keys.push(`<span class="lat-key lat-key-wall">wall ${fmtMs(m.wall_ms)}</span>`);
+          }
+        } else {
+          const servExtra = m.n_service != null ? ` (n_service=${m.n_service})` : "";
+          keys.push(`<span class="lat-key lat-key-service">model ${fmtMs(m.service_ms)}${servExtra}</span>`);
+          keys.push(`<span class="lat-key lat-key-contention">wait ${fmtMs(m.contention_ms)}</span>`);
+          if (m.wall_ms != null) {
+            keys.push(`<span class="lat-key lat-key-wall">wall ${fmtMs(m.wall_ms)}</span>`);
+          }
+        }
+
+        const extras = [];
+        if (m.n != null) extras.push(m.low_n ? `n=${m.n} · few samples` : `n=${m.n}`);
+        if (m.max_batch_size != null) extras.push(`batch≤${m.max_batch_size}`);
+        if (extras.length) {
+          keys.push(`<span class="${m.low_n ? "lat-lown" : "lat-n"}">${esc(extras.join(" · "))}</span>`);
+        }
+
+        const p95bits = [];
+        if (!isWall) {
+          if (m.service_ms_p95 != null) p95bits.push(`model p95 ${fmtMs(m.service_ms_p95)}`);
+          if (m.contention_ms_p95 != null) p95bits.push(`wait p95 ${fmtMs(m.contention_ms_p95)}`);
+        }
+        if (m.wall_ms_p95 != null) p95bits.push(`wall p95 ${fmtMs(m.wall_ms_p95)}`);
+        const p95 = p95bits.length
+          ? `<div class="lat-bar-p95">${esc(p95bits.join(" · "))}</div>` : "";
+
+        return `<div class="lat-bar-row${m.low_n ? " lat-dim" : ""}">
+            <div class="lat-bar-head">
+              <div><span class="lat-model">${esc(m.model)}</span>${sub ? `<div class="lat-backend">${sub}</div>` : ""}</div>
+              ${badge}
             </div>
-            <div class="lat-bar-legend"><span class="lat-key lat-key-service">model ${fmtMs(m.service_ms)}</span><span class="lat-key lat-key-contention">wait ${fmtMs(m.contention_ms)}</span>${lown}</div>
+            ${barHtml}
+            <div class="lat-bar-legend">${keys.join("")}</div>
             ${p95}
           </div>`;
       }).join("");
@@ -1580,8 +1639,6 @@ function renderLlmPool(H) {
   const hasAff = !!(aff && (aff.hits != null || aff.misses != null || aff.hit_rate != null
     || (aff.hot_prefixes && aff.hot_prefixes.length)));
   const hasWedge = Array.isArray(wedged) && wedged.length > 0;
-  const tokenFailed = Number(creds?.token_verify_failed) || 0;
-  const auditDropped = Number(creds?.audit_log_dropped) || 0;
   const routeDenied = Number(creds?.credentialed_route_denied) || 0;
   const noEligible = Number(routing?.routing_no_eligible_backend) || 0;
   const atCapacity = Number(routing?.routing_backend_at_capacity) || 0;
@@ -1593,7 +1650,7 @@ function renderLlmPool(H) {
   const judgeN = Number(routing?.routed_role_judge) || 0;
   // A5: own-door + routing refuses warn; A6 quiet role totals only when no refuse.
   const routingRefuseWarn = noEligible > 0 || atCapacity > 0 || fitRejected > 0;
-  const credsWarn = tokenFailed > 0 || auditDropped > 0 || routeDenied > 0;
+  const credsWarn = routeDenied > 0;
   const hasRoutingQuiet = !routingRefuseWarn && (extractN > 0 || verifyN > 0 || judgeN > 0);
   const poolLineWarn = hasWedge || credsWarn || routingRefuseWarn;
 
@@ -1623,14 +1680,6 @@ function renderLlmPool(H) {
   }
   if (H?.inference_busy) bits.push(`GPU ${H.inference_busy}`);
   if (hasWedge) bits.push(`wedge: ${wedged.join(", ")}`);
-  if (tokenFailed > 0) {
-    const ageTxt = fmtLastEventAge(creds?.token_verify_failed_last_ts);
-    bits.push(`token verify failed ${tokenFailed}` + (ageTxt ? ` ${ageTxt}` : ""));
-  }
-  if (auditDropped > 0) {
-    const ageTxt = fmtLastEventAge(creds?.audit_log_dropped_last_ts);
-    bits.push("audit log dropped" + (ageTxt ? ` ${ageTxt}` : ""));
-  }
   if (routeDenied > 0) {
     const ageTxt = fmtLastEventAge(creds?.credentialed_route_denied_last_ts);
     bits.push(`route denied ${routeDenied}` + (ageTxt ? ` ${ageTxt}` : ""));
@@ -1841,9 +1890,29 @@ function renderSystemHealth(H) {
   const hint = document.getElementById("system-hint");
   const hintText = gatewayConfigHint(H);
   const unauthWarn = H?.config?.allow_unauthenticated_provider_keys === true;
+  const creds = H?.credentials;
+  const tokenFailed = Number(creds?.token_verify_failed) || 0;
+  const auditDropped = Number(creds?.audit_log_dropped) || 0;
+  const doorWarn = tokenFailed > 0 || auditDropped > 0;
   if (hint) {
-    hint.className = "hint sidebar-hint" + (unauthWarn ? " warn" : "");
-    hint.textContent = hintText;
+    const isWarn = unauthWarn || doorWarn;
+    hint.className = "hint sidebar-hint" + (isWarn ? " warn" : "");
+    if (doorWarn) {
+      const doorBits = [];
+      if (tokenFailed > 0) {
+        const ageTxt = fmtLastEventAge(creds?.token_verify_failed_last_ts);
+        doorBits.push(`token verify failed ${tokenFailed}` + (ageTxt ? ` ${ageTxt}` : ""));
+      }
+      if (auditDropped > 0) {
+        const ageTxt = fmtLastEventAge(creds?.audit_log_dropped_last_ts);
+        doorBits.push("audit log dropped" + (ageTxt ? ` ${ageTxt}` : ""));
+      }
+      const doorText = "gateway door: " + doorBits.join(" · ");
+      const baseText = hintText ? `${hintText} · ${doorText}` : doorText;
+      hint.innerHTML = `${esc(baseText)} · <a class="pool-pop-link" href="/logs?source=credential_audit">credential audit</a>`;
+    } else {
+      hint.textContent = hintText;
+    }
   }
   // Richer title: per-backend list + pool tuning when present (no secrets).
   const cfg = H?.config;

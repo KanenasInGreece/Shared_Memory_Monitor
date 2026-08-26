@@ -99,6 +99,131 @@ class LatencyRemTests(unittest.TestCase):
         self.assertIsNotNone(snap["chip"])
         self.assertEqual(snap["chip"]["contention_pct"], 80)
 
+    def test_wall_only_deepseek_shape(self):
+        snap = latency_from_payload(_payload({
+            "rem_ms": {"by_model": [
+                {
+                    "model": "deepseek-v4-flash",
+                    "n": 15,
+                    "n_service": 0,
+                    "timing_source": "wall",
+                    "backend": "https://api.deepseek.com",
+                    "max_batch_size": 2,
+                    "service_ms": {"p50": None, "p95": None},
+                    "contention_ms": {"p50": None, "p95": None},
+                    "wall_ms": {"p50": 4905.1, "p95": 6283.3},
+                },
+            ]},
+        }))
+        self.assertTrue(snap["rem"]["present"])
+        m = snap["rem"]["models"][0]
+        self.assertEqual(m["model"], "deepseek-v4-flash")
+        self.assertIsNone(m["service_ms"])
+        self.assertIsNone(m["contention_ms"])
+        self.assertEqual(m["wall_ms"], 4905.1)
+        self.assertEqual(m["wall_ms_p95"], 6283.3)
+        self.assertEqual(m["n_service"], 0)
+        self.assertEqual(m["timing_source"], "wall")
+        self.assertEqual(m["backend"], "https://api.deepseek.com")
+        self.assertIsNone(m["service_frac"])
+        self.assertIsNone(m["contention_frac"])
+        self.assertEqual(m["max_batch_size"], 2)
+        self.assertIsNone(snap["chip"])
+
+    def test_mixed_timing_source(self):
+        snap = latency_from_payload(_payload({
+            "rem_ms": {"by_model": [
+                {
+                    "model": "mixed-model",
+                    "n": 500,
+                    "n_service": 1,
+                    "timing_source": "mixed",
+                    "service_ms": {"p50": 100, "p95": 200},
+                    "contention_ms": {"p50": 10, "p95": 20},
+                    "wall_ms": {"p50": 4000, "p95": 8000},
+                    "backend": None,
+                },
+            ]},
+        }))
+        m = snap["rem"]["models"][0]
+        self.assertEqual(m["n"], 500)
+        self.assertEqual(m["n_service"], 1)
+        self.assertEqual(m["timing_source"], "mixed")
+        self.assertIsNone(m["backend"])
+        self.assertEqual(m["service_ms"], 100)
+        self.assertEqual(m["wall_ms"], 4000)
+        self.assertEqual(m["wall_ms_p95"], 8000)
+        self.assertEqual(m["total_ms"], 110)
+        self.assertEqual(m["service_frac"], 91)       # round(100 * 100 / 110) = 91
+        self.assertEqual(m["contention_frac"], 9)     # round(100 * 10 / 110) = 9
+        self.assertEqual(m["contention_pct"], 9)
+
+    def test_server_row_with_wall_and_timing_source(self):
+        snap = latency_from_payload(_payload({
+            "rem_ms": {"by_model": [
+                {
+                    "model": "qwen-local",
+                    "n": 40,
+                    "n_service": 40,
+                    "timing_source": "server",
+                    "backend": "http://ollama:11434",
+                    "max_batch_size": 1,
+                    "service_ms": {"p50": 800, "p95": 1200},
+                    "contention_ms": {"p50": 200, "p95": 400},
+                    "wall_ms": {"p50": 1050.0, "p95": 1650.0},
+                },
+            ]},
+        }))
+        m = snap["rem"]["models"][0]
+        self.assertEqual(m["model"], "qwen-local")
+        self.assertEqual(m["service_ms"], 800)
+        self.assertEqual(m["contention_ms"], 200)
+        self.assertEqual(m["total_ms"], 1000)
+        self.assertEqual(m["service_frac"], 80)
+        self.assertEqual(m["contention_frac"], 20)
+        self.assertEqual(m["wall_ms"], 1050.0)
+        self.assertEqual(m["wall_ms_p95"], 1650.0)
+        self.assertEqual(m["timing_source"], "server")
+        self.assertEqual(m["n_service"], 40)
+        self.assertEqual(m["backend"], "http://ollama:11434")
+
+    def test_pre_0960_row_defaults(self):
+        snap = latency_from_payload(_payload({
+            "rem_ms": {"by_model": [
+                {"model": "gemma-legacy", "service_ms": 500, "contention_ms": 100, "n": 20},
+            ]},
+        }))
+        m = snap["rem"]["models"][0]
+        self.assertEqual(m["model"], "gemma-legacy")
+        self.assertEqual(m["service_ms"], 500)
+        self.assertEqual(m["contention_ms"], 100)
+        self.assertIsNone(m.get("wall_ms"))
+        self.assertIsNone(m.get("wall_ms_p95"))
+        self.assertIsNone(m.get("n_service"))
+        self.assertIsNone(m.get("timing_source"))
+        self.assertIsNone(m.get("backend"))
+
+    def test_name_fallback_never_uses_backend_url(self):
+        # Entry with NO model, backend is a URL -> name must be "?" (never the URL)
+        snap = latency_from_payload(_payload({
+            "rem_ms": {"by_model": [
+                {"backend": "https://api.deepseek.com", "n": 10},
+            ]},
+        }))
+        m = snap["rem"]["models"][0]
+        self.assertEqual(m["model"], "?")
+        self.assertEqual(m["backend"], "https://api.deepseek.com")
+
+        # Entry with 'name' key used if present
+        snap2 = latency_from_payload(_payload({
+            "rem_ms": {"by_model": [
+                {"name": "custom-named-model", "backend": "https://api.openai.com", "n": 5},
+            ]},
+        }))
+        m2 = snap2["rem"]["models"][0]
+        self.assertEqual(m2["model"], "custom-named-model")
+        self.assertEqual(m2["backend"], "https://api.openai.com")
+
 
 class LatencyEnvelopeTests(unittest.TestCase):
     def test_missing_latency_block_pre_063_gateway(self):
