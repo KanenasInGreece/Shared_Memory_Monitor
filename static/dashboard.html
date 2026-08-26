@@ -983,7 +983,13 @@ function renderConsolidationDrilldown(C) {
         const eligText = elig == null ? "—" : String(elig);
         const outcome = c.last_outcome_display || c.last_outcome || "";
         const err = c.last_error?.class
-          ? `${c.last_error.class}: ${c.last_error.msg || ""}`
+          ? (c.last_error.superseded
+              ? (c.last_error.age_human
+                  ? (c.last_error.age_human.endsWith("ago")
+                      ? `last err ${c.last_error.class} ${c.last_error.age_human}`
+                      : `last err ${c.last_error.class} ${c.last_error.age_human} ago`)
+                  : `last err ${c.last_error.class}`)
+              : `${c.last_error.class}: ${c.last_error.msg || ""}`)
           : "";
         const status = c.stalled ? "stalled"
           : c.in_flight ? "in flight"

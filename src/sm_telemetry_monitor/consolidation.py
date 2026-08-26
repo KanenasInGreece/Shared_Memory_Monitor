@@ -689,19 +689,25 @@ def _format_folds(succeeded: int | None, attempted: int | None) -> str | None:
 def _normalize_cycle(key: str, raw: dict | None) -> dict:
     raw = raw if isinstance(raw, dict) else {}
     err = raw.get("last_error")
-    # last_error is historical: the gateway keeps the most recent error even
-    # after later cycles complete (e.g. OrphanedRun from a daemon restart whose
-    # in-flight row was already recovered). Showing it against a healthy cycle
-    # reads as a live fault, so surface it only while it is current — a
-    # non-completed last outcome or an active failure streak.
-    error_current = (
-        raw.get("last_outcome") not in ("completed", "deferred")
-        or int(raw.get("consecutive_failures") or 0) > 0
-    )
-    if isinstance(err, dict) and error_current:
+    if isinstance(err, dict):
+        age_seconds = _num_or_none(err.get("age_seconds"))
+        superseded = err.get("superseded")
+        if superseded is None:
+            # Backward compatibility for older gateways that do not provide
+            # the superseded flag: fall back to inferring from outcome & streak.
+            superseded = not (
+                raw.get("last_outcome") not in ("completed", "deferred")
+                or int(raw.get("consecutive_failures") or 0) > 0
+            )
+        else:
+            superseded = bool(superseded)
+
         last_error = {
             "class": err.get("class"),
             "msg": sanitize_error(str(err.get("msg") or "")) or None,
+            "superseded": superseded,
+            "age_seconds": age_seconds,
+            "age_human": humanize_age(age_seconds) if age_seconds is not None else None,
         }
     else:
         last_error = None

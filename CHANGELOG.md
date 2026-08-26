@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.21] - 2026-08-26
+### Changed
+- Support gateway `last_error.superseded` and `age_seconds` in consolidation telemetry, displaying `last err <class> <age> ago` for superseded errors.
+
 ### Changed
 - README screenshots recaptured from a live 0.9.60 gateway (including the
   Throughput & latency drawer). Copy now names front-door vs LLM-door

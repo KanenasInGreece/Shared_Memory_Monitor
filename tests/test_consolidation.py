@@ -192,6 +192,7 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
     def test_stale_last_error_suppressed_after_completion(self):
         # The gateway keeps the most recent error forever (e.g. OrphanedRun from
         # a recovered daemon restart) — a completed cycle must not display it.
+        # Now it passes `superseded: True` and we surface it appropriately.
         health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
         telemetry = {
             "status": "success",
@@ -202,14 +203,18 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
                         "consecutive_failures": 0,
                         "stalled": False,
                         "last_error": {"class": "OrphanedRun",
-                                       "msg": "daemon restarted while cycle was in-flight"},
+                                       "msg": "daemon restarted while cycle was in-flight",
+                                       "superseded": True,
+                                       "age_seconds": 120},
                     },
                 },
             },
         }
         snap = consolidation_from_payload(health, telemetry)
         fact = next(c for c in snap["cycles"] if c["key"] == "fact_consolidation")
-        self.assertIsNone(fact["last_error"])
+        self.assertTrue(fact["last_error"]["superseded"])
+        self.assertEqual(fact["last_error"]["age_seconds"], 120)
+        self.assertEqual(fact["last_error"]["age_human"], "2m ago")
         self.assertEqual(fact["state"], "ok")
 
     def test_current_last_error_still_surfaced(self):
@@ -222,7 +227,7 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
                         "last_outcome": "crashed",
                         "consecutive_failures": 2,
                         "stalled": False,
-                        "last_error": {"class": "LLMTimeout", "msg": "timed out"},
+                        "last_error": {"class": "LLMTimeout", "msg": "timed out", "superseded": False},
                     },
                 },
             },
@@ -230,6 +235,7 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         snap = consolidation_from_payload(health, telemetry)
         fact = next(c for c in snap["cycles"] if c["key"] == "fact_consolidation")
         self.assertEqual(fact["last_error"]["class"], "LLMTimeout")
+        self.assertFalse(fact["last_error"]["superseded"])
 
     def test_fact_coverage_computed(self):
         health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
