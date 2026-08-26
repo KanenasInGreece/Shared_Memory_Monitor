@@ -125,7 +125,7 @@
           </div>
 
           <div class="status-deck-infra">
-            <div class="section-title section-title-tight">Gateway</div>
+            <div class="section-title section-title-tight" id="gateway-section-title">Gateway</div>
             <div class="health-row health-row-sidebar" id="gateway-health-row">
               <div class="health-item unknown" data-key="gateway"><div class="n">—</div><div class="l">Gateway</div></div>
             </div>
@@ -1385,10 +1385,6 @@ function renderBackup(H) {
   card.title = titleBits.join(" · ");
 }
 
-function gatewayConfigHint(H) {
-  if (!H || H.reachable === false) return H?.error || "gateway unreachable";
-  const bits = [];
-  if (H.version) bits.push(`Gateway ${H.version}`);
   if (H.api_version != null) bits.push(`API ${H.api_version}`);
   return bits.join(" · ");
 }
@@ -1870,8 +1866,6 @@ function renderSystemHealth(H) {
   renderConsolidation(H?.consolidation || null);
   renderLlmPool(H);
   renderGraphIntegrity(H);
-
-  const gwHint = gatewayConfigHint(H);
   const byKey = Object.fromEntries((H?.components || []).map(c => [c.key, c]));
   document.querySelectorAll(".health-row-sidebar .health-item").forEach(el => {
     const c = byKey[el.dataset.key];
@@ -1890,6 +1884,20 @@ function renderSystemHealth(H) {
     el.className = "health-item " + healthUiState(c.state || "unknown");
   });
 
+  const gwTitle = document.getElementById("gateway-section-title");
+  if (gwTitle) {
+    if (!H || H.reachable === false) {
+      gwTitle.innerHTML = `Gateway <span style="color: var(--warn-bright); margin-left: 12px; font-weight: normal; font-size: 0.9em;">offline</span>`;
+    } else {
+      const vStr = (H.version ? `${H.version}` : "") + (H.api_version != null ? ` API ${H.api_version}` : "");
+      if (vStr) {
+        gwTitle.innerHTML = `Gateway <span style="color: var(--warn-bright); margin-left: 12px; font-weight: normal; font-size: 0.9em;">${esc(vStr.trim())}</span>`;
+      } else {
+        gwTitle.textContent = "Gateway";
+      }
+    }
+  }
+
   const hint = document.getElementById("gateway-hint");
   const unauthWarn = H?.config?.allow_unauthenticated_provider_keys === true;
   const creds = H?.credentials;
@@ -1900,7 +1908,6 @@ function renderSystemHealth(H) {
     const isWarn = unauthWarn || doorWarn;
     hint.className = "hint sidebar-hint" + (isWarn ? " warn" : "");
     const hintParts = [];
-    if (gwHint) hintParts.push(gwHint);
     
     if (unauthWarn) {
       hintParts.push("allow_unauthenticated_provider_keys: true");
