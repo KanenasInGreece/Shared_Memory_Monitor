@@ -1877,54 +1877,33 @@ function renderSystemHealth(H) {
   renderLlmPool(H);
   renderGraphIntegrity(H);
 
+  const gwHint = gatewayConfigHint(H);
   const byKey = Object.fromEntries((H?.components || []).map(c => [c.key, c]));
   document.querySelectorAll("#system-health-row .health-item").forEach(el => {
+    const isGw = el.dataset.key === "gateway";
     const c = byKey[el.dataset.key];
     const nEl = el.querySelector(".n");
     if (!c) {
       el.className = "health-item unknown";
       nEl.textContent = H?.reachable === false ? "down" : "—";
       nEl.className = "n bad";
-      nEl.title = "";
+      nEl.title = isGw ? (gwHint || "") : "";
+      if (isGw) el.title = gwHint || "";
       return;
     }
     const line = healthLine(c);
     nEl.textContent = line.text;
     nEl.className = "n " + line.state;
-    nEl.title = line.title;
+    nEl.title = isGw ? (line.title ? `${line.title} · ${gwHint}` : gwHint) : line.title;
+    if (isGw) el.title = gwHint || "";
     el.className = "health-item " + healthUiState(c.state || "unknown");
   });
 
-  const hint = document.getElementById("system-hint");
-  const hintText = gatewayConfigHint(H);
-  const unauthWarn = H?.config?.allow_unauthenticated_provider_keys === true;
-  const creds = H?.credentials;
-  const tokenFailed = Number(creds?.token_verify_failed) || 0;
-  const auditDropped = Number(creds?.audit_log_dropped) || 0;
-  const doorWarn = tokenFailed > 0 || auditDropped > 0;
-  if (hint) {
-    const isWarn = unauthWarn || doorWarn;
-    hint.className = "hint sidebar-hint" + (isWarn ? " warn" : "");
-    if (doorWarn) {
-      const doorBits = [];
-      if (tokenFailed > 0) {
-        const ageTxt = fmtLastEventAge(creds?.token_verify_failed_last_ts);
-        doorBits.push(`token verify failed ${tokenFailed}` + (ageTxt ? ` ${ageTxt}` : ""));
-      }
-      if (auditDropped > 0) {
-        const ageTxt = fmtLastEventAge(creds?.audit_log_dropped_last_ts);
-        doorBits.push("audit log dropped" + (ageTxt ? ` ${ageTxt}` : ""));
-      }
-      const doorText = "gateway door: " + doorBits.join(" · ");
-      const baseText = hintText ? `${hintText} · ${doorText}` : doorText;
-      hint.innerHTML = `${esc(baseText)} · <a class="pool-pop-link" href="/logs?source=credential_audit">credential audit</a>`;
-    } else {
-      hint.textContent = hintText;
-    }
-  }
-  // Richer title: per-backend list + pool tuning when present (no secrets).
+  // Richer title on gateway item: per-backend list + pool tuning when present (no secrets).
   const cfg = H?.config;
-  if (hint && cfg?.present) {
+  const gwItem = document.querySelector('#system-health-row [data-key="gateway"]');
+  const gwEl = gwItem?.querySelector(".n");
+  if (cfg?.present) {
     const lines = [];
     if (cfg.backends?.length) {
       lines.push("Backends: " + cfg.backends.map(b =>
@@ -1939,8 +1918,51 @@ function renderSystemHealth(H) {
       lines.push(`Affinity: prefix ${aff.prefix_chars} · ttl ${aff.ttl_s ?? "—"}s · max inflight ${aff.max_inflight ?? "—"}`);
     }
     if (cfg.embed_max_chars != null) lines.push(`Embed max chars: ${cfg.embed_max_chars}`);
-    hint.title = lines.join("\n");
-  } else if (hint) {
+    if (lines.length) {
+      const extra = lines.join("\n");
+      if (gwItem) gwItem.title = gwItem.title ? `${gwItem.title}\n${extra}` : extra;
+      if (gwEl) gwEl.title = gwEl.title ? `${gwEl.title}\n${extra}` : extra;
+    }
+  }
+
+  const hint = document.getElementById("system-hint");
+  const unauthWarn = H?.config?.allow_unauthenticated_provider_keys === true;
+  const creds = H?.credentials;
+  const tokenFailed = Number(creds?.token_verify_failed) || 0;
+  const auditDropped = Number(creds?.audit_log_dropped) || 0;
+  const doorWarn = tokenFailed > 0 || auditDropped > 0;
+  if (hint) {
+    const isWarn = unauthWarn || doorWarn;
+    hint.className = "hint sidebar-hint" + (isWarn ? " warn" : "");
+    const hintParts = [];
+    if (unauthWarn) {
+      hintParts.push("allow_unauthenticated_provider_keys: true");
+    }
+    if (doorWarn) {
+      const doorBits = [];
+      if (tokenFailed > 0) {
+        const ageTxt = fmtLastEventAge(creds?.token_verify_failed_last_ts);
+        doorBits.push(`token verify failed ${tokenFailed}` + (ageTxt ? ` ${ageTxt}` : ""));
+      }
+      if (auditDropped > 0) {
+        const ageTxt = fmtLastEventAge(creds?.audit_log_dropped_last_ts);
+        doorBits.push("audit log dropped" + (ageTxt ? ` ${ageTxt}` : ""));
+      }
+      hintParts.push("gateway rejected client auth: " + doorBits.join(" · "));
+    }
+    
+    if (hintParts.length > 0) {
+      const hintHtml = hintParts.map(p => esc(p)).join(" · ");
+      if (doorWarn) {
+        hint.innerHTML = `${hintHtml} · <a class="pool-pop-link" href="/logs?source=credential_audit">credential audit</a>`;
+      } else {
+        hint.innerHTML = hintHtml;
+      }
+      hint.hidden = false;
+    } else {
+      hint.textContent = "";
+      hint.hidden = true;
+    }
     hint.title = "";
   }
 }
