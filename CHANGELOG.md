@@ -11,6 +11,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Throughput & latency drawer). Copy now names front-door vs LLM-door
   credentials and wall-timed external models.
 
+### Removed
+- One-off agent patch scripts, search/telemetry dumps, and a 16 MiB
+  `update.tar.gz` from the repository root. Plans live in `tasks/`;
+  reviews in `Local_Documentation/Reviews/`.
+
 ## [0.9.20] - 2026-08-26
 ### Changed
 - Consume framework **0.9.60** `latency.rem_ms.by_model` additive keys:

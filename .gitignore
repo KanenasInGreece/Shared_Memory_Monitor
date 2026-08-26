@@ -48,3 +48,19 @@ CLAUDE.local.md
 .gemini/
 .claude/
 .grok/
+
+# One-off agent scratch — never at repo root
+/patch_*.py
+/patch2.py
+/fix_indent.py
+/get_recent.py
+/update_changelog*.py
+/plan.md
+/diff.txt
+/results.json
+/results_monitor.json
+/search_results.json
+/telemetry.json
+/*.tar.gz
+/requirements-audit.txt
+scratch/
