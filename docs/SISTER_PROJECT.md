@@ -26,15 +26,19 @@ The monitor never imports framework Python code. **No third data path** in monit
 | `GET /memory/telemetry` | Pipeline metrics, `nrem`, `breakdown`, `spine`, `compliance`, `latency`, `entity_graph`, `consolidation`; **≥0.9.4** `llm_faults` + `credentials`; **≥0.9.8** `credentials.*_last_ts` siblings; **≥0.9.9** `credentialed_route_denied` |
 | `POST /memory/graph` | Neo4j schema panels (read-only Cypher, server-side guard) |
 
-**Client API version:** Monitor **v0.9.19** sets `bridge.API_VERSION = 4` to match
+**Client API version:** Monitor **v0.9.20** sets `bridge.API_VERSION = 4` to match
 the **deployed** gateway `api_version` (framework **≥ 0.8.33** / projects registry
 + sentinel + telemetry enhancements). **Alternative vectors** on first-write quality
 expects **framework ≥ 0.8.40** (`telemetry.spine.alternative_vectors`). Full Status +
 diagram telemetry (LLM local/external placement, entity-graph census, latency drawer)
-expects **framework ≥ 0.8.9**. Credential last-event age on the pool line expects
-**framework ≥ 0.9.8** (`credentials.*_last_ts`). `credentialed_route_denied` expects
-**≥ 0.9.9**. `llm_routing` / `llm_token_usage` / backend descriptors / `GET /pool/status`
-expect **≥ 0.9.13**. Do not jump the wire contract ahead of what live `/health` reports.
+expects **framework ≥ 0.8.9**. Credential last-event age expects
+**framework ≥ 0.9.8** (`credentials.*_last_ts`; front-door counts on the
+Infrastructure hint, `credentialed_route_denied` on the LLM pool line).
+`credentialed_route_denied` expects **≥ 0.9.9**. `llm_routing` /
+`llm_token_usage` / backend descriptors / `GET /pool/status` expect
+**≥ 0.9.13**. Wall/mixed `latency.rem_ms.by_model` (`wall_ms`, `n_service`,
+`timing_source`) expects **≥ 0.9.60**. Do not jump the wire contract ahead
+of what live `/health` reports.
 
 **Out of scope for `monitor:read`:** `POST /memory/relations/review` and
 `/memory/relations/label` are the operator calibration oracle for machine-minted

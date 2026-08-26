@@ -151,7 +151,7 @@ telemetry: ok · nrem+breakdown+consolidation+entity_graph+latency+spine+complia
 | `spine` / `compliance` | First-write quality / schema conformance bands |
 | `graph_integrity` | Graph integrity band in Schema drawer (write-path defect detection) |
 | `llm_faults` | Per-backend fault counts on pool chips (framework **≥ 0.9.4**) |
-| `credentials` | Own-door `token_verify_failed` / `audit_log_dropped` / **≥ 0.9.9** `credentialed_route_denied` on the pool line; **≥ 0.9.8** pairs each with `*_last_ts` age |
+| `credentials` | Own-door `token_verify_failed` / `audit_log_dropped` on the Infrastructure gateway hint (front door); **≥ 0.9.9** `credentialed_route_denied` on the LLM pool line; **≥ 0.9.8** pairs each with `*_last_ts` age |
 | `llm_routing` / `llm_token_usage` | Pool-line role totals + refuse warns; chip-popover token totals (framework **≥ 0.9.13**) |
 | `pool_status` | `N dream-ready` from `GET /pool/status` `free_slots`; `serves_all` / `counts_free_slot` on chips (framework **≥ 0.9.13**) |
 
@@ -229,7 +229,7 @@ If only running foreground, stop and re-run `./scripts/run-loop.sh --serve --int
 
 ```bash
 ./scripts/agent-upgrade.sh           # pull main, uv sync, restart unit if present, status
-# or pin: ./scripts/agent-upgrade.sh --ref v0.9.19   # example tag
+# or pin: ./scripts/agent-upgrade.sh --ref v0.9.20   # example tag
 ```
 
 After upgrade, confirm `compat=ok` if the gateway bumped `api_version` — the monitor

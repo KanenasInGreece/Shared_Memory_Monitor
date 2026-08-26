@@ -6,6 +6,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.20] - 2026-08-26
+### Changed
+- Consume framework **0.9.60** `latency.rem_ms.by_model` additive keys:
+  `wall_ms` `{p50,p95}`, `n_service`, `backend`, `timing_source`
+  (`server` | `wall` | `mixed`). Wall-only models (e.g. DeepSeek) stay in
+  the Throughput & latency drawer with wall p50/p95 and service/wait as
+  **N/A**, instead of a fake 100% service bar. `n_service` is shown beside
+  service; `n` beside wall.
+- Move front-door `token_verify_failed` and `audit_log_dropped` off the
+  LLM pool line onto the Infrastructure gateway hint. `credentialed_route_denied`
+  stays on the pool line (LLM door). Count 0 stays quiet; last-event age pairing
+  is unchanged.
+
 ## [0.9.19] - 2026-08-23
 ### Added
 - Added `scripts/uninstall-systemd-user.sh` to provide a clean, automated teardown path matching the install script.
