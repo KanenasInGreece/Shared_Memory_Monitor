@@ -1198,11 +1198,13 @@ function renderLatency(L) {
         } else {
           const sf = m.service_frac ?? (m.contention_frac != null ? 100 - m.contention_frac : 100);
           const cf = m.contention_frac ?? 0;
-          barHtml = `
+          if (typeof sf === "number" && Number.isFinite(sf) && typeof cf === "number" && Number.isFinite(cf)) {
+            barHtml = `
             <div class="lat-bar" role="img" aria-label="model compute ${fmtMs(m.service_ms)}, queue wait ${fmtMs(m.contention_ms)}">
               <span class="lat-seg lat-seg-service" style="width:${sf}%"></span>
               <span class="lat-seg lat-seg-contention" style="width:${cf}%"></span>
             </div>`;
+          }
         }
 
         const keys = [];
