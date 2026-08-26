@@ -125,16 +125,20 @@
           </div>
 
           <div class="status-deck-infra">
-            <div class="section-title section-title-tight">Infrastructure</div>
-            <div class="health-row health-row-sidebar" id="system-health-row">
+            <div class="section-title section-title-tight">Gateway</div>
+            <div class="health-row health-row-sidebar" id="gateway-health-row">
               <div class="health-item unknown" data-key="gateway"><div class="n">—</div><div class="l">Gateway</div></div>
+            </div>
+            <div class="hint sidebar-hint" id="gateway-hint"></div>
+            
+            <div class="section-title section-title-tight" style="margin-top: 12px;">Daemons & Compute</div>
+            <div class="health-row health-row-sidebar" id="system-health-row">
               <div class="health-item unknown" data-key="embedder"><div class="n">—</div><div class="l">Embed</div></div>
               <div class="health-item unknown" data-key="reranker"><div class="n">—</div><div class="l">Rerank</div></div>
               <div class="health-item unknown" data-key="llm"><div class="n">—</div><div class="l">LLM</div></div>
               <div class="health-item unknown" data-key="nrem_daemon"><div class="n">—</div><div class="l">NREM</div></div>
               <div class="health-item unknown" data-key="rem_daemon"><div class="n">—</div><div class="l">REM</div></div>
             </div>
-            <div class="hint sidebar-hint" id="system-hint"></div>
             <!-- LLM pool detail: only from /health.llm_pool · affinity · oldest inflight (no invented metrics) -->
             <div id="llm-pool-panel" class="pool-panel" hidden>
               <div class="section-title section-title-tight">LLM pool</div>
@@ -1382,20 +1386,10 @@ function renderBackup(H) {
 }
 
 function gatewayConfigHint(H) {
-  // Non-secret live config from /health.config (v0.6.1+) + version contract.
-  // A9: unauth-keys beacon only when snapshot.config sent true (absent/false silent).
   if (!H || H.reachable === false) return H?.error || "gateway unreachable";
   const bits = [];
   if (H.version) bits.push(`Gateway ${H.version}`);
   if (H.api_version != null) bits.push(`API ${H.api_version}`);
-  const cfg = H.config;
-  if (cfg?.summary) bits.push(cfg.summary);
-  else if (cfg?.backend_count) {
-    bits.push(`${cfg.backend_count} LLM backend${cfg.backend_count === 1 ? "" : "s"}`);
-  }
-  if (cfg?.allow_unauthenticated_provider_keys === true) {
-    bits.push("allow_unauthenticated_provider_keys: true");
-  }
   return bits.join(" · ");
 }
 
@@ -1879,53 +1873,24 @@ function renderSystemHealth(H) {
 
   const gwHint = gatewayConfigHint(H);
   const byKey = Object.fromEntries((H?.components || []).map(c => [c.key, c]));
-  document.querySelectorAll("#system-health-row .health-item").forEach(el => {
-    const isGw = el.dataset.key === "gateway";
+  document.querySelectorAll(".health-row-sidebar .health-item").forEach(el => {
     const c = byKey[el.dataset.key];
     const nEl = el.querySelector(".n");
     if (!c) {
       el.className = "health-item unknown";
       nEl.textContent = H?.reachable === false ? "down" : "—";
       nEl.className = "n bad";
-      nEl.title = isGw ? (gwHint || "") : "";
-      if (isGw) el.title = gwHint || "";
+      nEl.title = "";
       return;
     }
     const line = healthLine(c);
     nEl.textContent = line.text;
     nEl.className = "n " + line.state;
-    nEl.title = isGw ? (line.title ? `${line.title} · ${gwHint}` : gwHint) : line.title;
-    if (isGw) el.title = gwHint || "";
+    nEl.title = line.title;
     el.className = "health-item " + healthUiState(c.state || "unknown");
   });
 
-  // Richer title on gateway item: per-backend list + pool tuning when present (no secrets).
-  const cfg = H?.config;
-  const gwItem = document.querySelector('#system-health-row [data-key="gateway"]');
-  const gwEl = gwItem?.querySelector(".n");
-  if (cfg?.present) {
-    const lines = [];
-    if (cfg.backends?.length) {
-      lines.push("Backends: " + cfg.backends.map(b =>
-        b.weight != null ? `${b.label} (w=${b.weight})` : b.label).join(", "));
-    }
-    const pt = cfg.pool_tuning;
-    if (pt && (pt.fail_threshold != null || pt.cooldown_s != null)) {
-      lines.push(`Pool tuning: fail≥${pt.fail_threshold ?? "—"}/${pt.fail_window_s ?? "—"}s · cooldown ${pt.cooldown_s ?? "—"}s · max tries ${pt.max_tries ?? "—"}`);
-    }
-    const aff = cfg.affinity;
-    if (aff && aff.prefix_chars != null) {
-      lines.push(`Affinity: prefix ${aff.prefix_chars} · ttl ${aff.ttl_s ?? "—"}s · max inflight ${aff.max_inflight ?? "—"}`);
-    }
-    if (cfg.embed_max_chars != null) lines.push(`Embed max chars: ${cfg.embed_max_chars}`);
-    if (lines.length) {
-      const extra = lines.join("\n");
-      if (gwItem) gwItem.title = gwItem.title ? `${gwItem.title}\n${extra}` : extra;
-      if (gwEl) gwEl.title = gwEl.title ? `${gwEl.title}\n${extra}` : extra;
-    }
-  }
-
-  const hint = document.getElementById("system-hint");
+  const hint = document.getElementById("gateway-hint");
   const unauthWarn = H?.config?.allow_unauthenticated_provider_keys === true;
   const creds = H?.credentials;
   const tokenFailed = Number(creds?.token_verify_failed) || 0;
@@ -1935,6 +1900,8 @@ function renderSystemHealth(H) {
     const isWarn = unauthWarn || doorWarn;
     hint.className = "hint sidebar-hint" + (isWarn ? " warn" : "");
     const hintParts = [];
+    if (gwHint) hintParts.push(gwHint);
+    
     if (unauthWarn) {
       hintParts.push("allow_unauthenticated_provider_keys: true");
     }
@@ -1948,16 +1915,11 @@ function renderSystemHealth(H) {
         const ageTxt = fmtLastEventAge(creds?.audit_log_dropped_last_ts);
         doorBits.push("audit log dropped" + (ageTxt ? ` ${ageTxt}` : ""));
       }
-      hintParts.push("gateway rejected client auth: " + doorBits.join(" · "));
+      hintParts.push("gateway rejected client auth: " + doorBits.join(" · ") + ` · <a class="pool-pop-link" href="/logs?source=credential_audit">credential audit</a>`);
     }
     
     if (hintParts.length > 0) {
-      const hintHtml = hintParts.map(p => esc(p)).join(" · ");
-      if (doorWarn) {
-        hint.innerHTML = `${hintHtml} · <a class="pool-pop-link" href="/logs?source=credential_audit">credential audit</a>`;
-      } else {
-        hint.innerHTML = hintHtml;
-      }
+      hint.innerHTML = hintParts.join("<br>");
       hint.hidden = false;
     } else {
       hint.textContent = "";

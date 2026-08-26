@@ -113,7 +113,7 @@ def main() -> None:
                 page.wait_for_function(
                     """() => {
                       const n = document.querySelector(
-                        '#system-health-row .health-item[data-key="gateway"] .n');
+                        '#gateway-health-row .health-item[data-key="gateway"] .n');
                       const updated = document.getElementById('bar-updated-v');
                       return n && n.textContent.trim() !== '—'
                         && updated && !updated.textContent.includes('connecting');
