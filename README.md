@@ -134,7 +134,7 @@ Same frame as the hero under the title. Gateway health, a status deck (drill-dow
 
 ### Data Quality & Processing — open when the tile warns
 
-From **Drill-down → Data Quality & Processing**. Consolidation liveness and last outcomes, how much of the REM-processed set is consolidated versus still waiting, first-write quality and schema-growth candidates, and REM reliability (dead-lettered, failing, fairness instruments when the gateway provides them). If the tile is quiet, you rarely need this drawer; when it is not, this is the first place to look before the journal.
+From **Drill-down → Data Quality & Processing**. Consolidation liveness and last outcomes, how much of the REM-processed set is consolidated versus still waiting, first-write quality and schema-growth candidates, and REM reliability (dead-lettered, failing, fairness instruments when the gateway provides them). Historical, superseded errors (like an orphaned run that recovered) are explicitly labeled with their age (e.g., `last err OrphanedRun 47m ago`) rather than masquerading as live faults. If the tile is quiet, you rarely need this drawer; when it is not, this is the first place to look before the journal.
 
 ![Data Quality & Processing drawer](docs/images/consolidation.png)
 
