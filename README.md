@@ -153,6 +153,15 @@ From **Drill-down → Data Quality & Processing**. Consolidation liveness and la
 
 From **Drill-down → Throughput & latency**. Per-model REM bars split model compute vs queue wait when the backend reports llama.cpp `service_ms`. External OpenAI-compatible models (framework **≥ 0.9.60**) appear as `timing_source: wall` rows: wall p50/p95 with service/wait as **N/A**, not a missing row and not a fake 100% service bar. `n_service` sits beside service; `n` beside wall.
 
+**Encoders · embedding & reranking** sits at the foot of the same drawer, from
+`telemetry.encoders` (framework **≥ 0.9.74**): median and p95 per call for `embed` and
+`rerank` separately, each with the sample count it was measured over. It answers a
+different question from the REM bars above it — those time the *reasoning* models, these
+time the two services every save and every search passes through, so a slow reranker
+surfaces here instead of as unexplained latency somewhere else. Reranking is normally the
+slower of the two, and scales with how much text a query puts in front of it. When the
+gateway reports no encoder telemetry the block says so rather than drawing zeros.
+
 ![Throughput & latency drawer](docs/images/latency.png)
 
 ### Schema & Integrity — shape of the graph, not the fold
@@ -221,11 +230,12 @@ flowchart TB
     TEL["GET /memory/telemetry"]
     HLTH["GET /health"]
     GRP["POST /memory/graph"]
+    POOL["GET /pool/status"]
     JRN[journalctl user unit]
     REMF[rem-audit.jsonl]
     AGF[agent-audit.jsonl]
     CRED[credential-audit.jsonl]
-    GW --- TEL & HLTH & GRP
+    GW --- TEL & HLTH & GRP & POOL
   end
 
   subgraph mon [Monitor :8765 — presentation only]
@@ -350,11 +360,14 @@ Entry point alias: `sm-telemetry`.
 
 | Path | What it is |
 |------|------------|
-| `data/telemetry.db` | Poll cache — copies of `GET /memory/telemetry` (+ health per poll) |
-| `data/telemetry.jsonl` | Same cache as JSONL export |
+| `data/telemetry.db` | Poll cache — copies of `GET /memory/telemetry` (+ health per poll). The store of record |
+| `data/telemetry.jsonl` | Crash-recovery sidecar mirroring the table, so a poll that lands between the append and the insert is not lost |
 | `graphs/*.png` | Renders from cached telemetry |
 
-Duplicate polls within 60s with identical telemetry are skipped. Runtime data is gitignored.
+Duplicate polls within 60s with identical telemetry are skipped. Raw 10-minute samples are
+kept for `SM_RAW_RETENTION_DAYS` (default 14) and thinned to one per hour beyond that —
+downsampled, never reset, so the long trend survives while the store stays bounded. Set it
+to `0` to disable thinning and let the store grow without limit. Runtime data is gitignored.
 
 ---
 
