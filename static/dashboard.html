@@ -10,7 +10,7 @@
 
 <header class="bar">
   <div class="bar-brand">
-    <h1>Shared Memory Monitor</h1>
+    <h1>Shared Memory Monitor <span id="monitor-version" class="header-version"></span></h1>
     <div class="sub">Gateway telemetry &amp; framework logs</div>
   </div>
   <nav class="bar-nav view-tabs" aria-label="Views">
@@ -2364,6 +2364,7 @@ function markSchemaCaptureReady() {
 
 fetch("/api/meta").then(r=>r.json()).then(m=>{
   if (m.neo4j_browser_url) document.getElementById("neo4j-link").href = m.neo4j_browser_url;
+  if (m.monitor_version) document.getElementById("monitor-version").textContent = `(v${m.monitor_version})`;
 }).catch(()=>{});
 
 // Chart.js inside a closed <details> paints at zero width — resize on open.

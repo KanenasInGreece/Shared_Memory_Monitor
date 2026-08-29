@@ -14,6 +14,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from . import __version__ as monitor_version
+
 from .analytics import build_api_payload
 from .breakdown import fetch_breakdown
 from .config import (
@@ -189,6 +191,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/meta":
             return self._json(200, {
                 **meta(),
+                "monitor_version": monitor_version,
                 "poll_interval_s": POLL_INTERVAL_S,
                 "rem_batch": REM_BATCH,
                 "rem_poll_s": REM_POLL_S,
