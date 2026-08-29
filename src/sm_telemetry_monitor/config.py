@@ -26,8 +26,15 @@ REM_STALL_WINDOW_S = int(REM_POLL_S * 2.5)  # 300s
 NREM_FACT_CLUSTER_MIN = 5
 NREM_DECISION_CLUSTER_MIN = 2
 
-SERVER_HOST = "0.0.0.0"
-SERVER_PORT = 8765
+# Loopback by default. Everything the monitor reads is local — the gateway on
+# 127.0.0.1:8888, log files on disk, its own SQLite — so nothing about its job
+# requires reaching it from another host, and the dashboard carries no auth.
+# Exposing it is therefore a deliberate act: set SERVER_HOST to widen it.
+SERVER_HOST = get("SERVER_HOST", "127.0.0.1") or "127.0.0.1"
+try:
+    SERVER_PORT = int(get("SERVER_PORT", "8765") or "8765")
+except ValueError:
+    SERVER_PORT = 8765
 
 NEO4J_BROWSER_URL = get("NEO4J_BROWSER_URL", "http://127.0.0.1:7474") or "http://127.0.0.1:7474"
 

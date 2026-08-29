@@ -224,9 +224,14 @@ def _check_read_role() -> dict[str, Any]:
     try:
         with httpx.Client(timeout=8.0) as client:
             t = client.get(f"{base}/memory/telemetry", headers=headers)
+            # Deliberately unsaveable body. The point is to confirm the write is
+            # refused at the door; sending a VALID record would mean that the
+            # check, on the one occasion it fails, performs the very write it
+            # exists to prove impossible. An authorised token answers 400 here
+            # and stores nothing, which still tells us the door was open.
             w = client.post(
                 f"{base}/memory/save",
-                json={"content": "monitor probe", "metadata": {"source": "monitor_probe"}},
+                json={},
                 headers=headers,
             )
         telemetry_ok = t.status_code == 200
@@ -236,7 +241,17 @@ def _check_read_role() -> dict[str, Any]:
         if not telemetry_ok:
             err = f"telemetry HTTP {t.status_code}"
         elif not write_denied:
-            err = f"write probe not denied (HTTP {w.status_code}) — token may be over-privileged"
+            if w.status_code in (400, 422):
+                # The door opened and the body was refused on its merits.
+                # Nothing was stored, but the token got past auth.
+                err = (f"write probe reached validation (HTTP {w.status_code}) "
+                       "— token may be over-privileged")
+            elif w.status_code == 404 or w.status_code >= 500:
+                # Says nothing about this token; not a finding against it.
+                err = f"write probe inconclusive (HTTP {w.status_code})"
+            else:
+                err = (f"write probe not denied (HTTP {w.status_code}) "
+                       "— token may be over-privileged")
         return {
             "ok": ok,
             "telemetry_ok": telemetry_ok,

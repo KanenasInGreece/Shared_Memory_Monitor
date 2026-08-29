@@ -9,7 +9,7 @@ from .bridge import get_health, get_telemetry
 from .config import DATA_FILE
 from .nrem_backlog import nrem_counts_from_telemetry
 from .sanitize import sanitize_error
-from .store import init_db, insert_snapshot, load_all
+from .store import RAW_RETENTION_DAYS, init_db, insert_snapshot, load_all, thin_old_snapshots
 
 
 def utc_now() -> datetime:
@@ -64,9 +64,10 @@ def flatten_snapshot(payload: dict, collected_at: datetime, health: dict) -> dic
     nrem = nrem_counts_from_telemetry(t)
     if nrem and nrem.get("nrem_backlog_source") == "telemetry":
         row.update(nrem)
-    bd = t.get("breakdown")
-    if isinstance(bd, dict) and not bd.get("error"):
-        row["telemetry_breakdown"] = bd
+    # `breakdown` is deliberately NOT persisted. It was ~88% of every stored
+    # row and nothing ever read it back: the Schema Breakdown drawer fetches it
+    # live through /api/breakdown, which keeps its own cache. Storing it cost
+    # ~200 MB a year to answer no question.
     cons_t = t.get("consolidation")
     health_cons = health.get("consolidation") if isinstance(health.get("consolidation"), dict) else {}
     if isinstance(cons_t, dict):
@@ -128,4 +129,14 @@ def poll_once() -> dict | None:
         print(f"[{collected_at.isoformat()}] saved sample #{len(load_history())}")
     else:
         print(f"[{collected_at.isoformat()}] skipped duplicate sample")
+
+    try:
+        thinned = thin_old_snapshots()
+    except Exception as exc:                      # housekeeping, never the sample
+        print(f"[{collected_at.isoformat()}] retention pass skipped: "
+              f"{type(exc).__name__}")
+        thinned = 0
+    if thinned:
+        print(f"[{collected_at.isoformat()}] thinned {thinned} snapshots older than "
+              f"{RAW_RETENTION_DAYS}d to hourly")
     return row

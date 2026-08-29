@@ -6,6 +6,80 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.28] - 2026-08-30
+Least-privilege pass over the monitor's whole surface, plus storage retention. The
+rule applied throughout: allow only what a feature demonstrably needs, and remove the
+rest rather than configure around it. The gateway side was audited and needed no change
+— the monitor already authenticates as `monitor:read` and is refused `403` on writes.
+
+### Security
+- **Binds `127.0.0.1` by default instead of `0.0.0.0`.** `SECURITY.md` already stated the
+  bind was loopback; the code did not match its own published policy, and the dashboard
+  carries no authentication of its own. Set `SERVER_HOST` to expose it deliberately.
+- **Stopped sending `Access-Control-Allow-Origin: *`** on every JSON response. The
+  dashboard is same-origin; the wildcard let any page the operator visited read this
+  host's telemetry cross-origin.
+- **The read-only probe in `check` can no longer perform the write it tests for.** It sent
+  a valid record to `POST /memory/save` expecting a refusal — so on the one occasion the
+  check failed, it would have stored the record. It now sends a deliberately unsaveable
+  body: still `403` when the door is shut, `400` and nothing written if it is open.
+- Removed `GET /api/diagram/agent-activity`, which no page has called since 0.9.27.
+- The allow-list of every call the monitor makes and every route it serves is now written
+  down in [SECURITY.md](SECURITY.md#attack-surface--default-deny), so additions have to be
+  justified rather than accumulated.
+
+### Changed
+- **The telemetry `breakdown` blob is no longer persisted.** It was ~88% of every stored
+  row and nothing ever read it back — the Schema Breakdown drawer fetches it live through
+  `/api/breakdown`, which keeps its own cache. Rows drop from ~4,751 to ~1,919 bytes.
+- **Poll history is thinned instead of growing forever.** Raw 10-minute samples are kept
+  for `SM_RAW_RETENTION_DAYS` (default 14) and downsampled to hourly beyond that, on the
+  poll loop. Downsampling rather than resetting: the poll history is the one thing the
+  monitor holds that the gateway does not, so a reset would discard the long trend the
+  charts exist to show. Combined with the line above, the store settles around **20 MB a
+  year** instead of the ~225 MB/year it was heading for, unbounded. Measured against a
+  copy of the live store: 2,353 rows to 1,829, oldest sample preserved, 11.2 MB to 8.7 MB.
+- `SERVER_HOST` and `SERVER_PORT` are now readable from the environment, and both are on
+  the monitor `.env` allow-list — previously the documented way to widen the bind worked
+  under systemd (which reads `.env` as an `EnvironmentFile`) but silently did nothing on a
+  foreground run. `.env.example` documents them, and `SM_RAW_RETENTION_DAYS`, for the first
+  time.
+- A bad value for `SERVER_PORT` or `SM_RAW_RETENTION_DAYS` no longer raises at import and
+  takes the whole process down; both fall back to their defaults.
+
+### Dependencies
+- **Removed `python-dotenv`.** It was declared as a runtime dependency and never imported —
+  `env_loader.py` parses `.env` itself. Its permitted floor (`>=1.0`) also admitted 1.0.0,
+  which carries **CVE-2026-28684 / PYSEC-2026-2270** (`set_key()`/`unset_key()` follow
+  symlinks when rewriting `.env`, allowing a local attacker to overwrite arbitrary files).
+  The monitor never called either function, so it was not exploitable here — but a
+  dependency nothing imports is surface with no function, so it was removed outright rather
+  than floor-bumped.
+- Added `scripts/audit-deps.sh`, which audits the **floors** as well as the lockfile. A
+  clean lockfile says nothing about what a fresh install resolves to, and the floor set is
+  where the finding above was hiding. It also fails if a declared dependency is never
+  imported. `httpx>=0.27` and `matplotlib>=3.8` both audit clean at their floors.
+
+### Fixed
+- **Poll-history thinning was undone on the next start.** The JSONL sidecar is re-imported
+  whenever it holds more rows than the table, so every row thinning removed came straight
+  back — the feature was a no-op across restarts. Thinning now re-points the sidecar
+  atomically, and the recovery import is bounded to rows newer than the newest stored
+  sample, which removes the class rather than the instance.
+- Snapshots whose `collected_at` cannot be parsed are no longer deleted by thinning: a row
+  that cannot be placed in an hour cannot be judged redundant.
+- A naive (timezone-less) `collected_at` is now bucketed as UTC rather than local time,
+  which would have straddled hour boundaries in a half-hour-offset zone.
+- Thinning failures can no longer cost a sample or stop the poll loop — retention is
+  housekeeping, and it is now wrapped accordingly.
+- `check` no longer reports "token may be over-privileged" for a gateway that answers `500`
+  or `404` to the write probe; those say nothing about the token and are now reported as
+  inconclusive, with body-validation responses (`400`/`422`) named separately.
+- The retention tests wrote to the operator's real `data/telemetry.jsonl`, because they
+  patched the database path but not the sidecar path. Both are patched now, and the posture
+  itself is pinned by tests: no CORS header, `GET`-only handlers, loopback default bind, the
+  `Host` allow-list, and the absence of the removed route.
+
 ## [0.9.27] - 2026-08-29
 ### Changed
 - **The diagram now opens on now and scrubs back 24 hours — one log rotation — instead of seven days.** The diagram answers "what is my system doing"; `/logs` owns deep history, and scrubbing a week duplicated it. A window this size never has to read a rotated archive, so the page costs the same whether the monitor has run for a day or a year. The window is stated on the page and in the README.

@@ -26,6 +26,11 @@ _FRAMEWORK_KEYS = frozenset({
 _MONITOR_EXTRA_KEYS = frozenset({
     "SHARED_MEMORY_ROOT", "SM_GATEWAY_ENV", "SM_MEMORY_BRIDGE", "SM_SKILL_ROOT",
     "SM_IGNORED_OUTBOX_IDS", "SM_JOURNAL_UNIT", "BACKUP_DIR",
+    # Where the dashboard listens. Documented as the way to widen the bind, so
+    # it has to be readable from the monitor's own .env — otherwise setting it
+    # there silently does nothing on a foreground run while working under
+    # systemd, which reads .env as an EnvironmentFile.
+    "SERVER_HOST", "SERVER_PORT",
 })
 
 # Monitor .env overrides these even if set by framework/skill copies

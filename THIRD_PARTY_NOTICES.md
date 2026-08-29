@@ -11,7 +11,6 @@ this project's own source code.
 | Package | License | Role |
 |---------|---------|------|
 | [httpx](https://github.com/encode/httpx) | BSD-3-Clause | HTTP client (gateway `/health`, `/memory/telemetry`, `/memory/graph`) |
-| [python-dotenv](https://github.com/theskumar/python-dotenv) | BSD-3-Clause | `.env` loading |
 | [matplotlib](https://matplotlib.org/) | BSD-style (Matplotlib License) | PNG chart export |
 
 ## Transitive dependencies (selected)

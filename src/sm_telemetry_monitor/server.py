@@ -32,7 +32,6 @@ from .consolidation import consolidation_snapshot
 from .env_loader import bootstrap_env
 from .latency import latency_snapshot
 from .logs_reader import (
-    agent_activity,
     agent_activity_series,
     list_archives,
     list_sources,
@@ -46,6 +45,16 @@ _DASHBOARD = STATIC_DIR / "dashboard.html"
 _LOGS = STATIC_DIR / "logs.html"
 _DIAGRAM = STATIC_DIR / "diagram.html"
 _STATIC_ROOT = STATIC_DIR.resolve()
+
+# Requests must be addressed to this machine by a loopback name; see
+# Handler._host_allowed. SERVER_HOST is included so a deliberate wider bind
+# still works when reached by that address.
+_ALLOWED_HOSTS = frozenset({
+    "127.0.0.1", "localhost", "[::1]", "::1", SERVER_HOST.lower(),
+})
+
+# A tail is a diagnostic read, not a bulk export; journalctl -n takes this.
+MAX_TAIL_LINES = 5000
 
 
 def diagram_payload() -> dict:
@@ -95,6 +104,18 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # quieter logs
         print(f"[server] {self.address_string()} {fmt % args}")
 
+    def _host_allowed(self) -> bool:
+        """Only serve requests addressed to this machine by a local name.
+
+        Binding loopback stops other hosts reaching the port, but not DNS
+        rebinding: a page on any domain whose name re-resolves to 127.0.0.1
+        becomes same-origin and can read every route. The Host header is what
+        distinguishes the two, so it is checked rather than trusted.
+        """
+        host = (self.headers.get("Host") or "").strip()
+        name = host.rsplit(":", 1)[0] if not host.startswith("[") else host.split("]")[0] + "]"
+        return name.lower() in _ALLOWED_HOSTS
+
     def handle_one_request(self) -> None:
         # A scrubbed-past diagram request is abandoned by the browser mid-flight;
         # writing its response then raises, and socketserver would log a full
@@ -109,7 +130,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        # No Access-Control-Allow-Origin: the dashboard is same-origin, and the
+        # wildcard let any page the operator visited read this host's telemetry.
         self.end_headers()
         self.wfile.write(body)
 
@@ -126,6 +148,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self) -> None:
+        if not self._host_allowed():
+            return self.send_error(421, "Misdirected Request")
         parsed = urlparse(self.path)
         path = parsed.path
         qs = parse_qs(parsed.query)
@@ -154,11 +178,6 @@ class Handler(BaseHTTPRequestHandler):
 
             if path == "/api/diagram":
                 return self._json(200, diagram_payload())
-
-            if path == "/api/diagram/agent-activity":
-                since = (qs.get("since") or [None])[0]
-                until = (qs.get("until") or [None])[0]
-                return self._json(200, agent_activity(since=since, until=until))
 
             if path == "/api/breakdown":
                 force = (qs.get("force") or ["0"])[0] in ("1", "true")
@@ -191,6 +210,7 @@ class Handler(BaseHTTPRequestHandler):
                 lines = int((qs.get("lines") or ["150"])[0])
             except ValueError:
                 lines = 150
+            lines = max(1, min(lines, MAX_TAIL_LINES))
             try:
                 offset = int((qs.get("offset") or ["0"])[0])
             except ValueError:

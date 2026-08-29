@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 from .analytics import enrich_row
 from .config import DATA_FILE, DB_FILE
+from .env_loader import get
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS snapshots (
@@ -66,14 +67,41 @@ def _jsonl_row_count() -> int:
 
 
 def sync_jsonl_to_db() -> int:
-    """Import any JSONL samples missing from SQLite (e.g. after a partial write)."""
+    """Recover samples the sidecar holds and the table does not.
+
+    Bounded to rows NEWER than the newest row already stored. The sidecar's
+    purpose is to survive a crash between the append and the insert, which is
+    always the most recent sample; letting it re-import anything older would
+    let it undo retention, and would race a thinning pass that has committed
+    its DELETE but not yet rewritten the mirror.
+    """
     if not DATA_FILE.exists():
         return 0
     with _connect() as conn:
         db_count = conn.execute("SELECT count(*) FROM snapshots").fetchone()[0]
+        row = conn.execute("SELECT max(collected_at) FROM snapshots").fetchone()
+    # Cheap gate first: init_db() runs on every request that reads history, and
+    # parsing the whole sidecar there would put file I/O on the hot path.
     if _jsonl_row_count() <= db_count:
         return 0
-    return migrate_jsonl()
+    watermark = row[0] if row else None
+    if watermark is None:
+        return migrate_jsonl()
+    imported = 0
+    with DATA_FILE.open() as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                sample = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if (sample.get("collected_at") or "") <= watermark:
+                continue
+            if insert_snapshot(sample, skip_dedup=True):
+                imported += 1
+    return imported
 
 
 def init_db() -> None:
@@ -169,6 +197,91 @@ def insert_snapshot(row: dict, *, skip_dedup: bool = False) -> bool:
         )
         conn.commit()
     return True
+
+
+try:
+    RAW_RETENTION_DAYS = int(get("SM_RAW_RETENTION_DAYS", "14") or "14")
+except ValueError:
+    # A typo in .env must not stop the monitor from starting at all.
+    RAW_RETENTION_DAYS = 14
+_THINNED_BUCKET_MINUTES = 60
+
+
+def thin_old_snapshots(*, retention_days: int | None = None) -> int:
+    """Keep one snapshot per hour beyond the raw-retention window.
+
+    Downsampling rather than deleting: the poll history is the one thing the
+    monitor holds that the gateway does not, so a reset would throw away the
+    long view the charts exist to show. Minute-level detail older than two
+    weeks is not something anyone scrubs to; the trend is.
+    """
+    days = RAW_RETENTION_DAYS if retention_days is None else retention_days
+    if days <= 0:
+        return 0
+    cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
+    removed = 0
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT id, collected_at FROM snapshots WHERE collected_at < ? "
+            "ORDER BY collected_at ASC",
+            (cutoff,),
+        ).fetchall()
+        keep: dict[str, int] = {}
+        undatable: set[int] = set()
+        for row in rows:
+            try:
+                ts = datetime.fromisoformat(row["collected_at"])
+            except (TypeError, ValueError):
+                # Cannot place it in an hour, so cannot judge it redundant.
+                undatable.add(row["id"])
+                continue
+            if ts.tzinfo is None:
+                # timestamp() would read a naive stamp as LOCAL time, so a
+                # half-hour-offset zone would straddle the hour boundaries.
+                ts = ts.replace(tzinfo=UTC)
+            epoch = int(ts.timestamp())
+            bucket = str(epoch - (epoch % (_THINNED_BUCKET_MINUTES * 60)))
+            keep[bucket] = row["id"]          # last sample in each hour wins
+        kept = set(keep.values()) | undatable
+        drop = [row["id"] for row in rows if row["id"] not in kept]
+        for i in range(0, len(drop), 500):
+            chunk = drop[i:i + 500]
+            conn.execute(
+                f"DELETE FROM snapshots WHERE id IN ({','.join('?' * len(chunk))})",
+                chunk,
+            )
+            removed += len(chunk)
+        conn.commit()
+
+    if removed:
+        _rewrite_jsonl_mirror()
+    return removed
+
+
+def _rewrite_jsonl_mirror() -> None:
+    """Re-point the JSONL sidecar at what the database now holds.
+
+    The sidecar is append-only and is imported back whenever it holds more rows
+    than the table (sync_jsonl_to_db). Left alone, it would re-insert every row
+    thinning had just removed on the next start — thinning would undo itself,
+    and the sidecar would keep growing besides. Rewritten atomically so a crash
+    mid-write cannot leave a truncated recovery file.
+    """
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT raw_json FROM snapshots ORDER BY collected_at ASC"
+            ).fetchall()
+        tmp = DATA_FILE.with_suffix(DATA_FILE.suffix + ".tmp")
+        DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with tmp.open("w") as fh:
+            for row in rows:
+                fh.write(row["raw_json"] + "\n")
+        tmp.replace(DATA_FILE)
+    except (OSError, sqlite3.Error):
+        # The database is the store; a stale sidecar is recoverable, so a
+        # failure here must not take the poll loop down with it.
+        pass
 
 
 def _is_duplicate(last: dict, cur: dict) -> bool:
