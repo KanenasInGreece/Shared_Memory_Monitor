@@ -229,7 +229,7 @@ If only running foreground, stop and re-run `./scripts/run-loop.sh --serve --int
 
 ```bash
 ./scripts/agent-upgrade.sh           # pull main, uv sync, restart unit if present, status
-# or pin: ./scripts/agent-upgrade.sh --ref v0.9.26   # example tag
+# or pin: ./scripts/agent-upgrade.sh --ref v0.9.27   # example tag
 ```
 
 After upgrade, confirm `compat=ok` if the gateway bumped `api_version` — the monitor

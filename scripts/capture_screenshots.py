@@ -123,6 +123,9 @@ def main() -> None:
                 page.wait_for_timeout(2500)
             if "diagram" in path:
                 page.wait_for_selector("body[data-diagram-ready='1']", timeout=60_000)
+                # The agent rack is built from the audit log, so a capture taken
+                # before it lands shows an empty layer and no agent flow lines.
+                page.wait_for_selector("#agent-chips .arch-chip", timeout=60_000)
             if "logs" in path:
                 page.wait_for_selector("body[data-logs-ready='1']", timeout=60_000)
                 page.wait_for_selector("#tabs .view-tab.is-active[data-id='agent_audit']", timeout=60_000)

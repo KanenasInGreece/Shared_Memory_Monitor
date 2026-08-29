@@ -2926,3 +2926,35 @@ body.diagram-page { min-height: 100vh; }
   margin-left: 8px;
   vertical-align: middle;
 }
+
+/* --- diagram: discovered agent rack + "you are in the past" (v0.9.27) --- */
+
+/* Reserve one chip row: the rack is populated from the audit log after first
+   paint, and going from empty to one row would shift the whole canvas down. */
+.arch-chips {
+  min-height: 1.9rem;
+}
+.arch-layer-note {
+  margin-left: auto;
+  padding-right: .6rem;
+  font-size: .68rem;
+  color: var(--muted);
+  letter-spacing: .02em;
+  font-weight: 400;
+}
+
+/* Past state. Live is left neutral — the exceptional state carries the mark. */
+.arch-canvas.is-past {
+  box-shadow: inset 0 2px 0 0 var(--warn);
+}
+.diagram-replay-when.is-past {
+  color: var(--warn-bright);
+  cursor: pointer;
+  text-decoration: underline dotted var(--warn-dim);
+  text-underline-offset: 2px;
+}
+.diagram-replay-when.is-past::after {
+  content: " · back to now";
+  color: var(--warn-dim);
+  text-decoration: none;
+}

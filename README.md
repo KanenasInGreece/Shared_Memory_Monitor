@@ -13,7 +13,7 @@ This sister repository is that picture. It does not install databases or daemons
 | **What you get** | Live ops view over framework telemetry and logs |
 | **What you do not get** | A second metrics store, DB credentials, or write access to memory |
 | **Dashboard** | **http://127.0.0.1:8765/** |
-| **This release** | **v0.9.26** — API **v4** client · wire-compatible with framework **≥ 0.8.33** · full panels on **≥ 0.8.9** · alternative vectors on **≥ 0.8.40** · credential-audit / `llm_faults` on **≥ 0.9.4** · credential last-event age on **≥ 0.9.8** · `credentialed_route_denied` on **≥ 0.9.9** · LLM routing / token usage / backend descriptors / `GET /pool/status` dream-ready slots on **≥ 0.9.13** · wall/mixed `by_model` latency on **≥ 0.9.60** |
+| **This release** | **v0.9.27** — API **v4** client · wire-compatible with framework **≥ 0.8.33** · full panels on **≥ 0.8.9** · alternative vectors on **≥ 0.8.40** · credential-audit / `llm_faults` on **≥ 0.9.4** · credential last-event age on **≥ 0.9.8** · `credentialed_route_denied` on **≥ 0.9.9** · LLM routing / token usage / backend descriptors / `GET /pool/status` dream-ready slots on **≥ 0.9.13** · wall/mixed `by_model` latency on **≥ 0.9.60** |
 
 ---
 
@@ -116,7 +116,7 @@ Everything on screen is one of those two upstreams, or a **poll cache** of past 
 | **Upstream data** | Serves telemetry; writes journal + audit JSONL | Reads those — never Postgres/Neo4j |
 | **Wire contract** | `api_version` on `GET /health` | Client advertises **API 4** (`X-SM-Api-Version: 4`) |
 
-**Compatibility:** Monitor **v0.9.26** speaks **API v4** against framework **≥ 0.8.33** (`compat=ok` from doctor). Prefer **≥ 0.8.9** for the full Status picture (LLM local/external placement, entity census, latency drawer), **≥ 0.8.40** for alternative-vectors on first-write quality, **≥ 0.9.4** for credential-audit tails and `llm_faults` on pool chips, **≥ 0.9.8** for `credentials.*_last_ts` last-failure age, **≥ 0.9.9** for `credentialed_route_denied`, **≥ 0.9.13** for `llm_routing` / `llm_token_usage` / backend descriptors / `GET /pool/status` dream-ready slots, and **≥ 0.9.60** for wall/mixed `by_model` latency (external OpenAI-compatible backends). Older gateways stay on the wire; missing panels simply omit fields rather than fail hard.
+**Compatibility:** Monitor **v0.9.27** speaks **API v4** against framework **≥ 0.8.33** (`compat=ok` from doctor). Prefer **≥ 0.8.9** for the full Status picture (LLM local/external placement, entity census, latency drawer), **≥ 0.8.40** for alternative-vectors on first-write quality, **≥ 0.9.4** for credential-audit tails and `llm_faults` on pool chips, **≥ 0.9.8** for `credentials.*_last_ts` last-failure age, **≥ 0.9.9** for `credentialed_route_denied`, **≥ 0.9.13** for `llm_routing` / `llm_token_usage` / backend descriptors / `GET /pool/status` dream-ready slots, and **≥ 0.9.60** for wall/mixed `by_model` latency (external OpenAI-compatible backends). Older gateways stay on the wire; missing panels simply omit fields rather than fail hard.
 
 Where a number on the screen comes from is always the framework payload or a log line. For the field-level mapping of telemetry keys to UI bands, see [docs/SISTER_PROJECT.md](docs/SISTER_PROJECT.md) and the framework’s own telemetry docs — this README stays on the operator path, not the catalog.
 
@@ -152,7 +152,11 @@ From **Drill-down → Schema & Integrity**. Entity-resolution census (mentioned 
 
 ### Diagram — who talks to whom
 
-Live topology: agents into the gateway cluster, REM/NREM beside it, memory and inference buses below. Node health from `/health`, counts from telemetry, flow emphasis from agent-audit lines. Replay slider steps stored polls when you want “what did this look like an hour ago?”
+Live topology: agents into the gateway cluster, REM/NREM beside it, memory and inference buses below. Node health from `/health`, counts from telemetry, flow emphasis from agent-audit lines.
+
+**The diagram opens on now and scrubs back 24 hours — one log rotation.** That is deliberate: the diagram answers *what is my system doing*, while `/logs` owns deep history. A window this size never has to read a rotated archive, so the page costs the same whether the monitor has been running for a day or a year. Scrubbing into the past marks the canvas amber; click the amber timestamp to return to now.
+
+**The agent layer shows only clients that actually appear in the audit log for that window.** Nothing is hardcoded: connect a new agent or MCP client and it appears on its own, and a first-time install with one agent shows one chip rather than a rack of tools you do not run.
 
 ![Diagram — agents, gateway, memory, inference](docs/images/diagram.png)
 
@@ -255,7 +259,9 @@ Range selector filters the local poll cache only; it does not change what the ga
 
 ### Diagram (`/diagram`)
 
-Topology for operators who think in systems rather than tables: agent layer, gateway with REM/NREM, memory bus (Postgres, outbox, Neo4j), inference bus (reasoning pool, embedder, reranker). Legend and flow colours separate write, read, and logic. Use **Replay** when you need to step through cached polls without waiting for a new cycle.
+Topology for operators who think in systems rather than tables: agent layer, gateway with REM/NREM, memory bus (Postgres, outbox, Neo4j), inference bus (reasoning pool, embedder, reranker). Legend and flow colours separate write, read, and logic.
+
+The view is **now plus the last 24 hours** (one log rotation), stated on the page. Scrub the slider to step back through stored polls; the canvas takes an amber rule and the timestamp turns amber so it is never ambiguous that you are looking at the past. If an interval predates what the audit log still holds, the caption says the log was rotated away rather than claiming the system was idle — those are different facts. Agent chips are discovered from the audit log for the window, so the rack reflects what is actually talking to your gateway.
 
 ### Logs (`/logs`)
 
@@ -328,7 +334,8 @@ Entry point alias: `sm-telemetry`.
 | `GET /api/consolidation` | Live consolidation drill-down |
 | `GET /api/breakdown` | Telemetry + graph query |
 | `GET /api/diagram` | Cached telemetry + health |
-| `GET /api/diagram/agent-activity` | `agent-audit.jsonl` via `logs_reader` |
+| `GET /api/diagram/agent-activity` | `agent-audit.jsonl` via `logs_reader` (single window) |
+| `GET /api/history?agent_series=1` | Poll history plus per-interval agent activity, from one load so the two can never disagree |
 | `GET /api/logs/tail` (and related) | Journal or audit JSONL via `logs_reader` |
 
 | Path | What it is |
@@ -380,7 +387,7 @@ Long-running processes do **not** hot-reload after `.env` or code changes — re
 | Doc | Topic |
 |-----|-------|
 | [SISTER_PROJECT.md](docs/SISTER_PROJECT.md) | Framework boundary and wire contract |
-| [CHANGELOG.md](CHANGELOG.md) | Releases (current: **v0.9.26**) |
+| [CHANGELOG.md](CHANGELOG.md) | Releases (current: **v0.9.27**) |
 | [SECURITY.md](SECURITY.md) | Secrets policy |
 | [AGENTS.md](AGENTS.md) | Agent install / status / upgrade |
 

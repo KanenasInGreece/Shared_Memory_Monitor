@@ -31,7 +31,13 @@ from .config import (
 from .consolidation import consolidation_snapshot
 from .env_loader import bootstrap_env
 from .latency import latency_snapshot
-from .logs_reader import agent_activity, list_archives, list_sources, tail_source
+from .logs_reader import (
+    agent_activity,
+    agent_activity_series,
+    list_archives,
+    list_sources,
+    tail_source,
+)
 from .store import init_db, load_history, meta, parse_range
 from .summary import live_summary
 from .system_health import system_health_snapshot
@@ -222,9 +228,18 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError:
                     bucket_minutes = None
             rows = load_history(since=since, bucket_minutes=bucket_minutes) if bucket_minutes else rows_raw
-            return self._json(200, build_api_payload(
+            payload = build_api_payload(
                 rows, range_spec=range_spec, bucket_minutes=bucket_minutes,
-            ))
+            )
+            if (qs.get("agent_series") or ["0"])[0] in ("1", "true"):
+                # Computed from the rows just loaded, so the series can never be
+                # keyed to a different set of stamps than the caller is drawing:
+                # `range` is relative to now, and a second request would resolve
+                # it at a different instant.
+                payload["agent_series"] = agent_activity_series(
+                    [r["collected_at"] for r in rows]
+                )
+            return self._json(200, payload)
 
         if path.startswith("/static/"):
             static_target = _safe_static_path(path)

@@ -196,10 +196,15 @@ def parse_range(range_spec: str | None) -> datetime | None:
         n = int(range_spec[:-1])
     except ValueError:
         return None
-    if unit == "h":
-        return now - timedelta(hours=n)
-    if unit == "d":
-        return now - timedelta(days=n)
+    # The spec comes off a query string, so an absurd count must read as "no
+    # lower bound" rather than raise OverflowError out of the request.
+    try:
+        if unit == "h":
+            return now - timedelta(hours=n)
+        if unit == "d":
+            return now - timedelta(days=n)
+    except (OverflowError, ValueError):
+        return None
     return None
 
 

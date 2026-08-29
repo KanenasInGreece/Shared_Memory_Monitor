@@ -6,6 +6,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.27] - 2026-08-29
+### Changed
+- **The diagram now opens on now and scrubs back 24 hours — one log rotation — instead of seven days.** The diagram answers "what is my system doing"; `/logs` owns deep history, and scrubbing a week duplicated it. A window this size never has to read a rotated archive, so the page costs the same whether the monitor has run for a day or a year. The window is stated on the page and in the README.
+- **Agent chips are discovered from the audit log instead of hardcoded.** Connect a new agent or MCP client and it appears on its own; a first-time install with one agent shows one chip rather than a rack of tools it does not run. Adding OpenCode in 0.9.23 had to be done by hand — this removes that step. Measured on the development host: the old rack advertised a `codex` client that had never once appeared in the log, while real `backup` traffic had no chip at all.
+- Scrubbing into the past now marks the canvas with an amber rule and turns the timestamp amber, and clicking that timestamp returns to now.
+
+### Fixed
+- Agent activity for the whole scrubber now arrives in **one** request with the poll history, keyed by each interval's own timestamp. Previously each slider position issued its own query; the debounce added in 0.9.26 hid the cost rather than removing it. Measured: 80 slider events now issue **0** requests, and the series costs 13 ms cold / 5.8 ms warm on top of the history load. A 24-hour window parses **2 of the 15 audit files on disk** — archives whose mtime predates the window are skipped without being read, so that count stays flat as rotations accumulate.
+- The history and the agent series are computed from a single `load_history`, so they can no longer be keyed to different sets of timestamps. `range` resolves against "now", so two separate requests genuinely could disagree — which would have misattributed every interval silently.
+- An interval older than what the audit log still holds now says the log was rotated away, rather than reporting the system as idle. Those are different facts, and the monitor's own history store already outlives the audit log it is joined against.
+- A naive (timezone-less) timestamp in an audit row no longer raises when compared against a timezone-aware one, which would have failed a whole scan over a single row.
+- An audit file whose filesystem mtime predates the window is no longer skipped when it still holds in-window rows. mtime is the writer's filesystem clock while the row stamp is the writer's wall clock, and a naive local timestamp puts them a whole timezone apart; the live file is now never skipped, an already-parsed file is judged on its real contents, and archives get a slack margin. Skipping such a file blanked the agent layer and looked exactly like an idle system.
+- Audit coverage is now ordered by what the files contain rather than by mtime. A restored or copied archive carries a newer mtime than its rows, which could report a coverage range that was inverted or months too recent — captioning every interval on screen as "rotated away" while the rows sat in the file.
+- The number of distinct agents drawn, the length of an agent id, and the number of intervals a caller can request are now bounded. `agent` is untrusted text written by other processes, so a client minting a fresh id per request would otherwise mint a chip per request; the tail folds into one "Other clients" chip.
+
+### Removed
+- The debounce and abort machinery added in 0.9.26, along with the whole class of stale-request bugs it existed to guard against. Scrubbing is now an array lookup.
+- `GET /api/diagram/agent-activity-series`, which shipped unused during development: the page reads the series from `/api/history`, and the standalone route accepted an unbounded `range`.
+
 ## [0.9.26] - 2026-08-29
 ### Fixed
 - Diagram timeline scrubbing no longer stalls the monitor. Dragging the replay slider fired one `/api/diagram/agent-activity` request per slider position, and each request re-read and re-parsed the whole agent-audit corpus (15 files, ~29.5k rows). A 180-step drag drove `GET /api/diagram` from 0.35 s to 21.9 s and left the dashboard blank. Audit parsing is now memoised per file on `(mtime, size)`, and the front end coalesces a drag into a single request, aborting superseded ones — measured: 100 slider events now issue 1 request, and the dashboard stays under 1.7 s during a drag.

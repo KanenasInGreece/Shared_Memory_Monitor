@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Shared Memory Monitor — Architecture</title>
-<link rel="stylesheet" href="/static/theme.css?v=40">
+<link rel="stylesheet" href="/static/theme.css?v=43">
 </head>
 <body class="diagram-page">
 
@@ -57,45 +57,10 @@
       <section class="arch-layer arch-layer-agents" data-layer="agents">
         <div class="arch-layer-head">
           <span class="arch-layer-title">Agent layer</span>
+          <span class="arch-layer-note" id="agent-roster-note" aria-live="polite">Reading the agent audit log…</span>
           <span class="arch-layer-badge unknown" id="layer-agents-badge">—</span>
         </div>
-        <div class="arch-chips" id="agent-chips">
-          <span class="arch-chip" data-chip="claude" data-node="agent_claude" data-agent-ids="claude,claude-code">
-            <span class="arch-chip-label">Claude Code</span>
-            <span class="arch-port" data-port="bottom-read" title="Read channel to gateway"></span>
-            <span class="arch-port" data-port="bottom-write" title="Write channel to gateway"></span>
-          </span>
-          <span class="arch-chip" data-chip="grok" data-node="agent_grok" data-agent-ids="grok">
-            <span class="arch-chip-label">Grok</span>
-            <span class="arch-port" data-port="bottom-read" title="Read channel to gateway"></span>
-            <span class="arch-port" data-port="bottom-write" title="Write channel to gateway"></span>
-          </span>
-          <span class="arch-chip" data-chip="codex" data-node="agent_codex" data-agent-ids="codex,codex-cli,openai-codex">
-            <span class="arch-chip-label">Codex CLI</span>
-            <span class="arch-port" data-port="bottom-read" title="Read channel to gateway"></span>
-            <span class="arch-port" data-port="bottom-write" title="Write channel to gateway"></span>
-          </span>
-          <span class="arch-chip" data-chip="antigravity" data-node="agent_antigravity" data-agent-ids="antigravity,gemini,antigravity-agent">
-            <span class="arch-chip-label">Antigravity</span>
-            <span class="arch-port" data-port="bottom-read" title="Read channel to gateway"></span>
-            <span class="arch-port" data-port="bottom-write" title="Write channel to gateway"></span>
-          </span>
-          <span class="arch-chip" data-chip="lmstudio" data-node="agent_lmstudio" data-agent-ids="lmstudio,lm_studio,mcp,lm-studio">
-            <span class="arch-chip-label">LM Studio (MCP)</span>
-            <span class="arch-port" data-port="bottom-read" title="Read channel to gateway"></span>
-            <span class="arch-port" data-port="bottom-write" title="Write channel to gateway"></span>
-          </span>
-          <span class="arch-chip" data-chip="opencode" data-node="agent_opencode" data-agent-ids="opencode,open-code">
-            <span class="arch-chip-label">OpenCode (MCP)</span>
-            <span class="arch-port" data-port="bottom-read" title="Read channel to gateway"></span>
-            <span class="arch-port" data-port="bottom-write" title="Write channel to gateway"></span>
-          </span>
-          <span class="arch-chip" data-chip="other" data-node="agent_other" data-agent-ids="">
-            <span class="arch-chip-label">Any HTTP client</span>
-            <span class="arch-port" data-port="bottom-read" title="Read channel to gateway"></span>
-            <span class="arch-port" data-port="bottom-write" title="Write channel to gateway"></span>
-          </span>
-        </div>
+        <div class="arch-chips" id="agent-chips" aria-live="polite"></div>
       </section>
 
       <div class="arch-link-gap arch-link-gap--conduit" data-gap="agents-gateway" aria-hidden="true"></div>
@@ -281,7 +246,11 @@
 <script src="/static/bar-meta.js?v=1"></script>
 <script>
 const HEALTH_MS = 30_000;
-const HISTORY_RANGE = "7d";
+/* The diagram answers "what is my system doing"; the Logs page owns history.
+   Scoping it to one log rotation keeps its cost bounded no matter how long the
+   monitor has run — a window this size never has to read a rotated archive. */
+const HISTORY_RANGE = "1d";
+const HISTORY_RANGE_LABEL = "last 24 hours";
 const SERIES_KEYS = [
   "technical_docs", "outbox_pending", "outbox_applied", "outbox_rem_reviewed",
   "outbox_failed", "summaries_total", "facts_total", "facts_rem_pending",
@@ -296,23 +265,47 @@ let liveStory = null;
 let liveLatest = null;
 let healthTimer = null;
 let agentActivity = null;
-let agentActivityKey = null;
-let agentActivityPending = null;
-let agentActivityTimer = null;
-let agentActivityAbort = null;
-/* Slider fires one input event per drag step; each scan reads the whole audit
-   corpus server-side, so a drag must settle into a single request. */
-const AGENT_ACTIVITY_DEBOUNCE_MS = 250;
+let agentSeries = null;
 
-const CHIP_AGENT_IDS = (() => {
-  const map = new Map();
-  document.querySelectorAll("#agent-chips .arch-chip[data-agent-ids]").forEach(chip => {
-    const ids = (chip.dataset.agentIds || "").split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
-    for (const id of ids) map.set(id, chip);
-  });
-  return map;
+/* Presentation only. An agent id absent from this table still gets a chip
+   labelled with its own id — discovery must never silently drop an agent. */
+const KNOWN_AGENTS = [
+  { key: "claude",      label: "Claude Code",     ids: ["claude", "claude-code", "claude_code"] },
+  { key: "grok",        label: "Grok",            ids: ["grok"] },
+  { key: "codex",       label: "Codex CLI",       ids: ["codex", "codex-cli", "openai-codex"] },
+  { key: "antigravity", label: "Antigravity",     ids: ["antigravity", "gemini", "antigravity-agent"] },
+  { key: "lmstudio",    label: "LM Studio (MCP)", ids: ["lmstudio", "lm_studio", "lm-studio", "mcp"] },
+  { key: "opencode",    label: "OpenCode (MCP)",  ids: ["opencode", "open-code"] },
+  { key: "backup",      label: "Backup",          ids: ["backup"] },
+  { key: "other",       label: "Other clients",   ids: ["__other__"] },
+];
+const AGENT_ALIASES = (() => {
+  const m = new Map();
+  for (const a of KNOWN_AGENTS) for (const id of a.ids) m.set(id, a);
+  return m;
 })();
-const OTHER_AGENT_CHIP = document.querySelector('#agent-chips .arch-chip[data-chip="other"]');
+
+/* data-node is interpolated into a querySelector, so it is a slug we build —
+   never the raw id, which is untrusted text written by another process. */
+function agentSlug(id) {
+  return String(id).toLowerCase().replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "").slice(0, 40);
+}
+
+/* Slugging is many-to-one, so an id we do not recognise gets its own namespace
+   and a digest of its exact bytes. Without that, a client logging itself as
+   "grok!" would slug onto the real Grok's chip, inherit its flow lines and
+   relabel it — the opposite of faithful attribution. */
+function agentChipKey(rawId, known) {
+  if (known) return known.key;
+  let h = 5381;
+  const s = String(rawId);
+  for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  return `x-${agentSlug(rawId) || "agent"}-${h.toString(36)}`;
+}
+
+let CHIP_AGENT_IDS = new Map();
+let agentRosterKey = null;
 
 const STATE_LABEL = {
   ok: "OK",
@@ -760,15 +753,87 @@ function viewTimeWindow() {
   };
 }
 
-function agentActivityCacheKey(win) {
-  if (!win?.since || !win?.until) return null;
-  return `${win.since}|${win.until}`;
-}
 
 function chipForAgentId(agentId) {
   const key = String(agentId || "").trim().toLowerCase();
   if (!key) return null;
-  return CHIP_AGENT_IDS.get(key) || OTHER_AGENT_CHIP;
+  return CHIP_AGENT_IDS.get(key) || CHIP_AGENT_IDS.get("other") || null;
+}
+
+/* Build the agent rack from what the audit log actually shows in the window.
+   Diffed on the roster set: rebuilding on every refresh would destroy the
+   element-keyed chipState the flow renderer holds, plus titles and transitions. */
+function renderAgentRoster(roster, state) {
+  const host = document.getElementById("agent-chips");
+  const note = document.getElementById("agent-roster-note");
+  if (!host) return;
+
+  const entries = [];
+  const seen = new Map();
+  for (const row of roster || []) {
+    const raw = String(row.id || "").trim();
+    if (!raw) continue;
+    const known = AGENT_ALIASES.get(raw.toLowerCase());
+    const key = agentChipKey(raw, known);
+    const existing = seen.get(key);
+    if (existing) { existing.ids.push(raw); continue; }
+    const entry = {
+      key,
+      label: known ? known.label : raw.slice(0, 40),
+      ids: [raw],
+      folded: row.folded_agents || 0,
+    };
+    seen.set(key, entry);
+    entries.push(entry);
+  }
+
+  const signature = entries.map(e => `${e.key}:${e.ids.join("+")}`).join("|");
+  if (signature !== agentRosterKey) {
+    agentRosterKey = signature;
+    host.textContent = "";
+    for (const entry of entries) {
+      const chip = document.createElement("span");
+      chip.className = "arch-chip";
+      chip.dataset.chip = entry.key;
+      chip.dataset.node = `agent_${entry.key}`;
+      const label = document.createElement("span");
+      label.className = "arch-chip-label";
+      // textContent, never innerHTML: the id comes from another process's log.
+      label.textContent = entry.folded
+        ? `${entry.label} (${entry.folded})`
+        : entry.label;
+      chip.appendChild(label);
+      for (const [port, hint] of [["bottom-read", "Read channel to gateway"],
+                                  ["bottom-write", "Write channel to gateway"]]) {
+        const p = document.createElement("span");
+        p.className = "arch-port";
+        p.dataset.port = port;
+        p.title = hint;
+        chip.appendChild(p);
+      }
+      host.appendChild(chip);
+    }
+    CHIP_AGENT_IDS = new Map();
+    for (const entry of entries) {
+      const chip = host.querySelector(`[data-node="agent_${entry.key}"]`);
+      if (!chip) continue;
+      for (const id of entry.ids) CHIP_AGENT_IDS.set(id.toLowerCase(), chip);
+    }
+  }
+
+  if (note) {
+    // "the log says nobody called" and "we have no log to read" are different
+    // claims; only the first may be stated as a fact about the audit log.
+    if (state === "error") {
+      note.textContent = "Poll history unavailable — client list not loaded.";
+    } else if (state === "unavailable") {
+      note.textContent = "This gateway build does not report per-interval client activity.";
+    } else if (entries.length) {
+      note.textContent = `${entries.length} client${entries.length === 1 ? "" : "s"} seen in the ${HISTORY_RANGE_LABEL} · discovered from the agent audit log`;
+    } else {
+      note.textContent = `No client traffic in the ${HISTORY_RANGE_LABEL}.`;
+    }
+  }
 }
 
 function summarizeAgentActivity(activity) {
@@ -848,71 +913,28 @@ function agentAuditSummary() {
   };
 }
 
-function cancelPendingAgentActivity() {
-  if (agentActivityTimer) {
-    clearTimeout(agentActivityTimer);
-    agentActivityTimer = null;
-  }
-  if (agentActivityAbort) {
-    agentActivityAbort.abort();
-    agentActivityAbort = null;
-  }
-  agentActivityPending = null;
+/* The series arrives with history, keyed by each interval's own end stamp, so
+   scrubbing is a lookup rather than a request. No debounce, no abort, no
+   in-flight state — the whole class of stale-request bugs is gone with the
+   mechanism rather than guarded against. */
+const emptyActivity = () => ({ agents: {}, daemon_logic: {} });
+
+function viewIntervalStamp() {
+  const n = sampleCount();
+  if (n < 2) return null;
+  const idx = isLiveMode() ? n - 1 : tlIndex;
+  if (idx <= 0) return null;
+  return historyData.timestamps?.[Math.min(idx, n - 1)] || null;
 }
 
-function loadAgentActivityForView() {
+/* Whether the audit log still holds the interval on screen. Rotation is the
+   framework's, so "the log is gone" and "nothing happened" are different
+   claims and must not render the same. */
+function viewHasAuditCoverage() {
+  const cov = agentSeries?.coverage;
   const win = viewTimeWindow();
-  const key = agentActivityCacheKey(win);
-  if (!key) {
-    cancelPendingAgentActivity();
-    agentActivity = null;
-    agentActivityKey = null;
-    refreshAgentAuditLayers();
-    return;
-  }
-  // Any armed timer belongs to a window the view has already left. Drop it
-  // first: leaving it armed lets it fire later and abort the request for the
-  // position the user actually settled on, which then renders nothing.
-  if (agentActivityTimer) {
-    clearTimeout(agentActivityTimer);
-    agentActivityTimer = null;
-  }
-  if (key === agentActivityKey && agentActivity) {
-    refreshAgentAuditLayers();
-    return;
-  }
-  if (agentActivityPending === key) return;
-  agentActivityTimer = setTimeout(() => {
-    agentActivityTimer = null;
-    fetchAgentActivity(win, key);
-  }, AGENT_ACTIVITY_DEBOUNCE_MS);
-}
-
-async function fetchAgentActivity(win, key) {
-  if (agentActivityAbort) agentActivityAbort.abort();
-  const ctrl = new AbortController();
-  agentActivityAbort = ctrl;
-  agentActivityPending = key;
-  try {
-    const qs = new URLSearchParams({ since: win.since, until: win.until });
-    const r = await fetch(`/api/diagram/agent-activity?${qs}`, { signal: ctrl.signal });
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    const data = await r.json();
-    if (agentActivityCacheKey(viewTimeWindow()) !== key) return;
-    agentActivity = data;
-    agentActivityKey = key;
-    refreshAgentAuditLayers();
-  } catch (err) {
-    if (err && err.name === "AbortError") return;
-    if (agentActivityCacheKey(viewTimeWindow()) === key) {
-      agentActivity = null;
-      agentActivityKey = null;
-      refreshAgentAuditLayers();
-    }
-  } finally {
-    if (agentActivityAbort === ctrl) agentActivityAbort = null;
-    if (agentActivityPending === key) agentActivityPending = null;
-  }
+  if (!cov?.since || !win?.since) return true;
+  return new Date(win.since) >= new Date(cov.since);
 }
 
 function refreshAgentAuditLayers() {
@@ -951,22 +973,25 @@ function updateReplayCaption(n, live, idx) {
   const ts = fmtReplayTs(historyData.timestamps?.[idx]);
   if (live && n >= 2) {
     const win = viewTimeWindow();
-    desc.textContent = "Live — right end of the slider. Lit flow lines show activity since the previous poll.";
+    desc.textContent = `Live — now. Lit flow lines show activity since the previous poll. Scrub back through the ${HISTORY_RANGE_LABEL}.`;
     when.textContent = `${fmtReplayTs(win?.since)} → ${fmtReplayTs(win?.until)}`;
   } else if (n < 2) {
     desc.textContent = "One telemetry sample stored. Flow lines need at least two polls to show interval activity.";
     when.textContent = ts;
   } else if (idx === 0) {
-    desc.textContent = "Replay — earliest stored poll. Drag right toward live.";
+    desc.textContent = `In the past — earliest poll in the ${HISTORY_RANGE_LABEL}. Drag right, or click the time, to return to now.`;
     when.textContent = `${ts} · sample 1 of ${n}`;
   } else {
     const win = viewTimeWindow();
-    const key = agentActivityCacheKey(win);
-    const settled = key && key === agentActivityKey && agentActivity;
-    const quiet = settled && !Object.keys(agentActivity.agents || {}).length;
-    desc.textContent = quiet
-      ? "Replay — no agent traffic in this poll interval. Agent flow lines are dark because the system was idle, not because the view failed."
-      : "Replay — lit flow lines show activity within this poll interval only.";
+    // Most specific first: a rotated-away log and an idle system both draw no
+    // flows, and saying the wrong one is worse than saying nothing.
+    if (!viewHasAuditCoverage()) {
+      desc.textContent = "In the past — the agent audit log for this interval has been rotated away, so agent flows cannot be shown for it.";
+    } else if (agentActivity && !Object.keys(agentActivity.agents || {}).length) {
+      desc.textContent = "In the past — no agent traffic in this poll interval. Agent flow lines are dark because the system was idle, not because the view failed.";
+    } else {
+      desc.textContent = "In the past — lit flow lines show activity within this poll interval only.";
+    }
     when.textContent = `${fmtReplayTs(win?.since)} → ${fmtReplayTs(win?.until)} · sample ${idx + 1} of ${n}`;
   }
 }
@@ -979,6 +1004,14 @@ function updateReplayUi() {
   const idx = Math.min(tlIndex, Math.max(0, n - 1));
 
   replay?.classList.toggle("is-live", live);
+  // Mark the picture, not just the control under it: someone reading flow lines
+  // must be able to tell at a glance that they are not looking at now.
+  document.getElementById("arch-canvas")?.classList.toggle("is-past", !live);
+  const when = document.getElementById("tl-caption-when");
+  if (when) {
+    when.classList.toggle("is-past", !live);
+    when.title = live ? "" : "Click to return to now";
+  }
   updateReplayCaption(n, live, idx);
   if (!slider) return;
 
@@ -1029,6 +1062,11 @@ function storyForView(health) {
 function applyView() {
   const health = liveHealth || { reachable: false };
   const snapshot = snapshotForView();
+  // Resolve the interval's activity BEFORE drawing: reading it afterwards drew
+  // the whole flow graph once from the previous interval's data and then again
+  // from this one's.
+  const stamp = viewIntervalStamp();
+  agentActivity = stamp ? (agentSeries?.intervals?.[stamp] || emptyActivity()) : null;
 
   updateStatus(storyForView(health), health);
   renderGatewayNodes(health, snapshot);
@@ -1049,7 +1087,6 @@ function applyView() {
   drawFlows(flowCtx);
   updateMemoryBridge(flowCtx, events);
   updateReplayUi();
-  loadAgentActivityForView();
 }
 
 function onReplayInput() {
@@ -1072,13 +1109,19 @@ function syncHealthPolling() {
 
 async function loadHistory() {
   try {
-    const r = await fetch(`/api/history?range=${HISTORY_RANGE}&bucket=raw`);
+    // One request, so the series can never be keyed to a different set of
+    // stamps than the slider is drawing: `range` resolves against now, and a
+    // second call would resolve it at a later instant.
+    const r = await fetch(`/api/history?range=${HISTORY_RANGE}&bucket=raw&agent_series=1`);
     if (!r.ok) throw new Error("HTTP " + r.status);
     historyData = await r.json();
+    agentSeries = historyData.agent_series || null;
+    renderAgentRoster(agentSeries?.roster, agentSeries ? "ok" : "unavailable");
     const n = historyData.samples || 0;
     tlIndex = Math.min(tlIndex, Math.max(0, n - 1));
     applyView();
   } catch (e) {
+    renderAgentRoster([], "error");
     const desc = document.getElementById("tl-caption-desc");
     const when = document.getElementById("tl-caption-when");
     if (desc) desc.textContent = "Could not load poll history.";
@@ -1416,6 +1459,20 @@ async function loadMeta() {
 }
 
 document.getElementById("tl-index").addEventListener("input", onReplayInput);
+
+/* Return to now. Dragging a slider fully right is a poor way back. */
+function returnToNow() {
+  const n = sampleCount();
+  if (n < 2) return;
+  tlIndex = n - 1;
+  const slider = document.getElementById("tl-index");
+  if (slider) slider.value = String(tlIndex);
+  syncHealthPolling();
+  applyView();
+}
+document.getElementById("tl-caption-when")?.addEventListener("click", () => {
+  if (!isLiveMode()) returnToNow();
+});
 
 async function boot() {
   await loadMeta();

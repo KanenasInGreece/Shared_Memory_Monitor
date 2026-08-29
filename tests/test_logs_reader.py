@@ -10,6 +10,12 @@ from sm_telemetry_monitor import logs_reader
 from sm_telemetry_monitor.logs_reader import (
     _AUDIT_CACHE,
     _AUDIT_CACHE_MAX_FILES,
+    AGENT_ID_MAX_LEN,
+    OTHER_AGENT_ID,
+    ROSTER_MAX_AGENTS,
+    SERIES_MAX_INTERVALS,
+    agent_activity_series,
+    audit_coverage,
     _audit_agent_id,
     _audit_route,
     _daemon_diagram_node,
@@ -67,13 +73,18 @@ class JournalCmdTests(unittest.TestCase):
 
 class AgentAuditSourceTests(unittest.TestCase):
     def test_list_sources_includes_agent_audit(self):
-        ids = [s.id for s in list_sources()]
-        self.assertIn("agent_audit", ids)
-        self.assertNotIn("save_logs", ids)
-        self.assertNotIn("gateway_audit", ids)
-        src = next(s for s in list_sources() if s.id == "agent_audit")
-        self.assertEqual(src.kind, "jsonl")
-        self.assertIn("audit", src.path)
+        # The default name is asserted, so clear any host override: an operator
+        # pointing GATEWAY_AUDIT_LOG_PATH somewhere else is a valid config, not
+        # a failing build.
+        with mock.patch.dict(os.environ):
+            os.environ.pop("GATEWAY_AUDIT_LOG_PATH", None)
+            ids = [s.id for s in list_sources()]
+            self.assertIn("agent_audit", ids)
+            self.assertNotIn("save_logs", ids)
+            self.assertNotIn("gateway_audit", ids)
+            src = next(s for s in list_sources() if s.id == "agent_audit")
+            self.assertEqual(src.kind, "jsonl")
+            self.assertIn("audit", src.path)
 
     def test_agent_audit_keeps_raw_json(self):
         line = json.dumps({
@@ -573,6 +584,322 @@ class FilterEntriesTests(unittest.TestCase):
         out = _filter_entries(entries, since=since, until=until)
         self.assertEqual([e["raw"] for e in out], ["b"])
 
+
+
+def _utime_within_window(path, stamps):
+    """Set a fixture file's mtime to the end of the window under test."""
+    from datetime import datetime
+    ends = []
+    for t in stamps:
+        try:
+            ends.append(datetime.fromisoformat(str(t)))
+        except ValueError:
+            continue
+    if not ends:
+        return
+    end = max(ends)
+    os.utime(path, (end.timestamp(), end.timestamp()))
+
+
+class AgentActivitySeriesTests(unittest.TestCase):
+    """One bucketed pass answering every scrubber position (v0.9.27)."""
+
+    def setUp(self):
+        _AUDIT_CACHE.clear()
+
+    STAMPS = [
+        "2026-06-12T10:00:00+00:00",
+        "2026-06-12T10:10:00+00:00",
+        "2026-06-12T10:20:00+00:00",
+        "2026-06-12T10:30:00+00:00",
+    ]
+
+    def _run(self, rows, stamps=None):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "agent-audit.jsonl"
+            path.write_text(
+                "\n".join(r if isinstance(r, str) else json.dumps(r) for r in rows) + "\n",
+                encoding="utf-8",
+            )
+            # Pin mtime inside the fixture window so the suite does not depend
+            # on the host clock being later than the dates it asserts.
+            _utime_within_window(path, stamps if stamps is not None else self.STAMPS)
+            with mock.patch("sm_telemetry_monitor.logs_reader.agent_audit_path", return_value=path), \
+                 mock.patch("sm_telemetry_monitor.logs_reader._log_root", return_value=Path(td).resolve()):
+                return agent_activity_series(list(self.STAMPS if stamps is None else stamps))
+
+    def test_row_lands_in_the_interval_that_closes_after_it(self):
+        out = self._run([
+            {"ts": "2026-06-12T10:05:00+00:00", "agent": "grok",
+             "method": "POST", "path": "/memory/save"},
+            {"ts": "2026-06-12T10:25:00+00:00", "agent": "claude",
+             "method": "GET", "path": "/memory/telemetry"},
+        ])
+        self.assertEqual(
+            out["intervals"]["2026-06-12T10:10:00+00:00"]["agents"],
+            {"grok": {"read": 0, "write": 1}})
+        self.assertEqual(
+            out["intervals"]["2026-06-12T10:30:00+00:00"]["agents"],
+            {"claude": {"read": 1, "write": 0}})
+        self.assertNotIn("2026-06-12T10:20:00+00:00", out["intervals"])
+
+    def test_boundary_row_belongs_to_the_interval_ending_on_it(self):
+        out = self._run([
+            {"ts": "2026-06-12T10:20:00+00:00", "agent": "grok",
+             "method": "POST", "path": "/memory/save"},
+        ])
+        self.assertIn("2026-06-12T10:20:00+00:00", out["intervals"])
+        self.assertNotIn("2026-06-12T10:30:00+00:00", out["intervals"])
+
+    def test_rows_outside_the_stamp_run_are_dropped(self):
+        out = self._run([
+            {"ts": "2026-06-12T09:00:00+00:00", "agent": "grok",
+             "method": "POST", "path": "/memory/save"},
+            {"ts": "2026-06-12T11:00:00+00:00", "agent": "grok",
+             "method": "POST", "path": "/memory/save"},
+            # exactly the first stamp: closes no interval in this run
+            {"ts": "2026-06-12T10:00:00+00:00", "agent": "grok",
+             "method": "POST", "path": "/memory/save"},
+        ])
+        self.assertEqual(out["intervals"], {})
+        self.assertEqual(out["roster"], [])
+
+    def test_undatable_and_malformed_rows_never_break_the_pass(self):
+        """A bisect against None would raise and kill the whole request."""
+        out = self._run([
+            {"ts": 1749722400, "agent": "codex", "method": "POST", "path": "/memory/save"},
+            {"ts": {"at": "x"}, "agent": "codex", "method": "POST", "path": "/memory/save"},
+            {"ts": None, "agent": "codex", "method": "POST", "path": "/memory/save"},
+            {"agent": "codex", "method": "POST", "path": "/memory/save"},
+            json.dumps(["not", "a", "dict"]),
+            "{ not json",
+            {"ts": "2026-06-12T10:05:00+00:00", "agent": ["opencode"],
+             "method": "POST", "path": "/memory/search"},
+            {"ts": "2026-06-12T10:05:00+00:00", "agent": {"id": "x"},
+             "method": "GET", "path": "/memory/telemetry"},
+        ])
+        agents = out["intervals"]["2026-06-12T10:10:00+00:00"]["agents"]
+        self.assertEqual(agents, {"opencode": {"read": 1, "write": 0}})
+        self.assertNotIn("codex", {r["id"] for r in out["roster"]})
+
+    def test_naive_timestamps_do_not_raise(self):
+        """Comparing a naive stamp against an aware one raises TypeError."""
+        out = self._run([
+            {"ts": "2026-06-12T10:05:00", "agent": "grok",
+             "method": "POST", "path": "/memory/save"},
+        ])
+        self.assertEqual(
+            out["intervals"]["2026-06-12T10:10:00+00:00"]["agents"],
+            {"grok": {"read": 0, "write": 1}})
+
+    def test_roster_is_capped_and_shares_the_agents_key_space(self):
+        """`agent` is untrusted text: one client minting ids per request must
+        not mint a chip per request."""
+        rows = [
+            {"ts": "2026-06-12T10:05:00+00:00", "agent": f"bot{i:03d}",
+             "method": "POST", "path": "/memory/save"}
+            for i in range(200)
+        ]
+        # one agent loud enough to survive the cap on merit
+        rows += [
+            {"ts": "2026-06-12T10:05:00+00:00", "agent": "grok",
+             "method": "POST", "path": "/memory/save"}
+            for _ in range(50)
+        ]
+        out = self._run(rows)
+        ids = [r["id"] for r in out["roster"]]
+        self.assertLessEqual(len(ids), ROSTER_MAX_AGENTS + 1)
+        self.assertEqual(ids[0], "grok")
+        self.assertIn(OTHER_AGENT_ID, ids)
+        seen = set()
+        for entry in out["intervals"].values():
+            seen |= set(entry.get("agents", {}))
+        self.assertEqual(seen - set(ids), set(), "every counted agent must be on the roster")
+
+    def test_every_key_is_one_of_the_stamps_it_was_given(self):
+        """The client looks intervals up by the stamp it is drawing, so a key
+        that is not one of those stamps would be unreachable data."""
+        out = self._run([
+            {"ts": f"2026-06-12T10:0{i}:00+00:00", "agent": "grok",
+             "method": "POST", "path": "/memory/save"} for i in range(1, 9)
+        ])
+        self.assertTrue(set(out["intervals"]).issubset(set(self.STAMPS)))
+        self.assertTrue(out["intervals"])
+
+    def test_fold_bucket_id_cannot_be_claimed_by_a_real_agent(self):
+        """An agent literally named `other` must not merge with the fold row and
+        silently hide how many agents it stood for."""
+        rows = [{"ts": "2026-06-12T10:05:00+00:00", "agent": "other",
+                 "method": "POST", "path": "/memory/save"} for _ in range(5)]
+        out = self._run(rows)
+        ids = [r["id"] for r in out["roster"]]
+        self.assertIn("other", ids)
+        self.assertNotIn(OTHER_AGENT_ID, ids)
+        self.assertEqual(ids.count("other"), 1)
+        self.assertNotEqual(OTHER_AGENT_ID, "other")
+
+    def test_interval_count_is_bounded(self):
+        """The caller picks the window, so it must not pick the workload."""
+        from datetime import datetime, timedelta, UTC
+        base = datetime(2026, 6, 12, tzinfo=UTC)
+        stamps = [(base + timedelta(minutes=i)).isoformat()
+                  for i in range(SERIES_MAX_INTERVALS + 500)]
+        out = self._run([], stamps=stamps)
+        self.assertLessEqual(len(out["intervals"]), SERIES_MAX_INTERVALS)
+
+    def test_agent_ids_are_truncated(self):
+        """An id is untrusted text of arbitrary length; it must not set the
+        size of the response or the chip label."""
+        out = self._run([
+            {"ts": "2026-06-12T10:05:00+00:00", "agent": "z" * 5000,
+             "method": "POST", "path": "/memory/save"},
+        ])
+        ids = [r["id"] for r in out["roster"]]
+        self.assertEqual(len(ids), 1)
+        self.assertEqual(len(ids[0]), AGENT_ID_MAX_LEN)
+        seen = set()
+        for entry in out["intervals"].values():
+            seen |= set(entry.get("agents", {}))
+        self.assertEqual(seen, set(ids))
+
+    def test_live_file_is_never_skipped_by_the_mtime_filter(self):
+        """mtime is the filesystem clock and `ts` is the writer's; skipping a
+        file that holds in-window rows blanks the agent layer and looks exactly
+        like an idle system."""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            live = root / "agent-audit.jsonl"
+            live.write_text(json.dumps(
+                {"ts": "2026-06-12T10:05:00+00:00", "agent": "grok",
+                 "method": "POST", "path": "/memory/save"}) + "\n", encoding="utf-8")
+            os.utime(live, (1_000_000, 1_000_000))   # mtime long before the window
+            with mock.patch("sm_telemetry_monitor.logs_reader.agent_audit_path", return_value=live), \
+                 mock.patch("sm_telemetry_monitor.logs_reader._log_root", return_value=root):
+                out = agent_activity_series(list(self.STAMPS))
+        self.assertEqual(
+            out["intervals"]["2026-06-12T10:10:00+00:00"]["agents"],
+            {"grok": {"read": 0, "write": 1}})
+
+    def test_daemon_logic_is_bucketed_separately(self):
+        out = self._run([
+            {"ts": "2026-06-12T10:05:00+00:00", "agent": "rem_daemon",
+             "method": "POST", "path": "/v1/chat/completions"},
+            {"ts": "2026-06-12T10:15:00+00:00", "agent": "consolidation",
+             "method": "POST", "path": "/v1/embeddings"},
+        ])
+        self.assertEqual(
+            out["intervals"]["2026-06-12T10:10:00+00:00"]["daemon_logic"]["rem_daemon"]["chat"], 1)
+        self.assertEqual(
+            out["intervals"]["2026-06-12T10:20:00+00:00"]["daemon_logic"]["nrem_daemon"]["embeddings"], 1)
+        self.assertEqual(out["roster"], [])
+
+    def test_fewer_than_two_stamps_is_well_formed_and_empty(self):
+        for stamps in ([], ["2026-06-12T10:00:00+00:00"], ["nonsense", "?"]):
+            out = self._run([], stamps=stamps)
+            self.assertEqual(out["intervals"], {})
+            self.assertEqual(out["roster"], [])
+            self.assertIn("coverage", out)
+
+    def test_series_and_window_forms_agree_off_the_boundaries(self):
+        rows = [
+            {"ts": "2026-06-12T10:05:00+00:00", "agent": "grok",
+             "method": "POST", "path": "/memory/save"},
+            {"ts": "2026-06-12T10:06:00+00:00", "agent": "grok",
+             "method": "GET", "path": "/memory/telemetry"},
+            {"ts": "2026-06-12T10:15:00+00:00", "agent": "claude",
+             "method": "POST", "path": "/memory/search"},
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "agent-audit.jsonl"
+            path.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+            with mock.patch("sm_telemetry_monitor.logs_reader.agent_audit_path", return_value=path), \
+                 mock.patch("sm_telemetry_monitor.logs_reader._log_root", return_value=Path(td).resolve()):
+                series = agent_activity_series(list(self.STAMPS))
+                window = agent_activity(since=self.STAMPS[0], until=self.STAMPS[1])
+        self.assertEqual(
+            series["intervals"]["2026-06-12T10:10:00+00:00"]["agents"], window["agents"])
+
+
+class AuditCoverageTests(unittest.TestCase):
+    def setUp(self):
+        _AUDIT_CACHE.clear()
+
+    def test_coverage_is_ordered_by_content_not_mtime(self):
+        """A restored or copied archive carries a newer mtime than its rows;
+        ordering on that put `since` ahead of the real oldest row and captioned
+        every interval as rotated away while the rows sat in the file."""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            old = root / "agent-audit.jsonl.1"
+            old.write_text(json.dumps(
+                {"ts": "2026-01-01T00:00:00+00:00", "agent": "grok",
+                 "method": "POST", "path": "/memory/save"}) + "\n", encoding="utf-8")
+            live = root / "agent-audit.jsonl"
+            live.write_text(json.dumps(
+                {"ts": "2026-06-12T10:00:00+00:00", "agent": "grok",
+                 "method": "POST", "path": "/memory/save"}) + "\n", encoding="utf-8")
+            # live looks OLDER on disk than the archive it supersedes
+            os.utime(live, (1_000_000, 1_000_000))
+            with mock.patch("sm_telemetry_monitor.logs_reader.agent_audit_path", return_value=live), \
+                 mock.patch("sm_telemetry_monitor.logs_reader._log_root", return_value=root):
+                cov = audit_coverage()
+        self.assertTrue(cov["since"].startswith("2026-01-01"), cov)
+        self.assertIsNotNone(cov["until"])
+        self.assertLessEqual(cov["since"], cov["until"], "coverage must not invert")
+
+    def test_reports_corpus_bounds(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            old = root / "agent-audit.jsonl.1"
+            old.write_text("\n".join(json.dumps(
+                {"ts": f"2026-06-10T0{i}:00:00+00:00", "agent": "grok",
+                 "method": "POST", "path": "/memory/save"}) for i in range(1, 4)) + "\n",
+                encoding="utf-8")
+            live = root / "agent-audit.jsonl"
+            live.write_text(json.dumps(
+                {"ts": "2026-06-12T10:00:00+00:00", "agent": "grok",
+                 "method": "POST", "path": "/memory/save"}) + "\n", encoding="utf-8")
+            os.utime(old, (1_000_000, 1_000_000))
+            with mock.patch("sm_telemetry_monitor.logs_reader.agent_audit_path", return_value=live), \
+                 mock.patch("sm_telemetry_monitor.logs_reader._log_root", return_value=root):
+                cov = audit_coverage()
+        self.assertTrue(cov["since"].startswith("2026-06-10T01:00"))
+        self.assertTrue(cov["until"].startswith("2026-06-12T10:00"))
+
+    def test_empty_corpus_reports_nulls(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            missing = root / "agent-audit.jsonl"
+            with mock.patch("sm_telemetry_monitor.logs_reader.agent_audit_path", return_value=missing), \
+                 mock.patch("sm_telemetry_monitor.logs_reader._log_root", return_value=root):
+                self.assertEqual(audit_coverage(), {"since": None, "until": None})
+
+    def test_archives_older_than_the_window_are_not_parsed(self):
+        """A bounded window must not have to read a rotated archive."""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            old = root / "agent-audit.jsonl.1"
+            old.write_text(json.dumps(
+                {"ts": "2026-06-01T10:00:00+00:00", "agent": "grok",
+                 "method": "POST", "path": "/memory/save"}) + "\n", encoding="utf-8")
+            live = root / "agent-audit.jsonl"
+            live.write_text(json.dumps(
+                {"ts": "2026-06-12T10:05:00+00:00", "agent": "grok",
+                 "method": "POST", "path": "/memory/save"}) + "\n", encoding="utf-8")
+            os.utime(old, (1_000_000, 1_000_000))   # long before the window
+            real = logs_reader._read_audit_lines
+            with mock.patch("sm_telemetry_monitor.logs_reader.agent_audit_path", return_value=live), \
+                 mock.patch("sm_telemetry_monitor.logs_reader._log_root", return_value=root), \
+                 mock.patch("sm_telemetry_monitor.logs_reader._read_audit_lines",
+                            side_effect=real) as spy:
+                out = agent_activity_series([
+                    "2026-06-12T10:00:00+00:00", "2026-06-12T10:10:00+00:00",
+                ])
+                read = {c.args[0].name for c in spy.call_args_list}
+        self.assertNotIn("agent-audit.jsonl.1", read)
+        self.assertEqual(
+            out["intervals"]["2026-06-12T10:10:00+00:00"]["agents"],
+            {"grok": {"read": 0, "write": 1}})
 
 if __name__ == "__main__":
     unittest.main()

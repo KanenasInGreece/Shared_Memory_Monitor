@@ -6,6 +6,7 @@ Diagram agent-activity uses the same agent-audit bytes. No gateway log HTTP API.
 
 from __future__ import annotations
 
+import bisect
 import gzip
 import json
 import os
@@ -13,7 +14,7 @@ import re
 import subprocess
 import threading
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from .env_loader import bootstrap_env, get
@@ -266,9 +267,14 @@ def _parse_ts(value) -> datetime | None:
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
     try:
-        return datetime.fromisoformat(text)
+        parsed = datetime.fromisoformat(text)
     except ValueError:
         return None
+    # Always tz-aware: a producer writing a naive stamp would otherwise yield a
+    # value that raises TypeError the moment it is compared with an aware one,
+    # killing a whole scan over one row. Naive is read as UTC, as the rest of
+    # the pipeline already assumes.
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 def _ts_iso(dt: datetime | None) -> str | None:
@@ -678,7 +684,7 @@ def classify_agent_audit_io(method, path) -> str | None:
     return None
 
 
-def _iter_audit_files() -> list[Path]:
+def _iter_audit_files(since: datetime | None = None) -> list[Path]:
     live = agent_audit_path()
     files: list[Path] = []
     if live.exists():
@@ -686,7 +692,37 @@ def _iter_audit_files() -> list[Path]:
     for archive in _archive_candidates("agent_audit"):
         if archive not in files:
             files.append(archive)
-    return files
+    if since is None:
+        return files
+    # A rotated audit file is append-only and then sealed, so its mtime is the
+    # instant of its last row. That lets a bounded window skip an archive
+    # without parsing it at all — the difference between a cold load reading
+    # one live file and reading every rotation ever kept.
+    #
+    # mtime is only a proxy, though: it comes from the writer's filesystem
+    # while `ts` comes from the writer's clock, and the two disagree under a
+    # naive local stamp, a container clock, or an NTP step. So the live file is
+    # never skipped, an already-parsed file is judged on its real contents, and
+    # anything else gets a slack margin rather than a hard edge. Skipping a
+    # file that holds in-window rows would blank the agent layer and look
+    # exactly like an idle system.
+    kept: list[Path] = []
+    for path in files:
+        if path == live:
+            kept.append(path)
+            continue
+        cached = _AUDIT_CACHE.get(str(path))
+        if cached is not None and cached[2] is not None:
+            if cached[2][1] >= since:
+                kept.append(path)
+            continue
+        try:
+            mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
+        except OSError:
+            continue
+        if mtime >= since - _AUDIT_MTIME_SLACK:
+            kept.append(path)
+    return kept
 
 
 def _read_audit_lines(path: Path) -> list[str]:
@@ -698,33 +734,47 @@ def _read_audit_lines(path: Path) -> list[str]:
     return path.read_text(encoding="utf-8", errors="replace").splitlines()
 
 
-_AUDIT_CACHE: dict[str, tuple[tuple[int, int], list[tuple]]] = {}
+_AUDIT_CACHE: dict[str, tuple[tuple[int, int], list[tuple], tuple | None]] = {}
 _AUDIT_CACHE_LOCK = threading.Lock()
 # Rotation mints a new filename every cycle, so the key set would otherwise
 # grow for the life of the process. Holding the live file plus a rotation set
 # is what the scrubber actually re-reads; older entries just re-parse on demand.
 _AUDIT_CACHE_MAX_FILES = 32
+# The agent id is untrusted text from another process, so both how many distinct
+# ids the diagram will draw and how long one may be are capped here rather than
+# left to whatever a client decides to log.
+ROSTER_MAX_AGENTS = 12
+AGENT_ID_MAX_LEN = 64
+# Reserved, and deliberately not a name any client could log: an agent that
+# actually called itself "other" would otherwise merge with the fold row and
+# silently hide how many agents it stood for.
+OTHER_AGENT_ID = "__other__"
+# The caller chooses the window, so the number of intervals it can ask to have
+# bucketed is bounded here rather than by whatever it sends.
+SERIES_MAX_INTERVALS = 2000
+# How far an archive's mtime may sit before a window and still be read. mtime
+# is the filesystem's clock and `ts` is the writer's; a naive local stamp can
+# put them a whole timezone apart, and reading one extra rotation is far
+# cheaper than blanking the agent layer for rows that were there all along.
+_AUDIT_MTIME_SLACK = timedelta(hours=26)
 
 
-def _audit_rows(path: Path) -> list[tuple]:
-    """Parsed (ts, agent, method, path) tuples for one audit file, memoised.
+def _audit_entry(path: Path) -> tuple[list[tuple], tuple | None]:
+    """Parsed rows for one audit file plus its (min_ts, max_ts) span, memoised.
 
-    The diagram scrubber asks for one window per slider step over the same
-    bytes, so parsing is keyed on (mtime_ns, size): a rotated or appended file
-    re-parses, an untouched one costs nothing. That makes the archives — the
-    bulk of the corpus — free; the live file the gateway is appending to still
-    re-parses whenever it has grown since the last call.
+    The span lets a caller skip a whole archive whose time range misses the
+    window without touching its rows — 7 of 15 files on a 7-day view here.
     """
     try:
         stat = path.stat()
     except OSError:
-        return []
+        return [], None
     stamp = (stat.st_mtime_ns, stat.st_size)
     key = str(path)
     with _AUDIT_CACHE_LOCK:
         cached = _AUDIT_CACHE.get(key)
         if cached is not None and cached[0] == stamp:
-            return cached[1]
+            return cached[1], cached[2]
 
     rows: list[tuple] = []
     for line in _read_audit_lines(path):
@@ -740,13 +790,93 @@ def _audit_rows(path: Path) -> list[tuple]:
             row.get("method"),
             _audit_route(row.get("path")),
         ))
+    stamps = [r[0] for r in rows if r[0] is not None]
+    span = (min(stamps), max(stamps)) if stamps else None
 
     with _AUDIT_CACHE_LOCK:
         _AUDIT_CACHE.pop(key, None)
-        _AUDIT_CACHE[key] = (stamp, rows)
+        _AUDIT_CACHE[key] = (stamp, rows, span)
         while len(_AUDIT_CACHE) > _AUDIT_CACHE_MAX_FILES:
             _AUDIT_CACHE.pop(next(iter(_AUDIT_CACHE)))
-    return rows
+    return rows, span
+
+
+def _span_overlaps(span, since, until) -> bool:
+    """Whether a file's time span can contain a row inside [since, until]."""
+    if span is None:
+        return True
+    lo, hi = span
+    if since and hi < since:
+        return False
+    if until and lo > until:
+        return False
+    return True
+
+
+def _audit_first_ts(path: Path, probe_lines: int = 50) -> datetime | None:
+    """Timestamp of the first datable row in a file, reading only its head."""
+    try:
+        if path.suffix == ".gz" or path.name.endswith(".gz"):
+            handle = gzip.open(path, "rt", encoding="utf-8", errors="replace")
+        else:
+            handle = path.open("r", encoding="utf-8", errors="replace")
+        with handle as fh:
+            for i, line in enumerate(fh):
+                if i >= probe_lines:
+                    return None
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(row, dict):
+                    continue
+                ts = _parse_ts(row.get("ts"))
+                if ts is not None:
+                    return ts
+    except OSError:
+        return None
+    return None
+
+
+def audit_coverage() -> dict:
+    """Oldest and newest audit row the corpus still holds.
+
+    Rotation is the framework's, not the monitor's, so the dashboard must be
+    able to say 'the log for this interval is gone' rather than 'nothing
+    happened' — the two are different claims. Answered from the head of the
+    oldest file and the tail of the newest rather than by parsing the corpus:
+    this is called on every history load, and the whole point of a bounded
+    window is that a load never has to read the archives.
+    """
+    # Ordered by what the files CONTAIN, not by mtime: a restored or copied
+    # archive carries a newer mtime than its rows, and ordering on that can put
+    # `since` months ahead of the real oldest row — which would caption every
+    # interval on screen as rotated away while the rows sit in the file.
+    heads: list[tuple[datetime, Path]] = []
+    for path in _iter_audit_files():
+        first = _audit_first_ts(path)
+        if first is not None:
+            heads.append((first, path))
+    if not heads:
+        return {"since": None, "until": None}
+    heads.sort(key=lambda h: h[0])
+    since = heads[0][0]
+    newest_span = _audit_entry(heads[-1][1])[1]
+    until = newest_span[1] if newest_span else None
+    if until is not None and until < since:
+        until = None
+    return {"since": _ts_iso(since), "until": _ts_iso(until)}
+
+
+def _audit_rows(path: Path) -> list[tuple]:
+    """Parsed (ts, agent, method, path) tuples for one audit file, memoised.
+
+    Parsing is keyed on (mtime_ns, size): a rotated or appended file re-parses,
+    an untouched one costs nothing. That makes the archives — the
+    bulk of the corpus — free; the live file the gateway is appending to still
+    re-parses whenever it has grown since the last call.
+    """
+    return _audit_entry(path)[0]
 
 
 def agent_activity(
@@ -784,3 +914,103 @@ def agent_activity(
         "daemon_logic": daemon_logic,
         "fetched_at": datetime.now(UTC).isoformat(),
     }
+
+
+def agent_activity_series(timestamps: list[str]) -> dict:
+    """Per-interval agent and daemon activity for a whole run of poll stamps.
+
+    The diagram scrubber's positions ARE these timestamps, so one bucketed pass
+    answers every slider position at once — replacing one full-corpus query per
+    position. Interval i covers (timestamps[i-1], timestamps[i]], keyed by its
+    own end stamp rather than by index so a caller that obtained its stamps
+    from a different request cannot silently read every interval off by one —
+    `range` resolves against now, and a poll landing between two requests
+    shifts the whole run. A row landing exactly on a stamp closes the interval
+    ending there; unlike `_in_window`, which is closed at both ends, it is
+    therefore counted once rather than in both adjacent windows.
+    """
+    stamps = [_parse_ts(t) for t in timestamps]
+    pairs = [(s, timestamps[i]) for i, s in enumerate(stamps) if s is not None]
+    empty = {
+        "intervals": {},
+        "roster": [],
+        "coverage": audit_coverage(),
+        "fetched_at": datetime.now(UTC).isoformat(),
+    }
+    if len(pairs) < 2:
+        return empty
+
+    ordered = sorted(pairs, key=lambda p: p[0])[-SERIES_MAX_INTERVALS:]
+    keys = [p[0] for p in ordered]
+    since, until = keys[0], keys[-1]
+
+    # Materialised once, then walked twice. Re-scanning would let the gateway
+    # append between the passes, so pass 2 could see an agent pass 1 never
+    # ranked — which lands its traffic in a fold bucket the roster never
+    # declared, breaking the key space the client looks chips up by.
+    # bisect_left gives the first stamp >= ts, i.e. the interval this row closes.
+    hits: list[tuple[str, object, object, object]] = []
+    for path in _iter_audit_files(since):
+        rows, span = _audit_entry(path)
+        if not _span_overlaps(span, since, until):
+            continue
+        for ts, agent, method, route in rows:
+            if ts is None or ts <= since or ts > until:
+                continue
+            idx = bisect.bisect_left(keys, ts)
+            if idx <= 0 or idx >= len(keys):
+                continue
+            hits.append((ordered[idx][1], agent, method, route))
+
+    # Pass 1 — who is actually here. `agent` is untrusted text written by other
+    # processes, so the roster is capped by traffic and the tail folded into one
+    # bucket: without that, a client minting a fresh id per request would mint a
+    # chip per request.
+    totals: dict[str, dict[str, int]] = {}
+    for _stamp, agent, method, route in hits:
+        if _is_daemon_agent(agent):
+            continue
+        io = classify_agent_audit_io(method, route)
+        if not io:
+            continue
+        totals.setdefault(agent[:AGENT_ID_MAX_LEN], {"read": 0, "write": 0})[io] += 1
+
+    ranked = sorted(totals.items(), key=lambda kv: (-(kv[1]["read"] + kv[1]["write"]), kv[0]))
+    named = {a for a, _ in ranked[:ROSTER_MAX_AGENTS]}
+    folded = len(ranked) - len(named)
+
+    def bucket_for(agent: str) -> str:
+        key = agent[:AGENT_ID_MAX_LEN]
+        return key if key in named else OTHER_AGENT_ID
+
+    # Pass 2 — per-interval counts, in the same key space as the roster.
+    intervals: dict[str, dict] = {}
+    for stamp, agent, method, route in hits:
+        entry = intervals.setdefault(stamp, {})
+        if _is_daemon_agent(agent):
+            node = _daemon_diagram_node(agent)
+            kind = classify_daemon_audit_io(route)
+            if not (node and kind):
+                continue
+            logic = entry.setdefault("daemon_logic", {})
+            logic.setdefault(node, {"chat": 0, "embeddings": 0, "proxy": 0})[kind] += 1
+            continue
+        io = classify_agent_audit_io(method, route)
+        if not io:
+            continue
+        agents = entry.setdefault("agents", {})
+        agents.setdefault(bucket_for(agent), {"read": 0, "write": 0})[io] += 1
+
+    # An interval holding only traffic we do not render must not read as active.
+    intervals = {k: v for k, v in intervals.items() if v}
+
+    roster = [{"id": a, **c} for a, c in ranked if a in named]
+    if folded > 0:
+        tail = {"read": 0, "write": 0}
+        for a, c in ranked:
+            if a in named:
+                continue
+            tail["read"] += c["read"]
+            tail["write"] += c["write"]
+        roster.append({"id": OTHER_AGENT_ID, "folded_agents": folded, **tail})
+    return {**empty, "intervals": intervals, "roster": roster}
