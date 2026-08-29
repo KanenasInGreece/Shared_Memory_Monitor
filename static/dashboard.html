@@ -289,6 +289,12 @@
         <div class="consolidation-summary" id="latency-nrem"></div>
         <p class="consolidation-note" id="latency-nrem-note"></p>
       </section>
+      <section class="schema-block">
+        <h3 class="schema-block-title">Encoders · embedding & reranking</h3>
+        <p class="consolidation-note consolidation-note-lead">Per-call latency for the local models. High latency here slows down both search and the memory system.</p>
+        <div class="consolidation-summary" id="latency-encoders"></div>
+        <p class="consolidation-note" id="latency-encoders-note"></p>
+      </section>
     </div>
   </div>
 </aside>
@@ -1285,6 +1291,34 @@ function renderLatency(L) {
     if (nrem.note) bits.push(nrem.note + ".");
     nremNote.textContent = bits.join(" ");
   }
+
+  const encBox = document.getElementById("latency-encoders");
+  const encNote = document.getElementById("latency-encoders-note");
+  const enc = L?.encoders || {};
+  if (encBox) {
+    if (!enc.present) {
+      encBox.innerHTML = `<div class="consolidation-kpi"><span class="k">Latency</span><span class="v">no encoder telemetry available</span></div>`;
+    } else {
+      const rows = [];
+      if (enc.embed && Object.keys(enc.embed).length) {
+        const e = enc.embed;
+        const eN = e.calls != null ? ` · n=${e.calls}` : "";
+        rows.push([`Embed (median)${eN}`, fmtMs(e.p50_ms)]);
+        rows.push([`Embed (p95)`, fmtMs(e.p95_ms)]);
+      }
+      if (enc.rerank && Object.keys(enc.rerank).length) {
+        const r = enc.rerank;
+        const rN = r.calls != null ? ` · n=${r.calls}` : "";
+        rows.push([`Rerank (median)${rN}`, fmtMs(r.p50_ms)]);
+        rows.push([`Rerank (p95)`, fmtMs(r.p95_ms)]);
+      }
+      encBox.innerHTML = consolidationKpiHtml(rows);
+    }
+  }
+  if (encNote) {
+    encNote.textContent = "";
+  }
+
 }
 
 async function loadLatency({ waitPaint = false } = {}) {
