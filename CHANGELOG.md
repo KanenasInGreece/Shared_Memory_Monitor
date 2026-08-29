@@ -6,6 +6,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.23] - 2026-08-29
+### Added
+- Display monitor version alongside the dashboard header.
+- Add OpenCode (MCP) client tracking to the architecture diagram.
+### Changed
+- Clarify in the UI that 'Consolidation cycles' timing measures the synthesis compute run itself, not the end-to-end tier-promotion latency.
+
+
 ## [0.9.22] - 2026-08-29
 ### Added
 - Support for gateway v0.9.74 dual-emission telemetry contract (migrates health keys to /memory/telemetry).
