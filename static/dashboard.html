@@ -285,7 +285,8 @@
         <p class="consolidation-note" id="latency-rem-note"></p>
       </section>
       <section class="schema-block">
-        <h3 class="schema-block-title">Consolidation cycles</h3>
+                <h3 class="schema-block-title">Consolidation cycles</h3>
+        <p class="consolidation-note consolidation-note-lead">Measures the compute duration of the batch synthesis run itself (start to finish). It does <strong>not</strong> measure the end-to-end delay from first-write to Tier-3 (Postgres), because tier promotion is gated by record density and would skew the timing signal.</p>
         <div class="consolidation-summary" id="latency-nrem"></div>
         <p class="consolidation-note" id="latency-nrem-note"></p>
       </section>
