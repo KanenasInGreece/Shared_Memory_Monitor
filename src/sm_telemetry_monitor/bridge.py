@@ -137,3 +137,29 @@ def get_pool_status() -> dict:
         return payload if isinstance(payload, dict) else {}
     except Exception:
         return {}
+
+def patch_raw(raw: dict, t: dict) -> dict:
+    if "config" in t:
+        raw["config"] = t["config"]
+    if "llm" in t and isinstance(t["llm"], dict):
+        if "pool" in t["llm"]:
+            raw["llm_pool"] = t["llm"]["pool"]
+        if "affinity" in t["llm"]:
+            raw["llm_affinity"] = t["llm"]["affinity"]
+        if "routing" in t["llm"]:
+            raw["llm_routing"] = t["llm"]["routing"]
+        if "token_usage" in t["llm"]:
+            raw["llm_token_usage"] = t["llm"]["token_usage"]
+        if "latency" in t["llm"]:
+            raw["llm_latency"] = t["llm"]["latency"]
+        if "oldest_inflight_age_s" in t["llm"]:
+            raw["llm_oldest_inflight_age_s"] = t["llm"]["oldest_inflight_age_s"]
+        if "suspect_wedged" in t["llm"]:
+            raw["llm_suspect_wedged"] = t["llm"]["suspect_wedged"]
+    if "capacity" in t:
+        raw["capacity"] = t["capacity"]
+    if "gpu_probe" in t:
+        raw["gpu_probe"] = t["gpu_probe"]
+    if "postgres" in t and isinstance(t["postgres"], dict) and "pgvector" in t["postgres"]:
+        raw["pgvector"] = t["postgres"]["pgvector"]
+    return raw

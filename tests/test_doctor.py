@@ -27,7 +27,7 @@ class DoctorTests(unittest.TestCase):
 
     def test_client_api_version_matches_bridge(self):
         self.assertEqual(API_VERSION, 4)
-        with patch("sm_telemetry_monitor.doctor.get_health", return_value={
+        with patch("sm_telemetry_monitor.doctor.get_telemetry", return_value={}), patch("sm_telemetry_monitor.doctor.get_health", return_value={
             "status": "ok", "version": "0.8.33", "api_version": 4,
         }):
             from sm_telemetry_monitor.doctor import _check_coordinator
@@ -38,7 +38,7 @@ class DoctorTests(unittest.TestCase):
         self.assertFalse(block["has_llm_placement"])
 
     def test_coordinator_llm_placement_from_config(self):
-        with patch("sm_telemetry_monitor.doctor.get_health", return_value={
+        with patch("sm_telemetry_monitor.doctor.get_telemetry", return_value={}), patch("sm_telemetry_monitor.doctor.get_health", return_value={
             "status": "ok",
             "version": "0.8.33",
             "api_version": 4,
@@ -73,7 +73,7 @@ class DoctorTests(unittest.TestCase):
 
     def test_coordinator_llm_routing_and_token_usage_key_presence(self):
         """Coordinator flags llm_routing / llm_token_usage from /health key presence."""
-        with patch("sm_telemetry_monitor.doctor.get_health", return_value={
+        with patch("sm_telemetry_monitor.doctor.get_telemetry", return_value={}), patch("sm_telemetry_monitor.doctor.get_health", return_value={
             "status": "ok", "version": "0.9.15", "api_version": 4,
             "llm_pool": {"http://localhost:5000": {"inflight": 0}},
             "llm_routing": {},
@@ -90,7 +90,7 @@ class DoctorTests(unittest.TestCase):
         self.assertTrue(block["has_llm_suspect_wedged"])
 
     def test_coordinator_pool_status_flag(self):
-        with patch("sm_telemetry_monitor.doctor.get_health", return_value={
+        with patch("sm_telemetry_monitor.doctor.get_telemetry", return_value={}), patch("sm_telemetry_monitor.doctor.get_health", return_value={
             "status": "ok", "version": "0.9.13", "api_version": 4,
             "llm_pool": {"http://localhost:5000": {"inflight": 0}},
         }), patch("sm_telemetry_monitor.doctor.get_pool_status", return_value={
@@ -101,7 +101,7 @@ class DoctorTests(unittest.TestCase):
             block = _check_coordinator()
         self.assertTrue(block["has_pool_status"])
 
-        with patch("sm_telemetry_monitor.doctor.get_health", return_value={
+        with patch("sm_telemetry_monitor.doctor.get_telemetry", return_value={}), patch("sm_telemetry_monitor.doctor.get_health", return_value={
             "status": "ok", "api_version": 4,
         }), patch("sm_telemetry_monitor.doctor.get_pool_status", return_value={}):
             block = _check_coordinator()
