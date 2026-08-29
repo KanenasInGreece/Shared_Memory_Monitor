@@ -439,6 +439,7 @@ Credits are for **people and collaborators**, not a claim of joint copyright on 
 | **Xenofon S. Motsenigos** ([Oratotis](https://www.youtube.com/@Oratotis)) | Author & maintainer |
 | **[Grok](https://x.ai)** (xAI) | AI collaborator — assisted design and implementation work on the workstation (status contract, UX, docs/releases). **Not** a code co-author for legal/git authorship purposes. |
 | **Antigravity** (Google DeepMind) | AI collaborator — assisted with code verification, telemetry updates, and dependency maintenance workflows. **Not** a code co-author for legal/git authorship purposes. |
+| **[Claude](https://www.anthropic.com/claude)** (Anthropic) | AI collaborator — assisted with the diagram scrub diagnosis and rework, the least-privilege pass over the monitor's surface, retention, and dependency auditing. **Not** a code co-author for legal/git authorship purposes. |
 
 ---
 
