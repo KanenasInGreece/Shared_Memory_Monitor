@@ -1,0 +1,383 @@
+commit b02ea1710b639517292a8e703e9bb79965b1e2cb
+Author: Xenofon S. Motsenigos <xsmotsenigos@gmail.com>
+Date:   Wed Aug 26 12:49:51 2026 +0300
+
+    feat: consume gateway 0.9.60 wall/mixed latency and move front-door creds
+    
+    Passthrough wall_ms, n_service, timing_source, backend on rem_ms.by_model
+    without inventing null percentiles. Render wall rows as N/A rather than a
+    fake 100% service bar. Move token_verify_failed and audit_log_dropped to
+    the gateway hint; keep credentialed_route_denied on the LLM pool line.
+
+diff --git a/src/sm_telemetry_monitor/latency.py b/src/sm_telemetry_monitor/latency.py
+index bbbaabf..daa7853 100644
+--- a/src/sm_telemetry_monitor/latency.py
++++ b/src/sm_telemetry_monitor/latency.py
+@@ -65,11 +65,16 @@ def _rem_by_model(rem_ms: dict | None) -> tuple[list[dict], int | None]:
+     for entry in rem.get("by_model") or []:
+         if not isinstance(entry, dict):
+             continue
+-        name = entry.get("model") or entry.get("backend") or entry.get("name") or "?"
++        name = entry.get("model") or entry.get("name") or "?"
+         service = _anchor(entry.get("service_ms"))
+         contention = _anchor(entry.get("contention_ms"))
+         service_p95 = _p95(entry.get("service_ms"))
+         contention_p95 = _p95(entry.get("contention_ms"))
++        wall = _anchor(entry.get("wall_ms"))
++        wall_p95 = _p95(entry.get("wall_ms"))
++        n_service = entry.get("n_service")
++        timing_source = entry.get("timing_source")
++        backend = entry.get("backend")
+         total = None
+         if service is not None or contention is not None:
+             total = (service or 0) + (contention or 0)
+@@ -81,10 +86,14 @@ def _rem_by_model(rem_ms: dict | None) -> tuple[list[dict], int | None]:
+             )
+         models.append({
+             "model": name,
++            "backend": backend,
++            "timing_source": timing_source,
+             "service_ms": service,
+             "contention_ms": contention,
+             "service_ms_p95": service_p95,
+             "contention_ms_p95": contention_p95,
++            "wall_ms": wall,
++            "wall_ms_p95": wall_p95,
+             "total_ms": total,
+             # Bar-segment widths (0–100) so the client draws the split without
+             # re-deriving proportions; None total → no bar, just the empty note.
+@@ -93,6 +102,7 @@ def _rem_by_model(rem_ms: dict | None) -> tuple[list[dict], int | None]:
+             "contention_frac": contention_pct,
+             "contention_pct": contention_pct,
+             "n": entry.get("n"),
++            "n_service": n_service,
+             "max_batch_size": entry.get("max_batch_size"),
+             "low_n": isinstance(entry.get("n"), int) and entry.get("n") < _MIN_SAMPLES,
+         })
+diff --git a/static/dashboard.html b/static/dashboard.html
+index 7429ac8..1bb9c6c 100644
+--- a/static/dashboard.html
++++ b/static/dashboard.html
+@@ -1155,7 +1155,11 @@ function renderLatency(L) {
+ 
+   // REM per-model stacked bars — model floor vs queue wait
+   const remBox = document.getElementById("latency-rem");
++  const remNote = document.getElementById("latency-rem-note");
+   const rem = L?.rem || {};
++  if (remNote) {
++    remNote.textContent = rem.note || "";
++  }
+   if (remBox) {
+     if (!L?.present) {
+       remBox.innerHTML = `<p class="lat-empty">This gateway does not report processing latency yet.</p>`;
+@@ -1163,28 +1167,83 @@ function renderLatency(L) {
+       remBox.innerHTML = `<p class="lat-empty">No record enrichment ran in the measured window — nothing to time yet.</p>`;
+     } else {
+       remBox.innerHTML = rem.models.map(m => {
+-        const sf = m.service_frac ?? (m.contention_frac != null ? 100 - m.contention_frac : 100);
+-        const cf = m.contention_frac ?? 0;
++        const isWall = m.timing_source === "wall";
++        const isMixed = m.timing_source === "mixed";
+         const badgeWarn = m.contention_pct != null && m.contention_pct >= 30;
+-        const badge = m.contention_pct != null ? `<span class="lat-badge${badgeWarn ? " warn" : ""}">${m.contention_pct}% wait</span>` : "";
++
++        let badge = "";
++        if (isWall) {
++          badge = `<span class="lat-badge">wall</span>`;
++        } else if (isMixed) {
++          const nServ = m.n_service != null ? m.n_service : "—";
++          const nTot = m.n != null ? m.n : "—";
++          badge = `<span class="lat-badge${badgeWarn ? " warn" : ""}">mixed · ${esc(nServ)}/${esc(nTot)}</span>`;
++        } else if (m.contention_pct != null) {
++          badge = `<span class="lat-badge${badgeWarn ? " warn" : ""}">${m.contention_pct}% wait</span>`;
++        }
++
++        const sub = m.backend ? `<span class="lat-backend">${esc(m.backend)}</span>` : "";
++
++        let barHtml = "";
++        if (isWall) {
++          barHtml = "";
++        } else if (isMixed) {
++          if (typeof m.service_frac === "number" && typeof m.contention_frac === "number") {
++            barHtml = `
++            <div class="lat-bar" role="img" aria-label="model compute ${fmtMs(m.service_ms)}, queue wait ${fmtMs(m.contention_ms)}">
++              <span class="lat-seg lat-seg-service" style="width:${m.service_frac}%"></span>
++              <span class="lat-seg lat-seg-contention" style="width:${m.contention_frac}%"></span>
++            </div>`;
++          }
++        } else {
++          const sf = m.service_frac ?? (m.contention_frac != null ? 100 - m.contention_frac : 100);
++          const cf = m.contention_frac ?? 0;
++          barHtml = `
++            <div class="lat-bar" role="img" aria-label="model compute ${fmtMs(m.service_ms)}, queue wait ${fmtMs(m.contention_ms)}">
++              <span class="lat-seg lat-seg-service" style="width:${sf}%"></span>
++              <span class="lat-seg lat-seg-contention" style="width:${cf}%"></span>
++            </div>`;
++        }
++
++        const keys = [];
++        if (isWall) {
++          keys.push(`<span class="lat-key lat-key-service">model — (N/A)</span>`);
++          keys.push(`<span class="lat-key lat-key-contention">wait — (N/A)</span>`);
++          if (m.wall_ms != null) {
++            keys.push(`<span class="lat-key lat-key-wall">wall ${fmtMs(m.wall_ms)}</span>`);
++          }
++        } else {
++          const servExtra = m.n_service != null ? ` (n_service=${m.n_service})` : "";
++          keys.push(`<span class="lat-key lat-key-service">model ${fmtMs(m.service_ms)}${servExtra}</span>`);
++          keys.push(`<span class="lat-key lat-key-contention">wait ${fmtMs(m.contention_ms)}</span>`);
++          if (m.wall_ms != null) {
++            keys.push(`<span class="lat-key lat-key-wall">wall ${fmtMs(m.wall_ms)}</span>`);
++          }
++        }
++
+         const extras = [];
+         if (m.n != null) extras.push(m.low_n ? `n=${m.n} · few samples` : `n=${m.n}`);
+         if (m.max_batch_size != null) extras.push(`batch≤${m.max_batch_size}`);
+-        const lown = extras.length
+-          ? `<span class="${m.low_n ? "lat-lown" : "lat-n"}">${esc(extras.join(" · "))}</span>`
+-          : "";
++        if (extras.length) {
++          keys.push(`<span class="${m.low_n ? "lat-lown" : "lat-n"}">${esc(extras.join(" · "))}</span>`);
++        }
++
+         const p95bits = [];
+-        if (m.service_ms_p95 != null) p95bits.push(`model p95 ${fmtMs(m.service_ms_p95)}`);
+-        if (m.contention_ms_p95 != null) p95bits.push(`wait p95 ${fmtMs(m.contention_ms_p95)}`);
++        if (!isWall) {
++          if (m.service_ms_p95 != null) p95bits.push(`model p95 ${fmtMs(m.service_ms_p95)}`);
++          if (m.contention_ms_p95 != null) p95bits.push(`wait p95 ${fmtMs(m.contention_ms_p95)}`);
++        }
++        if (m.wall_ms_p95 != null) p95bits.push(`wall p95 ${fmtMs(m.wall_ms_p95)}`);
+         const p95 = p95bits.length
+           ? `<div class="lat-bar-p95">${esc(p95bits.join(" · "))}</div>` : "";
++
+         return `<div class="lat-bar-row${m.low_n ? " lat-dim" : ""}">
+-            <div class="lat-bar-head"><span class="lat-model">${esc(m.model)}</span>${badge}</div>
+-            <div class="lat-bar" role="img" aria-label="model compute ${fmtMs(m.service_ms)}, queue wait ${fmtMs(m.contention_ms)}">
+-              <span class="lat-seg lat-seg-service" style="width:${sf}%"></span>
+-              <span class="lat-seg lat-seg-contention" style="width:${cf}%"></span>
++            <div class="lat-bar-head">
++              <div><span class="lat-model">${esc(m.model)}</span>${sub ? `<div class="lat-backend">${sub}</div>` : ""}</div>
++              ${badge}
+             </div>
+-            <div class="lat-bar-legend"><span class="lat-key lat-key-service">model ${fmtMs(m.service_ms)}</span><span class="lat-key lat-key-contention">wait ${fmtMs(m.contention_ms)}</span>${lown}</div>
++            ${barHtml}
++            <div class="lat-bar-legend">${keys.join("")}</div>
+             ${p95}
+           </div>`;
+       }).join("");
+@@ -1580,8 +1639,6 @@ function renderLlmPool(H) {
+   const hasAff = !!(aff && (aff.hits != null || aff.misses != null || aff.hit_rate != null
+     || (aff.hot_prefixes && aff.hot_prefixes.length)));
+   const hasWedge = Array.isArray(wedged) && wedged.length > 0;
+-  const tokenFailed = Number(creds?.token_verify_failed) || 0;
+-  const auditDropped = Number(creds?.audit_log_dropped) || 0;
+   const routeDenied = Number(creds?.credentialed_route_denied) || 0;
+   const noEligible = Number(routing?.routing_no_eligible_backend) || 0;
+   const atCapacity = Number(routing?.routing_backend_at_capacity) || 0;
+@@ -1593,7 +1650,7 @@ function renderLlmPool(H) {
+   const judgeN = Number(routing?.routed_role_judge) || 0;
+   // A5: own-door + routing refuses warn; A6 quiet role totals only when no refuse.
+   const routingRefuseWarn = noEligible > 0 || atCapacity > 0 || fitRejected > 0;
+-  const credsWarn = tokenFailed > 0 || auditDropped > 0 || routeDenied > 0;
++  const credsWarn = routeDenied > 0;
+   const hasRoutingQuiet = !routingRefuseWarn && (extractN > 0 || verifyN > 0 || judgeN > 0);
+   const poolLineWarn = hasWedge || credsWarn || routingRefuseWarn;
+ 
+@@ -1623,14 +1680,6 @@ function renderLlmPool(H) {
+   }
+   if (H?.inference_busy) bits.push(`GPU ${H.inference_busy}`);
+   if (hasWedge) bits.push(`wedge: ${wedged.join(", ")}`);
+-  if (tokenFailed > 0) {
+-    const ageTxt = fmtLastEventAge(creds?.token_verify_failed_last_ts);
+-    bits.push(`token verify failed ${tokenFailed}` + (ageTxt ? ` ${ageTxt}` : ""));
+-  }
+-  if (auditDropped > 0) {
+-    const ageTxt = fmtLastEventAge(creds?.audit_log_dropped_last_ts);
+-    bits.push("audit log dropped" + (ageTxt ? ` ${ageTxt}` : ""));
+-  }
+   if (routeDenied > 0) {
+     const ageTxt = fmtLastEventAge(creds?.credentialed_route_denied_last_ts);
+     bits.push(`route denied ${routeDenied}` + (ageTxt ? ` ${ageTxt}` : ""));
+@@ -1841,9 +1890,29 @@ function renderSystemHealth(H) {
+   const hint = document.getElementById("system-hint");
+   const hintText = gatewayConfigHint(H);
+   const unauthWarn = H?.config?.allow_unauthenticated_provider_keys === true;
++  const creds = H?.credentials;
++  const tokenFailed = Number(creds?.token_verify_failed) || 0;
++  const auditDropped = Number(creds?.audit_log_dropped) || 0;
++  const doorWarn = tokenFailed > 0 || auditDropped > 0;
+   if (hint) {
+-    hint.className = "hint sidebar-hint" + (unauthWarn ? " warn" : "");
+-    hint.textContent = hintText;
++    const isWarn = unauthWarn || doorWarn;
++    hint.className = "hint sidebar-hint" + (isWarn ? " warn" : "");
++    if (doorWarn) {
++      const doorBits = [];
++      if (tokenFailed > 0) {
++        const ageTxt = fmtLastEventAge(creds?.token_verify_failed_last_ts);
++        doorBits.push(`token verify failed ${tokenFailed}` + (ageTxt ? ` ${ageTxt}` : ""));
++      }
++      if (auditDropped > 0) {
++        const ageTxt = fmtLastEventAge(creds?.audit_log_dropped_last_ts);
++        doorBits.push("audit log dropped" + (ageTxt ? ` ${ageTxt}` : ""));
++      }
++      const doorText = "gateway door: " + doorBits.join(" · ");
++      const baseText = hintText ? `${hintText} · ${doorText}` : doorText;
++      hint.innerHTML = `${esc(baseText)} · <a class="pool-pop-link" href="/logs?source=credential_audit">credential audit</a>`;
++    } else {
++      hint.textContent = hintText;
++    }
+   }
+   // Richer title: per-backend list + pool tuning when present (no secrets).
+   const cfg = H?.config;
+diff --git a/static/theme.css b/static/theme.css
+index ecb2e95..1d3a3ea 100644
+--- a/static/theme.css
++++ b/static/theme.css
+@@ -2913,5 +2913,8 @@ body.diagram-page { min-height: 100vh; }
+ }
+ .lat-key-service::before { background: #6f8db0; }
+ .lat-key-contention::before { background: var(--warn); }
++.lat-key-wall::before { background: var(--muted); }
++.lat-seg-wall { background: var(--card-inset); border: 1px solid var(--border); }
++.lat-backend { font-size: .68rem; color: var(--muted); font-family: var(--mono); font-weight: normal; }
+ .lat-lown { color: var(--warn-bright); }
+ .lat-n { color: var(--muted); }
+diff --git a/tests/test_latency.py b/tests/test_latency.py
+index 7a12e9f..175016b 100644
+--- a/tests/test_latency.py
++++ b/tests/test_latency.py
+@@ -99,6 +99,131 @@ class LatencyRemTests(unittest.TestCase):
+         self.assertIsNotNone(snap["chip"])
+         self.assertEqual(snap["chip"]["contention_pct"], 80)
+ 
++    def test_wall_only_deepseek_shape(self):
++        snap = latency_from_payload(_payload({
++            "rem_ms": {"by_model": [
++                {
++                    "model": "deepseek-v4-flash",
++                    "n": 15,
++                    "n_service": 0,
++                    "timing_source": "wall",
++                    "backend": "https://api.deepseek.com",
++                    "max_batch_size": 2,
++                    "service_ms": {"p50": None, "p95": None},
++                    "contention_ms": {"p50": None, "p95": None},
++                    "wall_ms": {"p50": 4905.1, "p95": 6283.3},
++                },
++            ]},
++        }))
++        self.assertTrue(snap["rem"]["present"])
++        m = snap["rem"]["models"][0]
++        self.assertEqual(m["model"], "deepseek-v4-flash")
++        self.assertIsNone(m["service_ms"])
++        self.assertIsNone(m["contention_ms"])
++        self.assertEqual(m["wall_ms"], 4905.1)
++        self.assertEqual(m["wall_ms_p95"], 6283.3)
++        self.assertEqual(m["n_service"], 0)
++        self.assertEqual(m["timing_source"], "wall")
++        self.assertEqual(m["backend"], "https://api.deepseek.com")
++        self.assertIsNone(m["service_frac"])
++        self.assertIsNone(m["contention_frac"])
++        self.assertEqual(m["max_batch_size"], 2)
++        self.assertIsNone(snap["chip"])
++
++    def test_mixed_timing_source(self):
++        snap = latency_from_payload(_payload({
++            "rem_ms": {"by_model": [
++                {
++                    "model": "mixed-model",
++                    "n": 500,
++                    "n_service": 1,
++                    "timing_source": "mixed",
++                    "service_ms": {"p50": 100, "p95": 200},
++                    "contention_ms": {"p50": 10, "p95": 20},
++                    "wall_ms": {"p50": 4000, "p95": 8000},
++                    "backend": None,
++                },
++            ]},
++        }))
++        m = snap["rem"]["models"][0]
++        self.assertEqual(m["n"], 500)
++        self.assertEqual(m["n_service"], 1)
++        self.assertEqual(m["timing_source"], "mixed")
++        self.assertIsNone(m["backend"])
++        self.assertEqual(m["service_ms"], 100)
++        self.assertEqual(m["wall_ms"], 4000)
++        self.assertEqual(m["wall_ms_p95"], 8000)
++        self.assertEqual(m["total_ms"], 110)
++        self.assertEqual(m["service_frac"], 91)       # round(100 * 100 / 110) = 91
++        self.assertEqual(m["contention_frac"], 9)     # round(100 * 10 / 110) = 9
++        self.assertEqual(m["contention_pct"], 9)
++
++    def test_server_row_with_wall_and_timing_source(self):
++        snap = latency_from_payload(_payload({
++            "rem_ms": {"by_model": [
++                {
++                    "model": "qwen-local",
++                    "n": 40,
++                    "n_service": 40,
++                    "timing_source": "server",
++                    "backend": "http://ollama:11434",
++                    "max_batch_size": 1,
++                    "service_ms": {"p50": 800, "p95": 1200},
++                    "contention_ms": {"p50": 200, "p95": 400},
++                    "wall_ms": {"p50": 1050.0, "p95": 1650.0},
++                },
++            ]},
++        }))
++        m = snap["rem"]["models"][0]
++        self.assertEqual(m["model"], "qwen-local")
++        self.assertEqual(m["service_ms"], 800)
++        self.assertEqual(m["contention_ms"], 200)
++        self.assertEqual(m["total_ms"], 1000)
++        self.assertEqual(m["service_frac"], 80)
++        self.assertEqual(m["contention_frac"], 20)
++        self.assertEqual(m["wall_ms"], 1050.0)
++        self.assertEqual(m["wall_ms_p95"], 1650.0)
++        self.assertEqual(m["timing_source"], "server")
++        self.assertEqual(m["n_service"], 40)
++        self.assertEqual(m["backend"], "http://ollama:11434")
++
++    def test_pre_0960_row_defaults(self):
++        snap = latency_from_payload(_payload({
++            "rem_ms": {"by_model": [
++                {"model": "gemma-legacy", "service_ms": 500, "contention_ms": 100, "n": 20},
++            ]},
++        }))
++        m = snap["rem"]["models"][0]
++        self.assertEqual(m["model"], "gemma-legacy")
++        self.assertEqual(m["service_ms"], 500)
++        self.assertEqual(m["contention_ms"], 100)
++        self.assertIsNone(m.get("wall_ms"))
++        self.assertIsNone(m.get("wall_ms_p95"))
++        self.assertIsNone(m.get("n_service"))
++        self.assertIsNone(m.get("timing_source"))
++        self.assertIsNone(m.get("backend"))
++
++    def test_name_fallback_never_uses_backend_url(self):
++        # Entry with NO model, backend is a URL -> name must be "?" (never the URL)
++        snap = latency_from_payload(_payload({
++            "rem_ms": {"by_model": [
++                {"backend": "https://api.deepseek.com", "n": 10},
++            ]},
++        }))
++        m = snap["rem"]["models"][0]
++        self.assertEqual(m["model"], "?")
++        self.assertEqual(m["backend"], "https://api.deepseek.com")
++
++        # Entry with 'name' key used if present
++        snap2 = latency_from_payload(_payload({
++            "rem_ms": {"by_model": [
++                {"name": "custom-named-model", "backend": "https://api.openai.com", "n": 5},
++            ]},
++        }))
++        m2 = snap2["rem"]["models"][0]
++        self.assertEqual(m2["model"], "custom-named-model")
++        self.assertEqual(m2["backend"], "https://api.openai.com")
++
+ 
+ class LatencyEnvelopeTests(unittest.TestCase):
+     def test_missing_latency_block_pre_063_gateway(self):
