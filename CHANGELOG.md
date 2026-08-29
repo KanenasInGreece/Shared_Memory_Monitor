@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.25] - 2026-08-29
+### Fixed
+- Hardened logs parsing against unstructured `agent` JSON fields (e.g. from OpenCode MCP agent) which previously crashed the telemetry scraper and halted agent diagram flows.
+
 ## [0.9.24] - 2026-08-29
 ### Fixed
 - Fixed an issue in the architecture diagram where agent HTTP flow animations would break (stay permanently lit) during history playback because the query window was incorrectly aggregating from the beginning of time instead of the selected interval.
