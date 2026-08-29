@@ -750,7 +750,7 @@ function viewTimeWindow() {
   }
   if (tlIndex <= 0) return null;
   return {
-    since: historyData.timestamps?.[0],
+    since: historyData.timestamps?.[tlIndex - 1],
     until: historyData.timestamps?.[Math.min(tlIndex, n - 1)],
   };
 }
