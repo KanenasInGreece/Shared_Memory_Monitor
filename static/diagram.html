@@ -736,7 +736,7 @@ function flowEventsForView() {
   const n = sampleCount();
   if (n < 2) return new Set();
   if (isLiveMode()) return aggregateFlowEvents(Math.max(0, n - 2), n - 1);
-  return aggregateFlowEvents(0, tlIndex);
+  return aggregateFlowEvents(Math.max(0, tlIndex - 1), tlIndex);
 }
 
 function viewTimeWindow() {
