@@ -57,6 +57,18 @@ def _p95(value: float | dict | None) -> float | int | None:
     return None
 
 
+def _encoders_part(encoders: dict | None) -> dict:
+    encoders = encoders if isinstance(encoders, dict) else {}
+    embed = encoders.get("embed") or {}
+    rerank = encoders.get("rerank") or {}
+    return {
+        "present": bool(embed or rerank),
+        "embed": embed,
+        "rerank": rerank,
+        "limit_ms": encoders.get("limit_ms"),
+    }
+
+
 def _rem_by_model(rem_ms: dict | None) -> tuple[list[dict], int | None]:
     """Per-model REM service/contention split + the worst contention share."""
     rem = rem_ms if isinstance(rem_ms, dict) else {}
@@ -143,11 +155,14 @@ def latency_from_payload(
     error = None
     latency: dict = {}
     telemetry_at = None
+    encoders_raw = {}
     if isinstance(telemetry_payload, dict) and telemetry_payload.get("status") == "success":
         t = telemetry_payload.get("telemetry") or {}
         telemetry_at = t.get("timestamp")
         if isinstance(t.get("latency"), dict):
             latency = t["latency"]
+        if isinstance(t.get("encoders"), dict):
+            encoders_raw = t["encoders"]
     elif isinstance(telemetry_payload, dict) and telemetry_payload.get("status") in ("error", "unreachable"):
         reachable = False
         error = sanitize_error(telemetry_payload.get("message") or telemetry_payload.get("error"))
@@ -177,6 +192,7 @@ def latency_from_payload(
             "note": rem_note,
         },
         "nrem": nrem,
+        "encoders": _encoders_part(encoders_raw),
         "chip": chip,
         "contention_chip_threshold": _CONTENTION_CHIP_THRESHOLD,
         "error": error,
