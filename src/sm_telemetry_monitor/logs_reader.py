@@ -11,6 +11,7 @@ import json
 import os
 import re
 import subprocess
+import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -254,8 +255,12 @@ def list_sources() -> list[LogSource]:
     ]
 
 
-def _parse_ts(value: str | None) -> datetime | None:
+def _parse_ts(value) -> datetime | None:
     if not value or value == "?":
+        return None
+    if not isinstance(value, str):
+        # A producer may log ts as an epoch int or a JSON object; an unreadable
+        # stamp makes the row undatable, never an error for the whole scan.
         return None
     text = value.strip()
     if text.endswith("Z"):
@@ -592,20 +597,49 @@ _READ_PATH_PREFIXES = (
 )
 
 
-def _is_daemon_agent(agent: str | None) -> bool:
+def _audit_agent_id(agent) -> str:
+    """Agent id of an audit row, tolerating a writer that wraps it in JSON.
+
+    An MCP client may log `agent` as `["opencode"]` rather than `"opencode"`
+    (fact:1803). Unwrapping a single-element sequence keeps that client on its
+    own diagram chip. Any other shape names no agent this tool can attribute
+    traffic to, so it yields "" and the row goes uncounted — the monitor
+    reports what the logs say, it does not invent an agent from a repr.
+    """
+    if isinstance(agent, str):
+        return agent.strip()
+    if isinstance(agent, (list, tuple)) and len(agent) == 1:
+        return _audit_agent_id(agent[0])
+    if isinstance(agent, (int, float)) and not isinstance(agent, bool):
+        return str(agent)
+    return ""
+
+
+def _audit_route(path) -> str:
+    """Route of an audit row, tolerating a writer that emits a non-string path.
+
+    A client is free to log `path` as an object/array (OpenCode MCP does); a
+    scan over shared bytes must not fault on one malformed producer.
+    """
+    if not path:
+        return ""
+    return str(path).split("?", 1)[0]
+
+
+def _is_daemon_agent(agent) -> bool:
     if not agent:
         return True
-    key = agent.strip().lower()
+    key = str(agent).strip().lower()
     if key in _DAEMON_AGENTS:
         return True
     return key.endswith("_daemon") or key.endswith("-daemon")
 
 
-def _daemon_diagram_node(agent: str | None) -> str | None:
+def _daemon_diagram_node(agent) -> str | None:
     """Map audit agent id to diagram node key for REM/NREM logic flows."""
     if not agent:
         return None
-    key = agent.strip().lower()
+    key = str(agent).strip().lower()
     if key in ("rem_daemon", "rem"):
         return "rem_daemon"
     if key in ("consolidation", "nrem_daemon", "nrem"):
@@ -613,9 +647,9 @@ def _daemon_diagram_node(agent: str | None) -> str | None:
     return None
 
 
-def classify_daemon_audit_io(path: str | None) -> str | None:
+def classify_daemon_audit_io(path) -> str | None:
     """Classify daemon gateway proxy traffic for diagram logic flows."""
-    route = (path or "").split("?", 1)[0]
+    route = _audit_route(path)
     if route == "/v1/chat/completions":
         return "chat"
     if route == "/v1/embeddings":
@@ -625,9 +659,9 @@ def classify_daemon_audit_io(path: str | None) -> str | None:
     return None
 
 
-def classify_agent_audit_io(method: str | None, path: str | None) -> str | None:
+def classify_agent_audit_io(method, path) -> str | None:
     """Classify an agent-audit request as read or write; None when not memory I/O."""
-    route = (path or "").split("?", 1)[0]
+    route = _audit_route(path)
     if not route or route.startswith("/v1/"):
         return None
     if route in _WRITE_PATHS:
@@ -636,7 +670,7 @@ def classify_agent_audit_io(method: str | None, path: str | None) -> str | None:
         return "read"
     if any(route == p or route.startswith(p + "/") for p in _READ_PATH_PREFIXES):
         return "read"
-    verb = (method or "GET").upper()
+    verb = (str(method) if method else "GET").upper()
     if verb == "GET":
         return "read"
     if verb in ("POST", "PUT", "PATCH", "DELETE"):
@@ -664,6 +698,57 @@ def _read_audit_lines(path: Path) -> list[str]:
     return path.read_text(encoding="utf-8", errors="replace").splitlines()
 
 
+_AUDIT_CACHE: dict[str, tuple[tuple[int, int], list[tuple]]] = {}
+_AUDIT_CACHE_LOCK = threading.Lock()
+# Rotation mints a new filename every cycle, so the key set would otherwise
+# grow for the life of the process. Holding the live file plus a rotation set
+# is what the scrubber actually re-reads; older entries just re-parse on demand.
+_AUDIT_CACHE_MAX_FILES = 32
+
+
+def _audit_rows(path: Path) -> list[tuple]:
+    """Parsed (ts, agent, method, path) tuples for one audit file, memoised.
+
+    The diagram scrubber asks for one window per slider step over the same
+    bytes, so parsing is keyed on (mtime_ns, size): a rotated or appended file
+    re-parses, an untouched one costs nothing. That makes the archives — the
+    bulk of the corpus — free; the live file the gateway is appending to still
+    re-parses whenever it has grown since the last call.
+    """
+    try:
+        stat = path.stat()
+    except OSError:
+        return []
+    stamp = (stat.st_mtime_ns, stat.st_size)
+    key = str(path)
+    with _AUDIT_CACHE_LOCK:
+        cached = _AUDIT_CACHE.get(key)
+        if cached is not None and cached[0] == stamp:
+            return cached[1]
+
+    rows: list[tuple] = []
+    for line in _read_audit_lines(path):
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(row, dict):
+            continue
+        rows.append((
+            _parse_ts(row.get("ts")),
+            _audit_agent_id(row.get("agent")),
+            row.get("method"),
+            _audit_route(row.get("path")),
+        ))
+
+    with _AUDIT_CACHE_LOCK:
+        _AUDIT_CACHE.pop(key, None)
+        _AUDIT_CACHE[key] = (stamp, rows)
+        while len(_AUDIT_CACHE) > _AUDIT_CACHE_MAX_FILES:
+            _AUDIT_CACHE.pop(next(iter(_AUDIT_CACHE)))
+    return rows
+
+
 def agent_activity(
     *,
     since: str | None = None,
@@ -676,27 +761,20 @@ def agent_activity(
     daemon_logic: dict[str, dict[str, int]] = {}
 
     for path in _iter_audit_files():
-        for line in _read_audit_lines(path):
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            ts = _parse_ts(row.get("ts"))
+        for ts, agent, method, route in _audit_rows(path):
             if not _in_window(ts, since_dt, until_dt):
                 continue
-            agent = row.get("agent")
             if _is_daemon_agent(agent):
-                node = _daemon_diagram_node(str(agent) if agent else None)
-                kind = classify_daemon_audit_io(row.get("path"))
+                node = _daemon_diagram_node(agent)
+                kind = classify_daemon_audit_io(route)
                 if node and kind:
                     bucket = daemon_logic.setdefault(node, {"chat": 0, "embeddings": 0, "proxy": 0})
                     bucket[kind] += 1
                 continue
-            io = classify_agent_audit_io(row.get("method"), row.get("path"))
+            io = classify_agent_audit_io(method, route)
             if not io:
                 continue
-            key = str(agent).strip()
-            bucket = counts.setdefault(key, {"read": 0, "write": 0})
+            bucket = counts.setdefault(agent, {"read": 0, "write": 0})
             bucket[io] += 1
 
     return {

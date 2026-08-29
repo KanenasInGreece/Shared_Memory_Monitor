@@ -89,6 +89,15 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # quieter logs
         print(f"[server] {self.address_string()} {fmt % args}")
 
+    def handle_one_request(self) -> None:
+        # A scrubbed-past diagram request is abandoned by the browser mid-flight;
+        # writing its response then raises, and socketserver would log a full
+        # traceback per drag step. The peer leaving is not a server fault.
+        try:
+            super().handle_one_request()
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
+
     def _json(self, code: int, payload: dict) -> None:
         body = json.dumps(payload, indent=2).encode()
         self.send_response(code)

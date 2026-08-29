@@ -13,7 +13,7 @@ This sister repository is that picture. It does not install databases or daemons
 | **What you get** | Live ops view over framework telemetry and logs |
 | **What you do not get** | A second metrics store, DB credentials, or write access to memory |
 | **Dashboard** | **http://127.0.0.1:8765/** |
-| **This release** | **v0.9.25** — API **v4** client · wire-compatible with framework **≥ 0.8.33** · full panels on **≥ 0.8.9** · alternative vectors on **≥ 0.8.40** · credential-audit / `llm_faults` on **≥ 0.9.4** · credential last-event age on **≥ 0.9.8** · `credentialed_route_denied` on **≥ 0.9.9** · LLM routing / token usage / backend descriptors / `GET /pool/status` dream-ready slots on **≥ 0.9.13** · wall/mixed `by_model` latency on **≥ 0.9.60** |
+| **This release** | **v0.9.26** — API **v4** client · wire-compatible with framework **≥ 0.8.33** · full panels on **≥ 0.8.9** · alternative vectors on **≥ 0.8.40** · credential-audit / `llm_faults` on **≥ 0.9.4** · credential last-event age on **≥ 0.9.8** · `credentialed_route_denied` on **≥ 0.9.9** · LLM routing / token usage / backend descriptors / `GET /pool/status` dream-ready slots on **≥ 0.9.13** · wall/mixed `by_model` latency on **≥ 0.9.60** |
 
 ---
 
@@ -116,7 +116,7 @@ Everything on screen is one of those two upstreams, or a **poll cache** of past 
 | **Upstream data** | Serves telemetry; writes journal + audit JSONL | Reads those — never Postgres/Neo4j |
 | **Wire contract** | `api_version` on `GET /health` | Client advertises **API 4** (`X-SM-Api-Version: 4`) |
 
-**Compatibility:** Monitor **v0.9.25** speaks **API v4** against framework **≥ 0.8.33** (`compat=ok` from doctor). Prefer **≥ 0.8.9** for the full Status picture (LLM local/external placement, entity census, latency drawer), **≥ 0.8.40** for alternative-vectors on first-write quality, **≥ 0.9.4** for credential-audit tails and `llm_faults` on pool chips, **≥ 0.9.8** for `credentials.*_last_ts` last-failure age, **≥ 0.9.9** for `credentialed_route_denied`, **≥ 0.9.13** for `llm_routing` / `llm_token_usage` / backend descriptors / `GET /pool/status` dream-ready slots, and **≥ 0.9.60** for wall/mixed `by_model` latency (external OpenAI-compatible backends). Older gateways stay on the wire; missing panels simply omit fields rather than fail hard.
+**Compatibility:** Monitor **v0.9.26** speaks **API v4** against framework **≥ 0.8.33** (`compat=ok` from doctor). Prefer **≥ 0.8.9** for the full Status picture (LLM local/external placement, entity census, latency drawer), **≥ 0.8.40** for alternative-vectors on first-write quality, **≥ 0.9.4** for credential-audit tails and `llm_faults` on pool chips, **≥ 0.9.8** for `credentials.*_last_ts` last-failure age, **≥ 0.9.9** for `credentialed_route_denied`, **≥ 0.9.13** for `llm_routing` / `llm_token_usage` / backend descriptors / `GET /pool/status` dream-ready slots, and **≥ 0.9.60** for wall/mixed `by_model` latency (external OpenAI-compatible backends). Older gateways stay on the wire; missing panels simply omit fields rather than fail hard.
 
 Where a number on the screen comes from is always the framework payload or a log line. For the field-level mapping of telemetry keys to UI bands, see [docs/SISTER_PROJECT.md](docs/SISTER_PROJECT.md) and the framework’s own telemetry docs — this README stays on the operator path, not the catalog.
 
@@ -380,7 +380,7 @@ Long-running processes do **not** hot-reload after `.env` or code changes — re
 | Doc | Topic |
 |-----|-------|
 | [SISTER_PROJECT.md](docs/SISTER_PROJECT.md) | Framework boundary and wire contract |
-| [CHANGELOG.md](CHANGELOG.md) | Releases (current: **v0.9.25**) |
+| [CHANGELOG.md](CHANGELOG.md) | Releases (current: **v0.9.26**) |
 | [SECURITY.md](SECURITY.md) | Secrets policy |
 | [AGENTS.md](AGENTS.md) | Agent install / status / upgrade |
 

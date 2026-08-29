@@ -298,6 +298,11 @@ let healthTimer = null;
 let agentActivity = null;
 let agentActivityKey = null;
 let agentActivityPending = null;
+let agentActivityTimer = null;
+let agentActivityAbort = null;
+/* Slider fires one input event per drag step; each scan reads the whole audit
+   corpus server-side, so a drag must settle into a single request. */
+const AGENT_ACTIVITY_DEBOUNCE_MS = 250;
 
 const CHIP_AGENT_IDS = (() => {
   const map = new Map();
@@ -843,37 +848,69 @@ function agentAuditSummary() {
   };
 }
 
-async function loadAgentActivityForView() {
+function cancelPendingAgentActivity() {
+  if (agentActivityTimer) {
+    clearTimeout(agentActivityTimer);
+    agentActivityTimer = null;
+  }
+  if (agentActivityAbort) {
+    agentActivityAbort.abort();
+    agentActivityAbort = null;
+  }
+  agentActivityPending = null;
+}
+
+function loadAgentActivityForView() {
   const win = viewTimeWindow();
   const key = agentActivityCacheKey(win);
   if (!key) {
+    cancelPendingAgentActivity();
     agentActivity = null;
     agentActivityKey = null;
     refreshAgentAuditLayers();
     return;
+  }
+  // Any armed timer belongs to a window the view has already left. Drop it
+  // first: leaving it armed lets it fire later and abort the request for the
+  // position the user actually settled on, which then renders nothing.
+  if (agentActivityTimer) {
+    clearTimeout(agentActivityTimer);
+    agentActivityTimer = null;
   }
   if (key === agentActivityKey && agentActivity) {
     refreshAgentAuditLayers();
     return;
   }
   if (agentActivityPending === key) return;
+  agentActivityTimer = setTimeout(() => {
+    agentActivityTimer = null;
+    fetchAgentActivity(win, key);
+  }, AGENT_ACTIVITY_DEBOUNCE_MS);
+}
+
+async function fetchAgentActivity(win, key) {
+  if (agentActivityAbort) agentActivityAbort.abort();
+  const ctrl = new AbortController();
+  agentActivityAbort = ctrl;
   agentActivityPending = key;
   try {
     const qs = new URLSearchParams({ since: win.since, until: win.until });
-    const r = await fetch(`/api/diagram/agent-activity?${qs}`);
+    const r = await fetch(`/api/diagram/agent-activity?${qs}`, { signal: ctrl.signal });
     if (!r.ok) throw new Error("HTTP " + r.status);
     const data = await r.json();
     if (agentActivityCacheKey(viewTimeWindow()) !== key) return;
     agentActivity = data;
     agentActivityKey = key;
     refreshAgentAuditLayers();
-  } catch (_) {
+  } catch (err) {
+    if (err && err.name === "AbortError") return;
     if (agentActivityCacheKey(viewTimeWindow()) === key) {
       agentActivity = null;
       agentActivityKey = null;
       refreshAgentAuditLayers();
     }
   } finally {
+    if (agentActivityAbort === ctrl) agentActivityAbort = null;
     if (agentActivityPending === key) agentActivityPending = null;
   }
 }
@@ -896,6 +933,7 @@ function refreshAgentAuditLayers() {
     agentAudit: audit,
   };
   drawFlows(flowCtx);
+  updateMemoryBridge(flowCtx, events);
   updateReplayUi();
 }
 
@@ -923,7 +961,12 @@ function updateReplayCaption(n, live, idx) {
     when.textContent = `${ts} · sample 1 of ${n}`;
   } else {
     const win = viewTimeWindow();
-    desc.textContent = "Replay — lit flow lines show cumulative activity from the first stored poll through this snapshot.";
+    const key = agentActivityCacheKey(win);
+    const settled = key && key === agentActivityKey && agentActivity;
+    const quiet = settled && !Object.keys(agentActivity.agents || {}).length;
+    desc.textContent = quiet
+      ? "Replay — no agent traffic in this poll interval. Agent flow lines are dark because the system was idle, not because the view failed."
+      : "Replay — lit flow lines show activity within this poll interval only.";
     when.textContent = `${fmtReplayTs(win?.since)} → ${fmtReplayTs(win?.until)} · sample ${idx + 1} of ${n}`;
   }
 }

@@ -6,6 +6,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.26] - 2026-08-29
+### Fixed
+- Diagram timeline scrubbing no longer stalls the monitor. Dragging the replay slider fired one `/api/diagram/agent-activity` request per slider position, and each request re-read and re-parsed the whole agent-audit corpus (15 files, ~29.5k rows). A 180-step drag drove `GET /api/diagram` from 0.35 s to 21.9 s and left the dashboard blank. Audit parsing is now memoised per file on `(mtime, size)`, and the front end coalesces a drag into a single request, aborting superseded ones — measured: 100 slider events now issue 1 request, and the dashboard stays under 1.7 s during a drag.
+- Abandoning an in-flight request by scrubbing past it no longer logs an unhandled `BrokenPipeError` traceback per drag step.
+- Agent flow lines no longer vanish because of one malformed audit row. A client logging `agent`, `method`, `path` or `ts` as something other than a string (e.g. the OpenCode MCP client, or an epoch-int timestamp) crashed the scan and returned HTTP 500, blanking every agent flow until the log rotated; malformed rows are now skipped, and a single-element `agent` list such as `["opencode"]` resolves to its own diagram chip instead of a junk agent bucket.
+- Bounded the audit parse cache, which would otherwise retain one entry per rotated log file for the lifetime of the process.
+
+### Changed
+- The replay caption now matches what the view actually shows. It described cumulative activity from the first stored poll while the code had moved to a single poll interval, and an idle interval read as a broken page; it now names the interval and says explicitly when the system was simply quiet.
+
 ## [0.9.25] - 2026-08-29
 ### Fixed
 - Hardened logs parsing against unstructured `agent` JSON fields (e.g. from OpenCode MCP agent) which previously crashed the telemetry scraper and halted agent diagram flows.

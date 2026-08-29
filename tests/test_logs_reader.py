@@ -6,7 +6,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from sm_telemetry_monitor import logs_reader
 from sm_telemetry_monitor.logs_reader import (
+    _AUDIT_CACHE,
+    _AUDIT_CACHE_MAX_FILES,
+    _audit_agent_id,
+    _audit_route,
     _daemon_diagram_node,
     _filter_entries,
     _is_daemon_agent,
@@ -272,6 +277,9 @@ class ArchiveTests(unittest.TestCase):
 
 
 class AgentActivityTests(unittest.TestCase):
+    def setUp(self):
+        _AUDIT_CACHE.clear()
+
     def test_classify_memory_io(self):
         self.assertEqual(classify_agent_audit_io("POST", "/memory/save"), "write")
         self.assertEqual(classify_agent_audit_io("POST", "/memory/search"), "read")
@@ -389,6 +397,109 @@ class AgentActivityTests(unittest.TestCase):
         self.assertEqual(out["daemon_logic"]["rem_daemon"]["chat"], 1)
         self.assertEqual(out["daemon_logic"]["nrem_daemon"]["embeddings"], 1)
         self.assertEqual(out["agents"], {})
+
+    @mock.patch("sm_telemetry_monitor.logs_reader.agent_audit_path")
+    def test_malformed_rows_do_not_break_the_scan(self, mock_path):
+        """One MCP client logging JSON where a string is expected must not
+        blank the whole diagram: the bad rows are skipped, the good ones count."""
+        raw = "\n".join([
+            json.dumps({"ts": "2026-06-12T10:00:00+00:00", "agent": ["opencode"],
+                        "method": "POST", "path": "/memory/search"}),
+            json.dumps({"ts": "2026-06-12T10:01:00+00:00", "agent": "opencode",
+                        "method": ["POST"], "path": {"route": "/memory/save"}}),
+            json.dumps({"ts": "2026-06-12T10:02:00+00:00", "agent": {"id": "x"},
+                        "method": "GET", "path": "/memory/telemetry"}),
+            # An epoch int or JSON ts must not brick the scan for every caller.
+            json.dumps({"ts": 1749722400, "agent": "codex",
+                        "method": "POST", "path": "/memory/save"}),
+            json.dumps({"ts": {"at": "2026-06-12T10:02:30+00:00"}, "agent": "codex",
+                        "method": "POST", "path": "/memory/save"}),
+            json.dumps(["not", "an", "object"]),
+            json.dumps("bare string"),
+            "{ not json at all",
+            json.dumps({"ts": "2026-06-12T10:03:00+00:00", "agent": "grok",
+                        "method": "POST", "path": "/memory/save"}),
+        ])
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "agent-audit.jsonl"
+            path.write_text(raw + "\n", encoding="utf-8")
+            mock_path.return_value = path
+            with mock.patch("sm_telemetry_monitor.logs_reader._log_root", return_value=Path(td).resolve()):
+                out = agent_activity(
+                    since="2026-06-12T09:00:00+00:00",
+                    until="2026-06-12T11:00:00+00:00",
+                )
+        self.assertEqual(out["agents"]["grok"], {"read": 0, "write": 1})
+        # A JSON-wrapped agent id unwraps to its own chip, not a repr bucket.
+        self.assertEqual(out["agents"]["opencode"], {"read": 1, "write": 0})
+        # Nothing else is invented: an unattributable row is counted for no one.
+        self.assertEqual(set(out["agents"]), {"grok", "opencode"})
+
+    def test_parse_ts_rejects_non_string_stamps(self):
+        self.assertIsNone(_parse_ts(1749722400))
+        self.assertIsNone(_parse_ts(True))
+        self.assertIsNone(_parse_ts({"at": "2026-06-12T10:00:00+00:00"}))
+        self.assertIsNone(_parse_ts(["2026-06-12T10:00:00+00:00"]))
+        self.assertIsNotNone(_parse_ts("2026-06-12T10:00:00+00:00"))
+
+    def test_audit_cache_is_bounded(self):
+        """Rotation mints a new filename each cycle; the key set must not grow
+        for the life of the process."""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            with mock.patch("sm_telemetry_monitor.logs_reader._log_root", return_value=root):
+                for i in range(_AUDIT_CACHE_MAX_FILES + 15):
+                    p = root / f"agent-audit.jsonl.{i}"
+                    p.write_text(json.dumps({
+                        "ts": "2026-06-12T10:00:00+00:00", "agent": "grok",
+                        "method": "POST", "path": "/memory/save",
+                    }) + "\n", encoding="utf-8")
+                    logs_reader._audit_rows(p)
+                    self.assertLessEqual(len(_AUDIT_CACHE), _AUDIT_CACHE_MAX_FILES)
+        self.assertEqual(len(_AUDIT_CACHE), _AUDIT_CACHE_MAX_FILES)
+
+    def test_audit_agent_id_normalisation(self):
+        self.assertEqual(_audit_agent_id("opencode"), "opencode")
+        self.assertEqual(_audit_agent_id("  opencode  "), "opencode")
+        self.assertEqual(_audit_agent_id(["opencode"]), "opencode")
+        self.assertEqual(_audit_agent_id(("opencode",)), "opencode")
+        self.assertEqual(_audit_agent_id(None), "")
+        # An unattributable shape names no agent — it must not become a chip.
+        self.assertEqual(_audit_agent_id(["a", "b"]), "")
+        self.assertEqual(_audit_agent_id({"id": "x"}), "")
+        self.assertEqual(_audit_agent_id(True), "")
+
+    def test_audit_route_tolerates_non_string_path(self):
+        self.assertEqual(_audit_route("/memory/save?x=1"), "/memory/save")
+        self.assertEqual(_audit_route(None), "")
+        self.assertEqual(_audit_route({"route": "/memory/save"}), "{'route': '/memory/save'}")
+
+    @mock.patch("sm_telemetry_monitor.logs_reader.agent_audit_path")
+    def test_audit_parse_is_cached_until_the_file_changes(self, mock_path):
+        """The scrubber asks for one window per slider step over the same bytes;
+        re-parsing the corpus per request is what starved the dashboard."""
+        row = {"ts": "2026-06-12T10:00:00+00:00", "agent": "grok",
+               "method": "POST", "path": "/memory/save"}
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "agent-audit.jsonl"
+            path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+            mock_path.return_value = path
+            real_read = logs_reader._read_audit_lines
+            with mock.patch("sm_telemetry_monitor.logs_reader._log_root", return_value=Path(td).resolve()), \
+                 mock.patch("sm_telemetry_monitor.logs_reader._read_audit_lines",
+                            side_effect=real_read) as spy:
+                for _ in range(25):
+                    agent_activity(since="2026-06-12T09:00:00+00:00",
+                                   until="2026-06-12T11:00:00+00:00")
+                self.assertEqual(spy.call_count, 1, "25 scrub steps must parse the file once")
+
+                later = dict(row, ts="2026-06-12T10:30:00+00:00", agent="claude")
+                path.write_text(json.dumps(row) + "\n" + json.dumps(later) + "\n",
+                                encoding="utf-8")
+                out = agent_activity(since="2026-06-12T09:00:00+00:00",
+                                     until="2026-06-12T11:00:00+00:00")
+                self.assertEqual(spy.call_count, 2, "an appended file must re-parse")
+        self.assertEqual(out["agents"]["claude"], {"read": 0, "write": 1})
 
 
 class GatewayLogClassifyTests(unittest.TestCase):
