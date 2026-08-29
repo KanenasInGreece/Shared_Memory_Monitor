@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.22] - 2026-08-29
+### Added
+- Support for gateway v0.9.74 dual-emission telemetry contract (migrates health keys to /memory/telemetry).
+- Added explicit dashboard health tracking for Postgres, Neo4j, Outbox, and Registry.
+
+
 ## [0.9.21] - 2026-08-26
 ### Changed
 - Support gateway `last_error.superseded` and `age_seconds` in consolidation telemetry, displaying `last err <class> <age> ago` for superseded errors.
