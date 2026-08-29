@@ -10,7 +10,7 @@ from typing import Any
 
 import httpx
 
-from .bridge import API_VERSION, get_health, get_pool_status, get_telemetry, query_graph
+from .bridge import API_VERSION, get_health, get_pool_status, get_telemetry, query_graph, patch_raw
 from .config import DATA_DIR, DB_FILE, ROOT, STATIC_DIR
 from .env_loader import (
     MONITOR_ROOT,
@@ -104,6 +104,9 @@ def _gateway_client() -> dict[str, Any]:
 
 def _check_coordinator() -> dict[str, Any]:
     raw = get_health()
+    telemetry_payload = get_telemetry()
+    t = telemetry_payload.get("telemetry", {}) if isinstance(telemetry_payload, dict) else {}
+    raw = patch_raw(raw, t)
     ok = raw.get("status") not in ("unreachable", "error") and "error" not in raw
     srv = raw.get("api_version")
     if srv is None:

@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from .analytics import rem_drain_signal
 from .backup_reader import latest_backup_manifest
-from .bridge import get_health, get_pool_status, get_telemetry
+from .bridge import get_health, get_pool_status, get_telemetry, patch_raw
 from .config import REM_STALL_WINDOW_S
 from .consolidation import consolidation_from_payload
 from .sanitize import sanitize_error
@@ -16,10 +16,14 @@ from .summary import live_summary
 # /health field mapping — "daemon" is the NREM consolidation process in the framework.
 _INFRA_COMPONENTS = (
     ("gateway", "status", "Gateway", "service"),
+    ("postgres", "postgres", "Postgres", "service"),
+    ("neo4j", "neo4j", "Neo4j", "service"),
+    ("outbox", "outbox", "Outbox", "service"),
+    ("registry", "registry", "Registry", "service"),
     ("embedder", "embedder", "Embedder", "service"),
     ("reranker", "reranker", "Reranker", "service"),
-    ("llm", "llm", "LLM", "service"),
-    ("nrem_daemon", "daemon", "NREM", "daemon"),
+    ("llm", "llm_pool", "LLM Pool", "service"),
+    ("nrem_daemon", "nrem_daemon", "NREM", "daemon"),
     ("rem_daemon", "rem_daemon", "REM", "daemon"),
 )
 
@@ -878,7 +882,21 @@ def _build_component(key: str, field: str, label: str, kind: str, raw: dict, t: 
                      *, nrem_stalled: bool = False, llm_busy: bool = False,
                      inference_busy: str = "unknown", rem_trend: str = "insufficient",
                      llm_pool: dict | None = None) -> dict:
-    process = _process_part(key, raw.get(field), kind)
+    if key == "gateway":
+        val = raw.get("status")
+    else:
+        deps = raw.get("dependencies")
+        if isinstance(deps, dict) and field in deps and isinstance(deps[field], dict) and "state" in deps[field]:
+            val = deps[field]["state"]
+        else:
+            legacy_field = field
+            if field == "llm_pool":
+                legacy_field = "llm"
+            elif field == "nrem_daemon":
+                legacy_field = "daemon"
+            val = raw.get(legacy_field)
+
+    process = _process_part(key, val, kind)
     workload = _workload_part(key, raw, t, nrem_stalled=nrem_stalled, llm_busy=llm_busy,
                               inference_busy=inference_busy, rem_trend=rem_trend,
                               llm_pool=llm_pool)
@@ -1110,6 +1128,8 @@ def system_health_snapshot() -> dict:
     fetched_at = datetime.now(UTC).isoformat()
     raw = get_health()
     telemetry_payload = get_telemetry()
+    t = telemetry_payload.get("telemetry", {}) if isinstance(telemetry_payload, dict) else {}
+    raw = patch_raw(raw, t)
     telemetry = _telemetry_latest()
     telemetry_at = telemetry.get("collected_at")
     consolidation = consolidation_from_payload(raw, telemetry_payload, fetched_at=fetched_at)
