@@ -6,6 +6,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.30] - 2026-09-06
+Ready for the framework's dual-emit drop: the monitor no longer depends on the
+legacy `/health` daemon keys anywhere.
+
+### Fixed
+- **Collector survives the dual-emit drop.** Framework 0.9.74 renamed the
+  `/health` daemon process enums (`daemon` → `nrem_daemon_process`,
+  `rem_daemon` → `rem_daemon_process`); the legacy keys are dual-emitted for
+  one release and then removed. The poll collector read the legacy keys
+  straight off the wire and would have persisted `null` daemon states at the
+  drop. `patch_raw` (the sole contract shim in `bridge.py`) now backfills the
+  legacy spellings from the new keys — new name wins when both are present,
+  pre-0.9.74 gateways untouched — and the collector routes `/health` through
+  it. The REM/NREM tiles already read through the patch layer and needed no
+  change. Six new tests in `tests/test_bridge_patch.py` cover both directions
+  and a post-drop snapshot end-to-end.
+
 ## [0.9.29] - 2026-09-05
 Consume framework 0.9.74+ health-as-verdict (`decision:1973`). `/health` is the
 verdict; `/memory/telemetry` is the numbers.

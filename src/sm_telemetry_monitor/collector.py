@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 
-from .bridge import get_health, get_telemetry
+from .bridge import get_health, get_telemetry, patch_raw
 from .config import DATA_FILE
 from .nrem_backlog import nrem_counts_from_telemetry
 from .sanitize import sanitize_error
@@ -25,6 +25,9 @@ def flatten_snapshot(payload: dict, collected_at: datetime, health: dict) -> dic
     if payload.get("status") != "success":
         return None
     t = payload["telemetry"]
+    # Route /health through the patch layer: the daemon PID enums moved to
+    # rem_daemon_process / nrem_daemon_process (framework 0.9.74 dual-emit).
+    health = patch_raw(health, t)
     pg = t.get("postgres", {})
     nj = t.get("neo4j", {})
     cs = pg.get("community_summaries", {})

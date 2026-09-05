@@ -162,4 +162,13 @@ def patch_raw(raw: dict, t: dict) -> dict:
         raw["gpu_probe"] = t["gpu_probe"]
     if "postgres" in t and isinstance(t["postgres"], dict) and "pgvector" in t["postgres"]:
         raw["pgvector"] = t["postgres"]["pgvector"]
+    # Daemon PID enums are a rename WITHIN /health (framework 0.9.74): the new
+    # names are rem_daemon_process / nrem_daemon_process; the legacy keys
+    # rem_daemon / daemon are dual-emitted this release only and leave at the
+    # drop. Backfill the legacy spelling so every downstream reader keeps one
+    # name; the new key wins when both are present.
+    if "rem_daemon_process" in raw:
+        raw["rem_daemon"] = raw["rem_daemon_process"]
+    if "nrem_daemon_process" in raw:
+        raw["daemon"] = raw["nrem_daemon_process"]
     return raw
