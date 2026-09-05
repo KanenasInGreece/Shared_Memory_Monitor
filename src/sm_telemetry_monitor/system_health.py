@@ -697,20 +697,15 @@ def _workload_part(key: str, raw: dict, t: dict, *, nrem_stalled: bool = False,
     # nvtop confirming the GPU is inferring means the LLM is serving, even if the
     # :5000 reachability probe momentarily timed out under load — so the REM/NREM
     # gates must not call it "blocked (LLM down)" while it is plainly running.
+    if key == "gateway":
+        return {"value": "standby", "state": "ok", "caption": "API"}
+
+    if key in ("postgres", "neo4j", "outbox", "registry"):
+        return {"value": "standby", "state": "ok", "caption": "service"}
+
     llm_ok = _state(raw.get("llm")) == "ok" or inference_busy == "busy"
     rem_q = t.get("rem_backlog")
     nrem_q = t.get("nrem_backlog")
-    outbox_actionable = t.get("outbox_failed")
-    outbox_pending = t.get("outbox_pending") or 0
-
-    if key == "gateway":
-        if outbox_actionable and outbox_actionable > 0:
-            st, val = "bad", f"{outbox_actionable} outbox failed"
-        elif outbox_pending > 0:
-            st, val = "warn", f"{outbox_pending} outbox pending"
-        else:
-            st, val = "ok", "outbox synced"
-        return {"value": val, "state": st, "caption": "pipeline"}
 
     if key == "embedder":
         # Save/search path — no per-request queue in telemetry; workload is informational.
@@ -876,6 +871,83 @@ def _workload_part(key: str, raw: dict, t: dict, *, nrem_stalled: bool = False,
         return {"value": f"{n} queued", "state": "ok", "caption": "NREM backlog"}
 
     return {"value": "—", "state": "unknown", "caption": "workload"}
+
+
+def _nonzero_int(value) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        n = value
+    elif isinstance(value, float) and value.is_integer():
+        n = int(value)
+    else:
+        return None
+    return n if n > 0 else None
+
+
+def _iso_ago(text) -> str | None:
+    if text is None or text == "":
+        return None
+    try:
+        dt = datetime.fromisoformat(str(text).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    s = (datetime.now(UTC) - dt).total_seconds()
+    if s < 0:
+        return None
+    if s < 1:
+        return "<1s ago"
+    if s < 60:
+        return f"{int(round(s))}s ago"
+    m = int(s // 60)
+    if m < 60:
+        return f"{m}m ago"
+    return f"{m // 60}h ago"
+
+
+def _counter_when(obj: dict, count_key: str) -> str:
+    ts = None
+    if isinstance(obj, dict):
+        for k in (f"{count_key}_last_ts", "last_ts"):
+            if obj.get(k):
+                ts = obj[k]
+                break
+    age = _iso_ago(ts)
+    return f" {age}" if age else " since start"
+
+
+def _apply_quiet_captions(components: list[dict], payload: dict | None) -> None:
+    t = payload.get("telemetry") if isinstance(payload, dict) else None
+    if not isinstance(t, dict):
+        return
+    by = {c.get("key"): c for c in components}
+    enc = t.get("encoders") if isinstance(t.get("encoders"), dict) else {}
+    embed = enc.get("embed") if isinstance(enc.get("embed"), dict) else {}
+    rerank = enc.get("rerank") if isinstance(enc.get("rerank"), dict) else {}
+    n = _nonzero_int(embed.get("errors"))
+    if n is not None and "embedder" in by:
+        noun = "encoder error" + ("s" if n != 1 else "")
+        by["embedder"]["quiet"] = f"{n} {noun}" + _counter_when(embed, "errors")
+    n = _nonzero_int(rerank.get("errors"))
+    if n is not None and "reranker" in by:
+        noun = "encoder error" + ("s" if n != 1 else "")
+        by["reranker"]["quiet"] = f"{n} {noun}" + _counter_when(rerank, "errors")
+    gw = t.get("gateway") if isinstance(t.get("gateway"), dict) else {}
+    n = _nonzero_int(gw.get("shed_503_total"))
+    if n is not None and "gateway" in by:
+        by["gateway"]["quiet"] = f"shed {n}×503" + _counter_when(gw, "shed_503_total")
+    reg = t.get("registry") if isinstance(t.get("registry"), dict) else {}
+    refusals = reg.get("refusals") if isinstance(reg.get("refusals"), dict) else None
+    if isinstance(refusals, dict) and "registry" in by:
+        bits = []
+        for name, raw_n in refusals.items():
+            n = _nonzero_int(raw_n)
+            if n is not None:
+                bits.append(f"{name} {n}")
+        if bits:
+            by["registry"]["quiet"] = "refusals: " + ", ".join(bits) + _counter_when(reg, "refusals")
 
 
 def _build_component(key: str, field: str, label: str, kind: str, raw: dict, t: dict,
@@ -1174,6 +1246,7 @@ def system_health_snapshot() -> dict:
                          llm_pool=llm_pool)
         for key, field, label, kind in _INFRA_COMPONENTS
     ]
+    _apply_quiet_captions(components, telemetry_payload)
     backup = _backup_part(raw, reachable=True, last=last_backup)
     graph_invalid_nodes = raw.get("graph_invalid_nodes")
     if graph_invalid_nodes is None and isinstance(raw.get("consolidation"), dict):
@@ -1210,6 +1283,8 @@ def system_health_snapshot() -> dict:
         "graph_integrity": (telemetry_payload or {}).get("telemetry", {}).get("graph_integrity"),
         "credentials": credentials,
     }
+    if "warnings" in raw and isinstance(raw.get("warnings"), list):
+        out["warnings"] = raw["warnings"]
     if dream_free_slots is not None:
         out["dream_free_slots"] = dream_free_slots
     # I12/I13: flat passthrough — absent keys stay absent; never invent zeros.

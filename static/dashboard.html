@@ -130,7 +130,13 @@
               <div class="health-item unknown" data-key="gateway"><div class="n">—</div><div class="l">Gateway</div></div>
             </div>
             <div class="hint sidebar-hint" id="gateway-hint"></div>
-            
+            <div class="section-title section-title-tight" id="stores-section-title" style="margin-top: 12px;" hidden>Stores</div>
+            <div class="health-row health-row-sidebar" id="stores-health-row">
+              <div class="health-item unknown" data-key="postgres" hidden><div class="n">—</div><div class="l">Postgres</div></div>
+              <div class="health-item unknown" data-key="neo4j" hidden><div class="n">—</div><div class="l">Neo4j</div></div>
+              <div class="health-item unknown" data-key="outbox" hidden><div class="n">—</div><div class="l">Outbox</div></div>
+              <div class="health-item unknown" data-key="registry" hidden><div class="n">—</div><div class="l">Registry</div></div>
+            </div>
             <div class="section-title section-title-tight" style="margin-top: 12px;">Daemons & Compute</div>
             <div class="health-row health-row-sidebar" id="system-health-row">
               <div class="health-item unknown" data-key="embedder"><div class="n">—</div><div class="l">Embed</div></div>
@@ -425,6 +431,20 @@ function formatFailed(L) {
   return String(failed);
 }
 
+function formatHealthWarning(w) {
+  if (w == null) return "";
+  if (typeof w === "string") return w;
+  if (typeof w !== "object") return "";
+  const bits = [];
+  if (w.key) bits.push(String(w.key));
+  if (w.observed != null && w.limit != null) {
+    bits.push(`${w.observed}/${w.limit}` + (w.unit ? ` ${w.unit}` : ""));
+  } else if (w.observed != null) {
+    bits.push(String(w.observed) + (w.unit ? ` ${w.unit}` : ""));
+  }
+  return bits.join(" ");
+}
+
 function formatSampleTime(at) {
   return window.SmBarMeta?.formatSampleTime(at) ?? String(at || "—");
 }
@@ -456,6 +476,7 @@ function updateSystemPill(status, title) {
 }
 
 const _BORING_LOAD = new Set(["queue idle", "idle", "standby", "outbox synced"]);
+const _STORE_KEYS = new Set(["postgres", "neo4j", "outbox", "registry"]);
 
 function healthUiState(state) {
   if (state === "ok") return "ok";
@@ -470,6 +491,7 @@ function healthLine(c) {
   const title = [
     proc.caption && `${proc.caption}: ${proc.value}`,
     load.caption && `${load.caption}: ${load.value}`,
+    c.quiet,
   ].filter(Boolean).join(" · ");
   if (proc.state === "bad") return { text: "down", state: "bad", title };
 
@@ -1901,6 +1923,11 @@ function renderSystemHealth(H) {
   document.querySelectorAll(".health-row-sidebar .health-item").forEach(el => {
     const c = byKey[el.dataset.key];
     const nEl = el.querySelector(".n");
+    if (_STORE_KEYS.has(el.dataset.key) && (!c || (c.process || {}).state === "unknown")) {
+      el.hidden = true;
+      return;
+    }
+    el.hidden = false;
     if (!c) {
       el.className = "health-item unknown";
       nEl.textContent = H?.reachable === false ? "down" : "—";
@@ -1914,6 +1941,12 @@ function renderSystemHealth(H) {
     nEl.title = line.title;
     el.className = "health-item " + healthUiState(c.state || "unknown");
   });
+  const storesTitle = document.getElementById("stores-section-title");
+  const storesRow = document.getElementById("stores-health-row");
+  if (storesTitle && storesRow) {
+    const anyStore = [...storesRow.querySelectorAll(".health-item")].some(el => !el.hidden);
+    storesTitle.hidden = !anyStore;
+  }
 
   const gwTitle = document.getElementById("gateway-section-title");
   if (gwTitle) {
@@ -1935,10 +1968,14 @@ function renderSystemHealth(H) {
   const tokenFailed = Number(creds?.token_verify_failed) || 0;
   const auditDropped = Number(creds?.audit_log_dropped) || 0;
   const doorWarn = tokenFailed > 0 || auditDropped > 0;
+  const healthWarnings = Array.isArray(H?.warnings) ? H.warnings : [];
   if (hint) {
-    const isWarn = unauthWarn || doorWarn;
+    const isWarn = unauthWarn || doorWarn || healthWarnings.length > 0;
     hint.className = "hint sidebar-hint" + (isWarn ? " warn" : "");
     const hintParts = [];
+    if (healthWarnings.length > 0) {
+      hintParts.push(healthWarnings.map(w => esc(formatHealthWarning(w))).filter(Boolean).join("; "));
+    }
     
     if (unauthWarn) {
       hintParts.push("allow_unauthenticated_provider_keys: true");
