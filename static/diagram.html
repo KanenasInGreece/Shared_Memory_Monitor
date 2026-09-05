@@ -486,11 +486,7 @@ function renderGatewayNodes(health, latest) {
   document.querySelector(".arch-layer-agents")?.classList.toggle("layer-hot", reachable);
 
   const gw = by.gateway;
-  const gwVis = !reachable ? { state: "bad", label: "Down" } : deriveVisualState(gw, {
-    backlog: (latest?.outbox_pending || 0) + (latest?.outbox_failed || 0),
-    activeWhenBacklog: true,
-  });
-  if ((latest?.outbox_failed || 0) > 0) { gwVis.state = "bad"; gwVis.label = "Outbox failed"; }
+  const gwVis = !reachable ? { state: "bad", label: "Down" } : deriveVisualState(gw, {});
   setNodeState(document.getElementById("node-gateway"), gwVis.state, gwVis.label);
   setMetrics("node-gateway-metrics", [
     { k: "Process", v: gw?.process?.value || (reachable ? "—" : "down"), hot: gwVis.state === "active" },

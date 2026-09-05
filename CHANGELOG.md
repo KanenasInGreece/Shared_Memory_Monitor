@@ -6,6 +6,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.29] - 2026-09-05
+Consume framework 0.9.74+ health-as-verdict (`decision:1973`). `/health` is the
+verdict; `/memory/telemetry` is the numbers.
+
+### Changed
+- Gateway tile and diagram node no longer alarm on `outbox.failed > 0`. Outbox
+  health is the gateway's `dependencies.outbox.state`.
+- Sidebar shows Postgres, Neo4j, Outbox, and Registry chips when the gateway
+  publishes `dependencies`; omitted on older gateways.
+- `warnings[]` from `/health` pass through to the gateway hint (escaped).
+- Quiet captions for encoder errors, shed 503s, and registry refusals when
+  non-zero (`since start`, or last-event age when a `last_ts` sibling exists).
+
 ## [0.9.28] - 2026-08-30
 Least-privilege pass over the monitor's whole surface, plus storage retention. The
 rule applied throughout: allow only what a feature demonstrably needs, and remove the

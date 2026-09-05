@@ -26,7 +26,7 @@ The monitor never imports framework Python code. **No third data path** in monit
 | `GET /memory/telemetry` | Pipeline metrics, `nrem`, `breakdown`, `spine`, `compliance`, `latency` (**≥0.9.60** `rem_ms.by_model` `wall_ms` / `n_service` / `timing_source` / `backend`), `entity_graph`, `consolidation`; **≥0.9.4** `llm_faults` + `credentials`; **≥0.9.8** `credentials.*_last_ts` siblings; **≥0.9.9** `credentialed_route_denied` |
 | `POST /memory/graph` | Neo4j schema panels (read-only Cypher, server-side guard) |
 
-**Client API version:** Monitor **v0.9.28** sets `bridge.API_VERSION = 4` to match
+**Client API version:** Monitor **v0.9.29** sets `bridge.API_VERSION = 4` to match
 the **deployed** gateway `api_version` (framework **≥ 0.8.33** / projects registry
 + sentinel + telemetry enhancements). **Alternative vectors** on first-write quality
 expects **framework ≥ 0.8.40** (`telemetry.spine.alternative_vectors`). Full Status +

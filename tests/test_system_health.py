@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -8,6 +9,7 @@ from sm_telemetry_monitor.analytics import rem_drain_signal
 from sm_telemetry_monitor.system_health import (
     _gateway_config,
     _llm_pool_summary,
+    _nonzero_int,
     _workload_part,
     system_health_snapshot,
 )
@@ -1475,6 +1477,170 @@ class GraphIntegrityHealthTests(unittest.TestCase):
         self.assertEqual(snap["status"], "ok")
         self.assertEqual(snap["graph_invalid_nodes"], 0)
         self.assertTrue(snap["graph_integrity"]["clean"])
+
+
+class HealthAsVerdictTests(unittest.TestCase):
+    """decision:1973 — /health is the verdict; telemetry is the numbers."""
+
+    def _telemetry(self, extra=None):
+        t = {
+            "consolidation": {
+                "insight": {"stalled": False, "consecutive_failures": 0},
+                "fact_consolidation": {"stalled": False, "consecutive_failures": 0},
+            },
+        }
+        if extra:
+            t.update(extra)
+        return {"status": "success", "telemetry": t}
+
+    def _snap(self, health, telemetry=None, latest=None):
+        with patch("sm_telemetry_monitor.system_health.get_telemetry",
+                   return_value=telemetry or self._telemetry()), \
+             patch("sm_telemetry_monitor.system_health.live_summary",
+                   return_value={"latest": latest or {}}), \
+             patch("sm_telemetry_monitor.system_health.get_health", return_value=health):
+            return system_health_snapshot()
+
+    def _comp(self, snap, key):
+        return next(c for c in snap["components"] if c["key"] == key)
+
+    def test_outbox_failed_count_does_not_paint_gateway_or_deck(self):
+        health = {
+            **_healthy_gateway(),
+            "dependencies": {
+                "postgres": {"state": "ok"},
+                "neo4j": {"state": "ok"},
+                "outbox": {"state": "ok"},
+                "registry": {"state": "ok"},
+                "embedder": {"state": "ok"},
+                "reranker": {"state": "ok"},
+                "llm_pool": {"state": "ok"},
+                "rem_daemon": {"state": "ok"},
+                "nrem_daemon": {"state": "ok"},
+            },
+        }
+        snap = self._snap(health, latest={"outbox_failed": 3, "outbox_pending": 1})
+        gw = self._comp(snap, "gateway")
+        self.assertNotIn("outbox failed", (gw["workload"] or {}).get("value") or "")
+        self.assertNotEqual(gw["state"], "bad")
+        self.assertEqual(snap["status"], "ok")
+
+    def test_dependency_chips_follow_health_enum(self):
+        health = {
+            **_healthy_gateway(),
+            "status": "degraded",
+            "dependencies": {
+                "postgres": {"state": "ok"},
+                "neo4j": {"state": "ok"},
+                "outbox": {"state": "degraded", "reason": "apply lag"},
+                "registry": {"state": "ok"},
+            },
+        }
+        snap = self._snap(health)
+        self.assertEqual(self._comp(snap, "postgres")["process"]["state"], "ok")
+        self.assertEqual(self._comp(snap, "neo4j")["process"]["state"], "ok")
+        self.assertEqual(self._comp(snap, "outbox")["process"]["state"], "warn")
+        self.assertEqual(self._comp(snap, "registry")["process"]["state"], "ok")
+
+    def test_warnings_passthrough_absent_stays_absent(self):
+        snap = self._snap(_healthy_gateway())
+        self.assertNotIn("warnings", snap)
+
+    def test_warnings_passthrough_list(self):
+        warning = {"key": "outbox.failed", "limit": 1, "observed": 4, "unit": "rows"}
+        snap = self._snap({**_healthy_gateway(), "warnings": [warning]})
+        self.assertEqual(snap["warnings"], [warning])
+
+    def test_quiet_captions_only_when_nonzero(self):
+        t = self._telemetry({
+            "encoders": {
+                "embed": {"errors": 2, "calls": 10},
+                "rerank": {"errors": 0, "calls": 4},
+            },
+            "gateway": {"shed_503_total": 5, "inflight": 1},
+            "registry": {
+                "refusals": {
+                    "entity_reserved": 1,
+                    "new_project_refused": 0,
+                },
+            },
+        })
+        health = {
+            **_healthy_gateway(),
+            "dependencies": {
+                "postgres": {"state": "ok"},
+                "neo4j": {"state": "ok"},
+                "outbox": {"state": "ok"},
+                "registry": {"state": "ok"},
+                "embedder": {"state": "ok"},
+                "reranker": {"state": "ok"},
+            },
+        }
+        snap = self._snap(health, telemetry=t)
+        self.assertIn("2", self._comp(snap, "embedder").get("quiet") or "")
+        self.assertIn("since start", self._comp(snap, "embedder").get("quiet") or "")
+        self.assertIsNone(self._comp(snap, "reranker").get("quiet"))
+        self.assertIn("503", self._comp(snap, "gateway").get("quiet") or "")
+        self.assertIn("since start", self._comp(snap, "gateway").get("quiet") or "")
+        self.assertIn("refus", (self._comp(snap, "registry").get("quiet") or "").lower())
+
+    def test_quiet_captions_omit_missing_and_zero(self):
+        health = {
+            **_healthy_gateway(),
+            "dependencies": {
+                "embedder": {"state": "ok"},
+                "reranker": {"state": "ok"},
+                "registry": {"state": "ok"},
+            },
+        }
+        snap = self._snap(health, telemetry=self._telemetry({
+            "encoders": {"embed": {"errors": 0}, "rerank": {"errors": 0}},
+            "gateway": {"shed_503_total": 0},
+            "registry": {"refusals": {"entity_reserved": 0}},
+        }))
+        self.assertIsNone(self._comp(snap, "embedder").get("quiet"))
+        self.assertIsNone(self._comp(snap, "reranker").get("quiet"))
+        self.assertIsNone(self._comp(snap, "gateway").get("quiet"))
+        self.assertIsNone(self._comp(snap, "registry").get("quiet"))
+
+    def test_quiet_caption_uses_last_ts_when_present(self):
+        class _FrozenNow(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2026, 9, 5, 15, 0, 0, tzinfo=UTC)
+        t = self._telemetry({
+            "encoders": {
+                "embed": {"errors": 2, "last_ts": "2026-09-05T12:00:00+00:00"},
+            },
+        })
+        health = {
+            **_healthy_gateway(),
+            "dependencies": {"embedder": {"state": "ok"}},
+        }
+        with patch.object(_system_health_mod, "datetime", _FrozenNow):
+            snap = self._snap(health, telemetry=t)
+        q = self._comp(snap, "embedder").get("quiet") or ""
+        self.assertIn("2", q)
+        self.assertNotIn("since start", q)
+        self.assertTrue("ago" in q or "s" in q)
+
+    def test_nonzero_int_accepts_int_and_integer_float(self):
+        self.assertEqual(_nonzero_int(2), 2)
+        self.assertEqual(_nonzero_int(2.0), 2)
+        self.assertIsNone(_nonzero_int(0))
+        self.assertIsNone(_nonzero_int(0.0))
+        self.assertIsNone(_nonzero_int(True))
+        self.assertIsNone(_nonzero_int(2.5))
+        self.assertIsNone(_nonzero_int("2"))
+
+    def test_diagram_does_not_paint_gateway_from_outbox_failed(self):
+        src = Path("static/diagram.html").read_text()
+        self.assertNotIn('gwVis.label = "Outbox failed"', src)
+        self.assertNotIn("outbox_failed || 0) > 0", src)
+
+    def test_dashboard_escapes_health_warnings_before_innerhtml(self):
+        src = Path("static/dashboard.html").read_text()
+        self.assertIn("esc(formatHealthWarning", src)
 
 
 if __name__ == "__main__":
