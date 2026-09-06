@@ -13,7 +13,7 @@ This sister repository is that picture. It does not install databases or daemons
 | **What you get** | Live ops view over framework telemetry and logs |
 | **What you do not get** | A second metrics store, DB credentials, or write access to memory |
 | **Dashboard** | **http://127.0.0.1:8765/** |
-| **This release** | **v0.9.31** — API **v4** client · wire-compatible with framework **≥ 0.8.33** · full panels on **≥ 0.8.9** · alternative vectors on **≥ 0.8.40** · credential-audit / `llm_faults` on **≥ 0.9.4** · credential last-event age on **≥ 0.9.8** · `credentialed_route_denied` on **≥ 0.9.9** · LLM routing / token usage / backend descriptors / `GET /pool/status` dream-ready slots on **≥ 0.9.13** · wall/mixed `by_model` latency on **≥ 0.9.60** |
+| **This release** | **v0.9.31** — API **v4** client · wire-compatible with framework **≥ 0.8.33** · full panels on **≥ 0.8.9** · alternative vectors on **≥ 0.8.40** · credential-audit / `llm_faults` on **≥ 0.9.4** · credential last-event age on **≥ 0.9.8** · `credentialed_route_denied` on **≥ 0.9.9** · LLM routing / token usage / backend descriptors / `GET /pool/status` dream-ready slots on **≥ 0.9.13** · wall/mixed `by_model` latency on **≥ 0.9.60** · encoder percentiles / health-as-verdict on **≥ 0.9.74** · dual-emit drop ready for **≥ 0.9.90** |
 
 ---
 
@@ -22,10 +22,10 @@ This sister repository is that picture. It does not install databases or daemons
 Three browser pages, one job each:
 
 1. **See** — **Monitor** (`/`) and **Diagram** (`/diagram`). Pipeline pressure, infrastructure health, LLM pool, topology. Telemetry is the signal.
-2. **Attend** — warnings, stalled consolidation, a warning on an LLM pool chip, a last-event fault on a backend, or a **gateway door** hint (`token verify failed` / audit log dropped — those are skill→gateway auth, not LLM faults). Something asks for a closer look; open a drawer or click a chip.
+2. **Attend** — warnings, stalled consolidation, a warning on an LLM pool chip, a last-event fault on a backend, or a **gateway door** hint (`token verify failed` / audit log dropped — those are skill→gateway auth, not LLM faults). Something asks for a closer look; open a drawer or click a chip. Sidebar dependency chips reflect the gateway's own health verdict.
 3. **Find the detail** — **Logs** (`/logs`). Journal, REM audit, agent audit, credential audit. Filters and a File picker for live and rotated files. Logs are the detail; the dashboard never replaces them.
 
-Telemetry = signal. Logs = detail. The monitor never blurs that line.
+Telemetery = signal. Logs = detail. The monitor never blurs that line.
 
 ---
 
@@ -91,8 +91,7 @@ Open **http://127.0.0.1:8765/**
 | `/diagram` | Live framework topology |
 | `/logs` | Journal + audit tails (follow mode ~3s) |
 
-**Persist as a user service:** `./scripts/install-systemd-user.sh`, then  
-`systemctl --user restart shared-memory-monitor.service`.
+**Persist as a user service:** `./scripts/install-systemd-user.sh` (enables linger and starts the unit), then check with `systemctl --user status shared-memory-monitor.service`.
 
 **Upgrade:** `./scripts/agent-status.sh` reports whether origin or a newer release tag is ahead; `./scripts/agent-upgrade.sh` pulls, syncs deps, restarts the unit if present, and re-checks status.
 
@@ -104,7 +103,7 @@ A sister project to Shared Memory: a **read-only view** over gateway telemetry a
 
 Two clients only:
 
-- **`bridge.py`** — sole HTTP client to the gateway (`/health`, `/memory/telemetry`, read-only graph).
+- **`bridge.py`** — sole HTTP client to the gateway (`/health`, `/memory/telemetry`, `/pool/status`, read-only graph).
 - **`logs_reader.py`** — sole log client (user journal, REM audit, agent audit, credential audit).
 
 Everything on screen is one of those two upstreams, or a **poll cache** of past telemetry responses (`data/telemetry.db`) so charts have history. The cache is not a third source of truth. Browser routes under `:8765 /api/*` are UI transport only.
@@ -127,7 +126,7 @@ set `SERVER_HOST` if you deliberately want to reach the dashboard from another m
 around **20 MB/year** instead of growing without limit. Nothing is reset — thinning keeps the
 long trend and drops only minute-level detail nobody scrubs to.
 
-**Compatibility:** Monitor **v0.9.31** speaks **API v4** against framework **≥ 0.8.33** (`compat=ok` from doctor). Prefer **≥ 0.8.9** for the full Status picture (LLM local/external placement, entity census, latency drawer), **≥ 0.8.40** for alternative-vectors on first-write quality, **≥ 0.9.4** for credential-audit tails and `llm_faults` on pool chips, **≥ 0.9.8** for `credentials.*_last_ts` last-failure age, **≥ 0.9.9** for `credentialed_route_denied`, **≥ 0.9.13** for `llm_routing` / `llm_token_usage` / backend descriptors / `GET /pool/status` dream-ready slots, and **≥ 0.9.60** for wall/mixed `by_model` latency (external OpenAI-compatible backends). Older gateways stay on the wire; missing panels simply omit fields rather than fail hard.
+**Compatibility:** Monitor **v0.9.31** speaks **API v4** against framework **≥ 0.8.33** (`compat=ok` from doctor). Prefer **≥ 0.8.9** for the full Status picture (LLM local/external placement, entity census, latency drawer), **≥ 0.8.40** for alternative-vectors on first-write quality, **≥ 0.9.4** for credential-audit tails and `llm_faults` on pool chips, **≥ 0.9.8** for `credentials.*_last_ts` last-failure age, **≥ 0.9.9** for `credentialed_route_denied`, **≥ 0.9.13** for `llm_routing` / `llm_token_usage` / backend descriptors / `GET /pool/status` dream-ready slots, **≥ 0.9.60** for wall/mixed `by_model` latency (external OpenAI-compatible backends), **≥ 0.9.74** for encoder latency percentiles and dependency health verdicts, and **≥ 0.9.90** for telemetry dual-emit drop readiness (`patch_telemetry` normalizes relocated outbox, REM, and fault keys). Older gateways stay on the wire; missing panels simply omit fields rather than fail hard.
 
 Where a number on the screen comes from is always the framework payload or a log line. For the field-level mapping of telemetry keys to UI bands, see [docs/SISTER_PROJECT.md](docs/SISTER_PROJECT.md) and the framework’s own telemetry docs — this README stays on the operator path, not the catalog.
 
@@ -194,7 +193,7 @@ Four tabs: **Gateway daemons** (journal), **REM audit**, **Agent audit**, **Cred
 
 The framework gateway must be running and reachable (`COORDINATOR_URL`, default `http://localhost:8888`), with a **`monitor:read`** token minted on that host. Python **3.11+** and [uv](https://docs.astral.sh/uv/) for install and CLI.
 
-Panel richness depends on gateway version: full Status and LLM placement on **≥ 0.8.9**, alternative vectors on **≥ 0.8.40**, credential-audit / `llm_faults` on **≥ 0.9.4**, credential last-event timestamps on **≥ 0.9.8**, `credentialed_route_denied` on **≥ 0.9.9**, LLM routing / token usage / backend descriptors / dream-ready slots on **≥ 0.9.13**, wall/mixed `by_model` latency on **≥ 0.9.60**. `./scripts/check-env.sh` lists which telemetry panels and placement signals are present. Missing names mean an older gateway — the UI degrades, it does not hard-fail.
+Panel richness depends on gateway version: full Status and LLM placement on **≥ 0.8.9**, alternative vectors on **≥ 0.8.40**, credential-audit / `llm_faults` on **≥ 0.9.4**, credential last-event timestamps on **≥ 0.9.8**, `credentialed_route_denied` on **≥ 0.9.9**, LLM routing / token usage / backend descriptors / dream-ready slots on **≥ 0.9.13**, wall/mixed `by_model` latency on **≥ 0.9.60**, encoder latency percentiles / health verdicts on **≥ 0.9.74**, and dual-emit drop readiness on **≥ 0.9.90**. `./scripts/check-env.sh` lists which telemetry panels and placement signals are present. Missing names mean an older gateway — the UI degrades cleanly.
 
 ### Local logs (for `/logs` and diagram flow lines)
 
@@ -244,7 +243,7 @@ flowchart TB
     LOOP[Poll loop ~600s]
     DB[(telemetry poll cache)]
     SRV[server.py + static UI]
-    BR --> TEL & HLTH & GRP
+    BR --> TEL & HLTH & GRP & POOL
     LR --> JRN & REMF & AGF & CRED
     LOOP --> BR
     LOOP --> DB
@@ -258,9 +257,9 @@ flowchart TB
 
 | Module | Upstream | Role |
 |--------|----------|------|
-| `bridge.py` | Gateway `:8888` | Sole telemetry client — health, telemetry, graph |
+| `bridge.py` | Gateway `:8888` | Sole telemetry client — health, telemetry, graph, pool status. Implements `patch_raw` and `patch_telemetry` for wire normalization. |
 | `logs_reader.py` | Journal + JSONL | Sole log client — tail, agent activity, credential audit |
-| `collector.py` + `store.py` | Via `bridge.py` | Append telemetry JSON to the poll cache |
+| `collector.py` + `store.py` | Via `bridge.py` | Append telemetry JSON to the poll cache (strips `breakdown` to save space) |
 | `server.py` + `static/` | Bridge + logs_reader | UI transport to the browser |
 | `analytics.py`, `system_health.py` | Telemetry / health JSON only | Display formatting — no extra fetches |
 
@@ -272,9 +271,9 @@ Charts read the **poll cache**. Live panels call `bridge.py` or `logs_reader.py`
 
 ### Monitor (`/`)
 
-Start at the status deck. **Gateway health** is the headline; hover for a short summary. **Drill-down** tiles open drawers only when you need them — consolidation when fold pressure or stalls matter, throughput when enrichment or cycle latency is the question (including wall-timed external models), schema when inventory or graph hygiene is the question. **Backlog & queues** and the charts answer “is the dream cycle keeping up?” **Infrastructure** is the component grid (gateway, embed, rerank, LLM, NREM, REM) plus config summary from `/health`. A **gateway door** line on that hint is a failed or missing bearer at the gateway front door — not an LLM-backend fault.
+Start at the status deck. **Gateway health** is the headline; hover for a short summary. **Drill-down** tiles open drawers only when you need them — consolidation when fold pressure or stalls matter, throughput when enrichment or cycle latency is the question (including wall-timed external models), schema when inventory or graph hygiene is the question. **Backlog & queues** and the charts answer “is the dream cycle keeping up?” **Infrastructure** is the component grid (gateway, embed, rerank, LLM, NREM, REM) plus config summary from `/health`. A **gateway door** line on that hint is a failed or missing bearer at the gateway front door — not an LLM-backend fault. Sidebar dependency chips dynamically reflect the gateway's own health verdicts (Postgres, Neo4j, Outbox, Registry), governed by `dependencies.outbox.state` on modern gateways.
 
-When the gateway has more than one LLM backend, the **LLM pool** panel shows in-flight work, routing, and placement. A warning or last-event fault on a chip (`credentialed_route_denied`, `llm_faults`) is a cue, not a full post-mortem: click through to credential or agent audit for that backend. Single-backend installs keep the simpler busy/idle picture on the LLM tile.
+When the gateway has more than one LLM backend, the **LLM pool** panel shows in-flight work, routing, and placement. A warning or last-event fault on a chip (`credentialed_route_denied`, `llm_faults`) is a cue, not a full post-mortem: click through to credential or agent audit for that backend. Features include `N dream-ready` slots and visual warnings for `suspect_wedged` or `oldest_inflight` states. Single-backend installs keep the simpler busy/idle picture on the LLM tile.
 
 Range selector filters the local poll cache only; it does not change what the gateway currently reports for live tiles.
 
@@ -282,7 +281,9 @@ Range selector filters the local poll cache only; it does not change what the ga
 
 Topology for operators who think in systems rather than tables: agent layer, gateway with REM/NREM, memory bus (Postgres, outbox, Neo4j), inference bus (reasoning pool, embedder, reranker). Legend and flow colours separate write, read, and logic.
 
-The view is **now plus the last 24 hours** (one log rotation), stated on the page. Scrub the slider to step back through stored polls; the canvas takes an amber rule and the timestamp turns amber so it is never ambiguous that you are looking at the past. If an interval predates what the audit log still holds, the caption says the log was rotated away rather than claiming the system was idle — those are different facts. Agent chips are discovered from the audit log for the window, so the rack reflects what is actually talking to your gateway.
+**The diagram opens on now and scrubs back 24 hours — one log rotation.** That is deliberate: the diagram answers *what is my system doing*, while `/logs` owns deep history. A window this size never has to read a rotated archive, so the page costs the same whether the monitor has been running for a day or a year. Scrubbing into the past marks the canvas amber; click the amber timestamp to return to now.
+
+**The agent layer shows only clients that actually appear in the audit log for that window.** Nothing is hardcoded: connect a new agent or MCP client and it appears on its own, and a first-time install with one agent shows one chip rather than a rack of tools you do not run.
 
 ### Logs (`/logs`)
 
@@ -305,6 +306,9 @@ After the dashboard or a pool chip points at a problem, land on the right tab:
 |----------|----------|---------|
 | `AGENT_TOKEN` | ✓ | `monitor:read` bearer token |
 | `COORDINATOR_URL` | ✓ | Gateway base URL (default `:8888`) |
+| `SERVER_HOST` | | Network bind interface (default `127.0.0.1` for loopback security) |
+| `SERVER_PORT` | | HTTP listening port (default `8765`) |
+| `SM_RAW_RETENTION_DAYS` | | Keep raw 10m data for N days (default `14`) before thinning to 1/hr. Set to `0` to disable thinning |
 | `SHARED_MEMORY_ROOT` | | Discover audit paths from framework `.env` |
 | `SM_GATEWAY_ENV` | | Explicit gateway `.env` for log paths |
 | `SM_JOURNAL_UNIT` | | Journal unit (default `hive-mind-gateway.service`) |
@@ -327,6 +331,8 @@ Copy `.env.example` → `.env`. Never commit `.env` or tokens.
 
 ## Run modes
 
+Use `./scripts/agent-status.sh` to quickly check operational health and updates, and `./scripts/agent-upgrade.sh` to update.
+
 ```bash
 ./scripts/run-loop.sh --serve --interval 600   # recommended: poll + dashboard
 ./scripts/run-loop.sh --interval 600           # poll only → data/ + graphs/
@@ -344,19 +350,20 @@ Entry point alias: `sm-telemetry`.
 
 ## HTTP API and data on disk
 
-**UI transport only** — every data endpoint proxies `bridge.py` or `logs_reader.py`. There is no monitor-owned metrics API.
+**UI transport only** — every data endpoint proxies `bridge.py` or `logs_reader.py`. There is no monitor-owned metrics API. Default loopback binding, DNS rebinding protections, and omission of CORS wildcards enforce strict security.
 
 | Endpoint | Upstream |
 |----------|----------|
 | `GET /api/meta` | Poll config (not framework data) |
 | `GET /api/summary` | Latest cached telemetry + display story |
 | `GET /api/history?range=&bucket=` | Cached telemetry polls |
-| `GET /api/health` | `bridge.get_health()` + consolidation enrichment |
+| `GET /api/health` | `bridge.get_health()` + consolidation enrichment + `patch_raw` |
 | `GET /api/consolidation` | Live consolidation drill-down |
+| `GET /api/latency` | Model wall/service timings and encoder latency |
 | `GET /api/breakdown` | Telemetry + graph query |
 | `GET /api/diagram` | Cached telemetry + health |
-| `GET /api/history?agent_series=1` | Poll history plus per-interval agent activity, from one load so the two can never disagree |
-| `GET /api/logs/tail` (and related) | Journal or audit JSONL via `logs_reader` |
+| `GET /api/history?agent_series=1` | Poll history plus per-interval agent activity |
+| `GET /api/logs/tail` (and related) | Journal or audit JSONL via `logs_reader` (`sources` and `archives` also available) |
 
 | Path | What it is |
 |------|------------|
@@ -366,8 +373,7 @@ Entry point alias: `sm-telemetry`.
 
 Duplicate polls within 60s with identical telemetry are skipped. Raw 10-minute samples are
 kept for `SM_RAW_RETENTION_DAYS` (default 14) and thinned to one per hour beyond that —
-downsampled, never reset, so the long trend survives while the store stays bounded. Set it
-to `0` to disable thinning and let the store grow without limit. Runtime data is gitignored.
+downsampled, never reset, so the long trend survives while the store stays bounded (~20 MB/yr). `breakdown` payloads are not retained raw. Set to `0` to disable thinning. Runtime data is gitignored.
 
 ---
 
@@ -378,9 +384,9 @@ to `0` to disable thinning and let the store grow without limit. Runtime data is
 ./scripts/uninstall-systemd-user.sh  # cleanly remove service and disable linger
 ```
 
-Requires user linger for persistence after logout. Keep `AGENT_TOKEN` and `COORDINATOR_URL` in the monitor `.env`. See [deploy/README.md](deploy/README.md).
+Requires user linger for persistence after logout (Debian 13 users may encounter a linger privilege quirk, requiring the script's `sudo -n` fallback). Keep `AGENT_TOKEN` and `COORDINATOR_URL` in the monitor `.env`. See [deploy/README.md](deploy/README.md).
 
-Long-running processes do **not** hot-reload after `.env` or code changes — restart the unit (or re-run the foreground loop).
+Long-running processes do **not** hot-reload after `.env` or code changes — restart the unit (`systemctl --user restart shared-memory-monitor.service`) or re-run the foreground loop.
 
 ---
 
@@ -389,13 +395,16 @@ Long-running processes do **not** hot-reload after `.env` or code changes — re
 | Symptom | Fix |
 |---------|-----|
 | Wiring unclear | `./scripts/check-env.sh` or `./scripts/agent-status.sh` |
+| HTTP 421 or Connection Refused (Remote Access) | Monitor defaults to loopback. Set `SERVER_HOST` in `.env` |
 | Empty charts | Start the poll loop, or copy a `data/` with history |
 | `skill:*` token source | Put a dedicated monitor token in **monitor** `.env` |
 | Telemetry 401 | Token missing/wrong — re-mint on the gateway host |
-| Write probe not denied | Token may be over-privileged — use `monitor:read` only |
+| Write probe not denied | Check via `doctor.py`. Token may be over-privileged — use `monitor:read` only |
+| Outbox, REM, or LLM fault metrics silent | Gateway 0.9.90 dual-emit drop. Upgrade monitor to ≥ 0.9.31 to normalize telemetry routing |
 | Consolidation card shows `—` | Gateway lacks consolidation telemetry — upgrade framework; re-run doctor |
 | `fresh=false` on consolidation | Coordinator cache refresh failing — journal: `consolidation health refresh failed` |
 | No LLM pool / no local·external badges | Multi-backend pool and gateway **≥ 0.8.9** for `has_credential`; doctor may say `placement n/a` |
+| `suspect_wedged` or `oldest_inflight` warning | Click through to `/logs?source=credential_audit&backend=<url>` to identify stuck calls |
 | Doctor missing optional panels | Upgrade framework; UI hides empty bands |
 | Empty agent audit | Enable `GATEWAY_AUDIT_LOG_PATH` on gateway; restart gateway |
 | Empty credential audit | Framework **≥ 0.9.4**; set `CREDENTIAL_AUDIT_LOG_PATH` (or leave default). Empty string **disables** the live path |
