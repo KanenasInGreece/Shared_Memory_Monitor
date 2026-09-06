@@ -10,10 +10,12 @@ import unittest
 from datetime import UTC, datetime
 from unittest.mock import patch
 
-from sm_telemetry_monitor.bridge import patch_raw
+from sm_telemetry_monitor.bridge import get_telemetry, patch_raw, patch_telemetry
 from sm_telemetry_monitor import collector
+from sm_telemetry_monitor.breakdown import postgres_breakdown_from_telemetry
+from sm_telemetry_monitor.consolidation import consolidation_from_payload
+from sm_telemetry_monitor.system_health import _join_llm_faults, system_health_snapshot
 import sm_telemetry_monitor.system_health as _system_health_mod
-from sm_telemetry_monitor.system_health import system_health_snapshot
 
 # Same convention as tests/test_system_health.py: pool status absent by default.
 _system_health_mod.get_pool_status = lambda: {}
@@ -95,6 +97,200 @@ class SystemHealthDaemonRenameTests(unittest.TestCase):
         self.assertEqual(by_key["rem_daemon"]["process"]["state"], "ok")
         self.assertEqual(by_key["nrem_daemon"]["process"]["value"], "up")
         self.assertEqual(by_key["rem_daemon"]["process"]["value"], "up")
+
+
+def _post_drop_t(**extra):
+    t = {
+        "outbox": {
+            "pending": 1,
+            "applied": 62,
+            "failed": 3,
+            "rem_reviewed": 548,
+            "oldest_failed_age_s": 7200,
+            "apply_latency_p50_s": 0.9,
+            "drain_rate_per_min": 0.0,
+        },
+        "rem": {
+            "dead_lettered": 2,
+            "failing": 4,
+            "max_attempts": 5,
+            "passed_over": 9,
+            "starved_pending": 1,
+        },
+        "llm": {"faults": {}},
+        "postgres": {"pgvector": {"version": "0.8.6"}},
+        "neo4j": {"facts_total": 10},
+        "breakdown": {},
+    }
+    t.update(extra)
+    return t
+
+
+class PatchTelemetryDualEmitTests(unittest.TestCase):
+    def test_post_drop_fills_snapshot_row(self):
+        t = _post_drop_t()
+        patch_telemetry(t)
+        payload = {"status": "success", "telemetry": t}
+        row = collector.flatten_snapshot(payload, datetime.now(UTC), {"status": "ok"})
+        self.assertEqual(row["outbox_pending"], 1)
+        self.assertEqual(row["outbox_applied"], 62)
+        self.assertEqual(row["outbox_failed"], 3)
+        self.assertEqual(row["outbox_rem_reviewed"], 548)
+        self.assertEqual(row["rem_dead_lettered"], 2)
+        self.assertEqual(row["rem_failing"], 4)
+        self.assertEqual(row["rem_passed_over_total"], 9)
+        self.assertEqual(row["rem_starved_pending"], 1)
+
+    def test_post_drop_consolidation_rem_and_age(self):
+        t = _post_drop_t()
+        patch_telemetry(t)
+        snap = consolidation_from_payload(
+            {"status": "ok", "consolidation": {"stalled": False, "fresh": True}},
+            {"status": "success", "telemetry": t},
+        )
+        self.assertEqual(snap["first_write_quality"]["dead_letter_age_seconds"], 7200)
+        rr = snap["rem_reliability"]
+        self.assertTrue(rr["present"])
+        self.assertEqual(rr["dead_lettered"], 2)
+        self.assertEqual(rr["failing"], 4)
+        self.assertEqual(rr["max_attempts"], 5)
+        self.assertEqual(rr["passed_over_total"], 9)
+        self.assertEqual(rr["starved_pending"], 1)
+
+    def test_post_drop_llm_faults_key_and_join(self):
+        t = _post_drop_t()
+        patch_telemetry(t)
+        self.assertIn("llm_faults", t)
+        self.assertEqual(t["llm_faults"], {})
+        pool, _creds = _join_llm_faults(
+            {"backends": []},
+            {"status": "success", "telemetry": t},
+            {"status": "ok"},
+        )
+        self.assertIsNotNone(pool)
+
+    def test_dual_emit_new_wins_and_breakdown_allowlist(self):
+        t = _post_drop_t()
+        t["postgres"]["outbox"] = {"applied": 1, "rem_reviewed": 1}
+        t["postgres"]["outbox_failed_oldest_age_seconds"] = 1
+        t["neo4j"]["rem_failing"] = 99
+        t["llm_faults"] = {"old": {}}
+        t["llm"] = {"faults": {"http://x": {"gateway": {"count": 1}}}}
+        patch_telemetry(t)
+        self.assertEqual(t["postgres"]["outbox"]["applied"], 62)
+        self.assertEqual(t["postgres"]["outbox_failed_oldest_age_seconds"], 7200)
+        self.assertEqual(t["neo4j"]["rem_failing"], 4)
+        self.assertEqual(t["llm_faults"], {"http://x": {"gateway": {"count": 1}}})
+        bd = postgres_breakdown_from_telemetry(t)
+        keys = {row["key"] for row in bd["outbox"]}
+        self.assertEqual(keys, {"pending", "applied", "failed", "rem_reviewed"})
+        self.assertNotIn("oldest_failed_age_s", keys)
+        self.assertNotIn("apply_latency_p50_s", keys)
+
+    def test_legacy_only_untouched(self):
+        t = {
+            "postgres": {"outbox": {"applied": 7, "rem_reviewed": 3},
+                         "outbox_failed_oldest_age_seconds": 11},
+            "neo4j": {"rem_dead_lettered": 8, "rem_failing": 1, "rem_max_attempts": 5},
+            "llm_faults": {"http://x": {}},
+        }
+        before = {
+            "outbox": dict(t["postgres"]["outbox"]),
+            "age": t["postgres"]["outbox_failed_oldest_age_seconds"],
+            "failing": t["neo4j"]["rem_failing"],
+            "faults": t["llm_faults"],
+        }
+        patch_telemetry(t)
+        self.assertEqual(t["postgres"]["outbox"], before["outbox"])
+        self.assertEqual(t["postgres"]["outbox_failed_oldest_age_seconds"], 11)
+        self.assertEqual(t["neo4j"]["rem_failing"], 1)
+        self.assertEqual(t["llm_faults"], before["faults"])
+
+    def test_null_age_preserved_absent_age_not_written(self):
+        t = {"outbox": {"pending": 0, "oldest_failed_age_s": None}, "postgres": {}}
+        patch_telemetry(t)
+        self.assertIsNone(t["postgres"]["outbox_failed_oldest_age_seconds"])
+        self.assertEqual(t["postgres"]["outbox"]["pending"], 0)
+        t2 = {"outbox": {"pending": 0}, "postgres": {}}
+        patch_telemetry(t2)
+        self.assertNotIn("outbox_failed_oldest_age_seconds", t2["postgres"])
+        self.assertEqual(t2["postgres"]["outbox"]["pending"], 0)
+        t3 = {"outbox": {"oldest_failed_age_s": float("inf")}, "postgres": {}}
+        patch_telemetry(t3)
+        self.assertNotIn("outbox_failed_oldest_age_seconds", t3["postgres"])
+
+    def test_both_homes_absent_does_not_mint_llm_faults(self):
+        t = {"postgres": {}, "neo4j": {}}
+        patch_telemetry(t)
+        self.assertNotIn("llm_faults", t)
+
+    def test_breakdown_post_drop_count_rows_only(self):
+        t = _post_drop_t()
+        del t["postgres"]
+        patch_telemetry(t)
+        bd = postgres_breakdown_from_telemetry(t)
+        keys = {row["key"] for row in bd["outbox"]}
+        self.assertEqual(keys, {"pending", "applied", "failed", "rem_reviewed"})
+        by = {row["key"]: row["count"] for row in bd["outbox"]}
+        self.assertEqual(by["pending"], 1)
+        self.assertEqual(by["failed"], 3)
+
+    def test_postgres_pgvector_and_neo4j_siblings_survive(self):
+        t = _post_drop_t()
+        patch_telemetry(t)
+        self.assertEqual(t["postgres"]["pgvector"]["version"], "0.8.6")
+        self.assertEqual(t["neo4j"]["facts_total"], 10)
+
+    def test_non_dict_new_homes_skipped(self):
+        t = {"outbox": "nope", "rem": ["x"], "llm": "ok", "postgres": {"pgvector": 1}}
+        patch_telemetry(t)
+        self.assertEqual(t["postgres"], {"pgvector": 1})
+        self.assertNotIn("neo4j", t)
+        self.assertNotIn("llm_faults", t)
+
+    def test_get_telemetry_returns_payload_if_patch_raises(self):
+        class Boom(Exception):
+            pass
+
+        payload = {"status": "success", "telemetry": {"outbox": {"pending": 1}}}
+
+        class _Resp:
+            status_code = 200
+
+            def json(self):
+                return payload
+
+        with patch("sm_telemetry_monitor.bridge._http") as http:
+            http.return_value.get.return_value = _Resp()
+            with patch("sm_telemetry_monitor.bridge.patch_telemetry", side_effect=Boom("x")):
+                out = get_telemetry()
+        self.assertEqual(out["status"], "success")
+        self.assertEqual(out["telemetry"]["outbox"]["pending"], 1)
+
+    def test_get_telemetry_wires_patch_on_post_drop_payload(self):
+        payload = {
+            "status": "success",
+            "telemetry": {
+                "outbox": {"pending": 0, "applied": 4},
+                "rem": {"failing": 2},
+                "llm": {"faults": {}},
+            },
+        }
+
+        class _Resp:
+            status_code = 200
+
+            def json(self):
+                return payload
+
+        with patch("sm_telemetry_monitor.bridge._http") as http:
+            http.return_value.get.return_value = _Resp()
+            out = get_telemetry()
+        t = out["telemetry"]
+        self.assertEqual(t["postgres"]["outbox"]["pending"], 0)
+        self.assertEqual(t["postgres"]["outbox"]["applied"], 4)
+        self.assertEqual(t["neo4j"]["rem_failing"], 2)
+        self.assertEqual(t["llm_faults"], {})
 
 
 if __name__ == "__main__":

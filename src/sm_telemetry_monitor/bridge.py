@@ -6,12 +6,17 @@ No parallel monitor metrics API; no framework imports; no Postgres/Neo4j.
 
 from __future__ import annotations
 
+import logging
+import math
+
 import httpx
 
 from .env_loader import bootstrap_env, get
 from .sanitize import sanitize_error
 
 bootstrap_env()
+
+_log = logging.getLogger(__name__)
 
 # Wire contract with the live gateway (GET /health api_version). Bump only when
 # the *deployed* gateway contract changes — not an unreleased framework branch.
@@ -70,7 +75,13 @@ def get_telemetry() -> dict:
                 "status": "error",
                 "message": sanitize_error(f"coordinator returned HTTP {r.status_code}"),
             }
-        return r.json()
+        payload = r.json()
+        if isinstance(payload, dict) and isinstance(payload.get("telemetry"), dict):
+            try:
+                patch_telemetry(payload["telemetry"])
+            except Exception:
+                _log.debug("patch_telemetry skipped", exc_info=True)
+        return payload
     except Exception as exc:
         return _coordinator_unavailable(exc)
 
@@ -137,6 +148,69 @@ def get_pool_status() -> dict:
         return payload if isinstance(payload, dict) else {}
     except Exception:
         return {}
+
+_OUTBOX_COUNT_KEYS = ("pending", "applied", "failed", "rem_reviewed")
+_REM_KEY_MAP = (
+    ("rem_dead_lettered", "dead_lettered"),
+    ("rem_failing", "failing"),
+    ("rem_max_attempts", "max_attempts"),
+    ("rem_passed_over_total", "passed_over"),
+    ("rem_starved_pending", "starved_pending"),
+)
+
+
+def _is_int(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def patch_telemetry(t: dict) -> dict:
+    """Backfill legacy /memory/telemetry keys from post-0.9.90 homes.
+
+    Called from get_telemetry() before return. New home wins when both
+    present. Does not mutate health (that is patch_raw). Never raises to
+    the fetch path — get_telemetry wraps this in try/except as well.
+    """
+    if not isinstance(t, dict):
+        return t
+    outbox = t.get("outbox")
+    if isinstance(outbox, dict):
+        pg = t.get("postgres")
+        if not isinstance(pg, dict):
+            pg = t.setdefault("postgres", {})
+        if isinstance(pg, dict):
+            dest = pg.get("outbox")
+            if not isinstance(dest, dict):
+                dest = {}
+                pg["outbox"] = dest
+            for key in _OUTBOX_COUNT_KEYS:
+                value = outbox.get(key)
+                if _is_int(value):
+                    dest[key] = value
+            if "oldest_failed_age_s" in outbox:
+                age = outbox["oldest_failed_age_s"]
+                if age is None or _is_int(age) or (
+                    isinstance(age, float) and math.isfinite(age)
+                ):
+                    pg["outbox_failed_oldest_age_seconds"] = age
+    rem = t.get("rem")
+    if isinstance(rem, dict):
+        nj = t.get("neo4j")
+        if not isinstance(nj, dict):
+            nj = t.setdefault("neo4j", {})
+        if isinstance(nj, dict):
+            for old, new in _REM_KEY_MAP:
+                if new not in rem:
+                    continue
+                value = rem[new]
+                if value is None or _is_int(value):
+                    nj[old] = value
+    llm = t.get("llm")
+    if isinstance(llm, dict) and "faults" in llm:
+        faults = llm["faults"]
+        if isinstance(faults, dict):
+            t["llm_faults"] = faults
+    return t
+
 
 def patch_raw(raw: dict, t: dict) -> dict:
     if "config" in t:
