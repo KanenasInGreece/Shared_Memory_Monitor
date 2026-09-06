@@ -49,6 +49,11 @@ CLAUDE.local.md
 .claude/
 .grok/
 
+# opencode local config — this seat's files stay out of git
+opencode.json
+OPENCODE.md
+.opencode/
+
 # One-off agent scratch — never at repo root
 /patch_*.py
 /patch2.py
