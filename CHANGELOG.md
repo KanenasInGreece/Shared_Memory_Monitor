@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.31] - 2026-09-06
+Ready for the framework's `/memory/telemetry` dual-emit drop (the 16 old homes in `fact:1989`).
+
+### Fixed
+- **Telemetry readers survive the 0.9.90 key move.** Framework 0.9.90 stops dual-emitting `postgres.outbox`, `postgres.outbox_failed_oldest_age_seconds`, `neo4j.rem_*`, and `llm_faults`. The monitor still read those old names, so outbox/REM/faults would have gone quiet and looked idle. `get_telemetry()` now runs `patch_telemetry` (new home wins, allowlisted outbox counts only so breakdown does not grow latency rows, pre-0.9.74 untouched). A shim exception never blocks the payload. `patch_raw` remains health-only.
+
 ## [0.9.30] - 2026-09-06
 Ready for the framework's dual-emit drop: the monitor no longer depends on the
 legacy `/health` daemon keys anywhere.
