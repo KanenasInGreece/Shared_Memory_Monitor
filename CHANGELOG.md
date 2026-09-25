@@ -6,6 +6,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.33] - 2026-09-25
+Telemetry in line with framework 1.0.7.
+
+### Fixed
+- **Schema drawer graph panels work with a read-only token again.** Framework v0.9.102 closed `POST /memory/graph` to read tokens (it bypassed record visibility), so the Neo4j half and the doctor probe failed with 403. Nodes, relationships and top paths now come from `telemetry.compliance` (framework ≥ 1.0.7); Fact/Decision rows show the gateway's own `rem_pending` and `unconsolidated`. The drawer makes one gateway call instead of six.
+- **LLM pool "free" means spare capacity.** The gateway's `/pool/status` `available` (in-flight below the backend's `max_inflight`, framework ≥ 1.0.2) replaces the local `inflight == 0` test; status, cooldown and reservation still gate it.
+- **`agent-status` never says OK while partial**; it names the failing features.
+- **`agent-upgrade.sh` after `--ref TAG`**: a plain upgrade returns to `main` instead of failing on a detached HEAD.
+
+### Added
+- `http_fail_threshold` in the pool tuning block.
+- Graph paths panel states: needs framework ≥ 1.0.7 / computing / none.
+
+### Changed
+- `OPERATE.md` step 3: the token reveal needs framework ≥ 1.0.5 and an interactive terminal (`ssh -t`).
+
 ## [0.9.32] - 2026-09-25
 Agent-assisted install, upgrade and uninstall, re-tested on d9400 (Debian 13) against gateway 1.0.4.
 

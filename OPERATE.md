@@ -67,7 +67,7 @@ without secrets; `--offline` skips the GitHub check.
 
 ```bash
 ./scripts/agent-upgrade.sh                  # fast-forward main, uv sync, restart the unit, status
-./scripts/agent-upgrade.sh --ref v0.9.32    # pin a release
+./scripts/agent-upgrade.sh --ref v0.9.33    # pin a release
 ```
 
 It refuses a dirty tree. After a restart the process has new code; `.env` changes also
