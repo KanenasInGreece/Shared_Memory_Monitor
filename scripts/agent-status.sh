@@ -307,8 +307,8 @@ elif not out["gateway_http_ok"]:
     out["next"] = f"Start Shared Memory gateway or fix COORDINATOR_URL ({out['coordinator_url']})"
 elif ((conn.get("read_role") or {}).get("token_rejected")):
     out["next"] = ("Token rejected (HTTP 401) — OPERATOR, in their own terminal on the gateway host: "
-                   "bootstrap_tokens.sh --remint monitor --reveal monitor, paste into this .env, "
-                   "restart the gateway, then this unit (OPERATE.md Token)")
+                   "bootstrap_tokens.sh --add|--remint monitor --reveal monitor, paste into this .env, "
+                   "restart the gateway, then this unit (OPERATE.md Install step 3)")
 elif out["doctor_exit"] == 2:
     out["next"] = "Fix AGENT_TOKEN / read_role — see ./scripts/check-env.sh"
 elif not out["dashboard_http_ok"] and out["unit"] not in ("active", "activating"):
