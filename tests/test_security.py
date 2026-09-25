@@ -106,6 +106,10 @@ class ReadRoleProbeTests(unittest.TestCase):
             self.assertTrue(v["ok"], code)
             self.assertIsNone(v["error"], f"a denied write must raise no finding (HTTP {code})")
 
+    def test_telemetry_401_flags_token_rejected(self):
+        self.assertTrue(self._verdict(401, 401)["token_rejected"])
+        self.assertFalse(self._verdict(200, 403)["token_rejected"])
+
     def test_body_validation_reads_as_over_privileged(self):
         v = self._verdict(200, 400)
         self.assertFalse(v["ok"])

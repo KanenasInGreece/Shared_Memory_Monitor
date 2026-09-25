@@ -13,7 +13,8 @@ rm -f "$UNIT"
 systemctl --user daemon-reload
 systemctl --user reset-failed "$SERVICE_NAME" 2>/dev/null || true
 
-if systemctl --user cat "$SERVICE_NAME" >/dev/null 2>&1; then
+if systemctl --user is-active --quiet "$SERVICE_NAME" \
+    || [[ "$(systemctl --user show -p LoadState --value "$SERVICE_NAME")" != "not-found" ]]; then
   echo "✗ $SERVICE_NAME is still known to systemd — check: systemctl --user status $SERVICE_NAME" >&2
   exit 1
 fi

@@ -68,9 +68,10 @@ Typical homelab layout:
 ~/Shared_Memory_Monitor/    ← this repo (sister checkout)
 ```
 
-1. On the framework host, mint the `monitor` token (`generate_tokens.py`) and set `AGENT_ROLES=monitor:read` — see [framework SECURITY.md](https://github.com/KanenasInGreece/Shared_Memory/blob/main/SECURITY.md#agent-authentication--implemented-v035).
-2. Clone this repo, `cp .env.example .env`, set `AGENT_TOKEN` + `COORDINATOR_URL`.
-3. `./scripts/install.sh` then optional `./scripts/install-systemd-user.sh` for persistence.
+1. Clone this repo and run `./scripts/install.sh` (creates an owner-only `.env`).
+2. The operator issues the read-only `monitor` token on the framework host and pastes it
+   into `.env` ([OPERATE.md](../OPERATE.md) Install step 3).
+3. Optional: `./scripts/install-systemd-user.sh` for persistence.
 4. **Agents:** follow root [OPERATE.md](../OPERATE.md); use `./scripts/agent-status.sh`
    and `./scripts/agent-upgrade.sh` for check/update loops.
 

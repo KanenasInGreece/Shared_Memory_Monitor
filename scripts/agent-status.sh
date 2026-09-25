@@ -285,7 +285,7 @@ ready = (
     out["env_file_present"]
     and out["gateway_http_ok"]
     and out["doctor_exit"] == 0
-    and (out["dashboard_http_ok"] or out["unit"] in ("active", "activating"))
+    and out["dashboard_http_ok"]
 )
 partial = out["env_file_present"] and out["gateway_http_ok"] and out["doctor_exit"] in (0, 1)
 updates_avail = bool((updates or {}).get("updates_available"))
@@ -310,7 +310,8 @@ elif ((conn.get("read_role") or {}).get("token_rejected")):
                    "bootstrap_tokens.sh --add|--remint monitor --reveal monitor, paste into this .env, "
                    "restart the gateway, then this unit (OPERATE.md Install step 3)")
 elif out["doctor_exit"] == 2:
-    out["next"] = "Fix AGENT_TOKEN / read_role — see ./scripts/check-env.sh"
+    out["next"] = ("Token missing, or doctor could not run — see ./scripts/check-env.sh; a token is "
+                   "issued by the OPERATOR (OPERATE.md Install step 3), never asked for")
 elif not out["dashboard_http_ok"] and out["unit"] not in ("active", "activating"):
     out["next"] = "Start monitor: ./scripts/install-systemd-user.sh or ./scripts/run-loop.sh --serve --interval 600"
 elif not out["dashboard_http_ok"]:

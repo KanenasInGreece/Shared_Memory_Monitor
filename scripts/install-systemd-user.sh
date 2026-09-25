@@ -32,19 +32,28 @@ fi
 
 # A listener on :8765 while our unit is NOT running is someone else's process (often a
 # foreground run-loop). Stopping it is the operator's call, so refuse instead of killing it.
-if ! systemctl --user is-active --quiet shared-memory-monitor.service \
-    && command -v ss >/dev/null 2>&1 && ss -tln 2>/dev/null | grep -q ':8765 '; then
+# curl covers hosts without ss.
+port_held() {
+  if command -v ss >/dev/null 2>&1; then ss -tln 2>/dev/null | grep -q ':8765 '
+  else curl -s -o /dev/null --max-time 2 http://127.0.0.1:8765/; fi
+}
+if ! systemctl --user is-active --quiet shared-memory-monitor.service && port_held; then
   echo "✗ Port 8765 is held by another process. Stop it (e.g. a foreground run-loop), then re-run." >&2
   exit 3
 fi
 
 systemctl --user restart shared-memory-monitor.service
 # Wait for the dashboard so a status check straight after this does not report it down.
+up=0
 for _ in $(seq 1 30); do
-  curl -sf -o /dev/null http://127.0.0.1:8765/api/meta && break
+  curl -sf -o /dev/null http://127.0.0.1:8765/api/meta && { up=1; break; }
   sleep 0.5
 done
-systemctl --user --no-pager --lines=0 status shared-memory-monitor.service
+systemctl --user --no-pager --lines=0 status shared-memory-monitor.service || true
+if [[ $up -ne 1 ]]; then
+  echo "✗ Unit started but :8765 did not answer — journalctl --user -u shared-memory-monitor.service -n 50" >&2
+  exit 4
+fi
 echo ""
 echo "Dashboard → http://127.0.0.1:8765/  (/diagram, /logs)"
 echo "Status:    ./scripts/agent-status.sh"

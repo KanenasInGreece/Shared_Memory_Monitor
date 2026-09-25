@@ -55,7 +55,8 @@ without secrets; `--offline` skips the GitHub check.
    `AGENT_TOKEN source: monitor` and `read_role: ok`.
 5. **Run:** `./scripts/install-systemd-user.sh` installs `shared-memory-monitor.service`,
    enables linger (falling back to passwordless `sudo -n`) and waits for the dashboard.
-   It exits `3` when another process holds `:8765`; see rule 3. Foreground instead:
+   It exits `3` when another process holds `:8765` (see rule 3) and `4` when the unit
+   started but the dashboard never answered (read the journal). Foreground instead:
    `./scripts/run-loop.sh --serve --interval 600`.
 6. **Done** when `agent-status.sh` reports `overall: ready` and
    http://127.0.0.1:8765/ answers.
@@ -70,6 +71,8 @@ without secrets; `--offline` skips the GitHub check.
 It refuses a dirty tree. After a restart the process has new code; `.env` changes also
 need `systemctl --user restart shared-memory-monitor.service`.
 
+Stop without uninstalling: `systemctl --user stop shared-memory-monitor.service`.
+
 ## Uninstall
 
 ```bash
@@ -77,8 +80,8 @@ need `systemctl --user restart shared-memory-monitor.service`.
 ```
 
 The checkout, `.env` and `data/` (poll history) stay. Delete them only when the operator
-says so (`rm -rf <checkout>`). The token stays registered on the gateway, so a later
-reinstall uses `--remint`.
+says so (`rm -rf <checkout>`). The token stays registered on the gateway: reinstalling in
+the same checkout reuses `.env`; only a fresh clone needs `--remint`.
 
 ## When `next:` is not enough
 

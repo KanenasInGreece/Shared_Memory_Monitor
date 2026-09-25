@@ -295,14 +295,10 @@ class DoctorTests(unittest.TestCase):
         self.assertIn("poll loop", features["dashboard_history"]["reason"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestMainCheckExit(unittest.TestCase):
-    def _report(self, *, rejected, samples):
+    def _report(self, *, rejected, samples, token="set"):
         return {
-            "keys": {"AGENT_TOKEN": "set"},
+            "keys": {"AGENT_TOKEN": token},
             "connectivity": {
                 "coordinator": {"ok": True},
                 "read_role": {"token_rejected": rejected},
@@ -320,3 +316,13 @@ class TestMainCheckExit(unittest.TestCase):
         with patch.object(_doctor_mod, "run_doctor", return_value=self._report(rejected=False, samples=2319)), \
                 patch.object(_doctor_mod, "format_report", return_value=""):
             self.assertEqual(_doctor_mod.main_check(), 1)
+
+    def test_missing_token_is_not_ready_even_with_history(self):
+        report = self._report(rejected=False, samples=2319, token="missing")
+        with patch.object(_doctor_mod, "run_doctor", return_value=report), \
+                patch.object(_doctor_mod, "format_report", return_value=""):
+            self.assertEqual(_doctor_mod.main_check(), 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

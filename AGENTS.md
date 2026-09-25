@@ -20,7 +20,7 @@ uv run --with pytest python -m pytest -q
 
 | Concern | Where |
 |---------|-------|
-| The only gateway HTTP client (`/health`, `/memory/telemetry`, `/pool/status`, read-only `/memory/graph`) | `src/sm_telemetry_monitor/bridge.py` |
+| Gateway HTTP client for everything shown (`/health`, `/memory/telemetry`, `/pool/status`, read-only `/memory/graph`); doctor's read-role probe is the one other caller | `src/sm_telemetry_monitor/bridge.py` |
 | Env precedence: the monitor `.env` wins for token and URL | `env_loader.py` |
 | Doctor and feature readiness | `doctor.py`, `scripts/check-env.sh` |
 | Health verdict and the LLM pool | `system_health.py` |

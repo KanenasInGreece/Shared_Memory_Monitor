@@ -523,9 +523,10 @@ def main_check(*, as_json: bool = False) -> int:
         report["keys"].get("AGENT_TOKEN") != "set"
         or not report["connectivity"]["coordinator"]["ok"]
     )
-    # A rejected token is never "partial": history keeps the dashboard rendering while
-    # every poll 401s, which is exactly the state an agent must not read as healthy.
-    if report["connectivity"]["read_role"].get("token_rejected"):
+    # A missing or rejected token is never "partial": history keeps the dashboard rendering
+    # while every poll fails, which is exactly the state an agent must not read as healthy.
+    if (report["connectivity"]["read_role"].get("token_rejected")
+            or report["keys"].get("AGENT_TOKEN") != "set"):
         return 2
     if critical and report["local_data"]["samples"] == 0:
         return 2
