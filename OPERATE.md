@@ -36,23 +36,27 @@ without secrets; `--offline` skips the GitHub check.
    ```
    This creates `.env` from `.env.example`. Set `COORDINATOR_URL` there if it is not
    the default.
-3. **Token.** Hand the operator the steps below. Framework 1.0.4+ refuses `--reveal`
-   unless it is run in a terminal.
+3. **Token.** The operator runs the commands below in their own terminal, never through an
+   agent session or its shell escape. Framework 1.0.4+ refuses `--reveal` unless it is
+   run in a terminal.
    ```bash
    # OPERATOR, on the gateway host, in the framework checkout:
    bash shared-memory/scripts/bootstrap_tokens.sh --add monitor --reveal monitor     # first time
    bash shared-memory/scripts/bootstrap_tokens.sh --remint monitor --reveal monitor  # already registered
-   # paste the value as AGENT_TOKEN=... into this checkout's .env, then:
-   chmod 600 .env
    systemctl --user restart hive-mind-gateway.service   # auth is read at startup
+   # OPERATOR, then: paste the value as AGENT_TOKEN=... into <monitor-checkout>/.env
+   chmod 600 <monitor-checkout>/.env
    ```
    Do not use `--install-path` for the monitor: it registers a skill install that
-   `sync_skills.sh` would then fill with skill files.
+   `sync_skills.sh` would then fill with skill files. Once the token is in `.env`, never
+   open that file. Change another key without reading it:
+   `sed -i 's|^COORDINATOR_URL=.*|COORDINATOR_URL=<url>|' .env`.
 4. **Verify:** `git check-ignore .env` must print `.env`. `./scripts/check-env.sh` must show
    `AGENT_TOKEN source: monitor` and `read_role: ok`.
 5. **Run:** `./scripts/install-systemd-user.sh` installs `shared-memory-monitor.service`,
-   enables linger and waits for the dashboard. It exits `3` when another process holds
-   `:8765`; see rule 3. To run in the foreground instead: `./scripts/run-loop.sh --serve --interval 600`.
+   enables linger (falling back to passwordless `sudo -n`) and waits for the dashboard.
+   It exits `3` when another process holds `:8765`; see rule 3. Foreground instead:
+   `./scripts/run-loop.sh --serve --interval 600`.
 6. **Done** when `agent-status.sh` reports `overall: ready` and
    http://127.0.0.1:8765/ answers.
 
@@ -83,7 +87,7 @@ reinstall uses `--remint`.
 | `Token rejected (HTTP 401)` | Install step 3 with `--remint` (operator) |
 | `AGENT_TOKEN source: skill:…` | A skill token was picked up; the monitor `.env` token must win (step 3) |
 | `write probe … over-privileged` | The token is not read-only; remint `monitor` (it is always minted `read`) |
-| gateway unreachable | Start the gateway, or fix `COORDINATOR_URL` |
+| gateway unreachable | Start the gateway, or fix `COORDINATOR_URL` with the `sed` line in step 3 |
 | unit active, `:8765` silent | `journalctl --user -u shared-memory-monitor.service -n 50` |
 | panel missing in `check-env.sh` | The gateway is older; the UI leaves that band out and nothing fails |
 

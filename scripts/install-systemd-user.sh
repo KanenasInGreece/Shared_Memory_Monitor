@@ -26,7 +26,7 @@ elif sudo -n loginctl enable-linger "$USER" 2>/dev/null; then
 else
   echo "WARNING: Could not enable linger."
   echo "  Without linger, the monitor will die when you log out."
-  echo "  Please run this manually: sudo loginctl enable-linger "$USER""
+  echo "  Please run this manually: sudo loginctl enable-linger $USER"
 fi
 
 

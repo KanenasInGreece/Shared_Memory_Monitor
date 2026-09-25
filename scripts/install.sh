@@ -16,7 +16,7 @@ echo "==> Installing Python dependencies (sm-telemetry-monitor ${PKG_VERSION:-?}
 uv sync
 
 if [[ ! -f .env ]]; then
-  cp .env.example .env
+  (umask 077 && cp .env.example .env)   # owner-only before a token is ever pasted in
   echo "==> Created .env from .env.example"
   echo "    Required: set AGENT_TOKEN (read-only monitor token) and COORDINATOR_URL"
   echo "    Optional:  SHARED_MEMORY_ROOT / BACKUP_DIR for logs + sidebar backup date"
