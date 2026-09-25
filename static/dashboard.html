@@ -1709,6 +1709,7 @@ function renderLlmPool(H) {
     panel.hidden = true;
     list.innerHTML = "";
     line.textContent = "";
+    line.title = "";
     closeLlmPoolPopover();
     llmPoolByUrl.clear();
     if (affEl) { affEl.hidden = true; affEl.textContent = ""; }
@@ -1721,6 +1722,9 @@ function renderLlmPool(H) {
     bits.push(`${pool.busy}/${pool.total} inferring`);
     bits.push(`${pool.free} free`);
     bits.push(`${pool.up}/${pool.total} up`);
+    // "free" is spare capacity (in-flight below the backend's own cap), not an
+    // idle GPU — fact:2715, framework 1.0.2.
+    line.title = "free = spare capacity per backend, not necessarily an idle GPU";
   }
   if (hasDreamFree) {
     bits.push(`${dreamFree} dream-ready`);

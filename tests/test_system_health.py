@@ -8,6 +8,7 @@ from unittest.mock import patch
 from sm_telemetry_monitor.analytics import rem_drain_signal
 from sm_telemetry_monitor.system_health import (
     _gateway_config,
+    _join_pool_status,
     _llm_pool_summary,
     _nonzero_int,
     _workload_part,
@@ -778,6 +779,127 @@ class LlmPoolTests(unittest.TestCase):
         self.assertIsNone(snap["llm_affinity_live"])
         llm = next(c for c in snap["components"] if c["key"] == "llm")
         self.assertIn("oldest in-flight 45s", llm["workload"]["caption"])
+
+
+class JoinPoolStatusAvailableFlagTests(unittest.TestCase):
+    """fact:2715 (framework 1.0.2): /pool/status backends[url].available means
+    spare capacity (in-flight below max_inflight), not idle — it replaces only
+    the inflight==0 term of the local formula, never the status/cooldown/reserved
+    terms, and only when the gateway actually sent the flag."""
+
+    def _pool(self, *, status="ok", inflight=3, cooldown=0.0, reserved=False, available=False):
+        return {
+            "backends": [{
+                "url": "http://localhost:5000", "label": "localhost:5000",
+                "status": status, "inflight": inflight, "cooldown": cooldown,
+                "reserved": reserved, "available": available,
+            }],
+            "total": 1, "up": 1 if status == "ok" else 0,
+            "busy": 1 if inflight else 0, "free": 0, "local": 0, "external": 0,
+        }
+
+    def test_gateway_available_true_overrides_busy_inflight(self):
+        """/pool/status available=true with inflight 3 (under the gateway's own
+        max_inflight, e.g. 8) counts as free — the old inflight==0 term alone
+        would have called this backend busy."""
+        pool = self._pool(inflight=3, available=False)
+        status_raw = {"free_slots": 1, "backends": {
+            "http://localhost:5000": {"available": True},
+        }}
+        joined = _join_pool_status(pool, status_raw)
+        b = joined["backends"][0]
+        self.assertTrue(b["available"])
+        self.assertEqual(joined["free"], 1)
+
+    def test_gateway_available_false_wins_even_if_status_ok(self):
+        pool = self._pool(inflight=0, available=True)
+        status_raw = {"free_slots": 0, "backends": {
+            "http://localhost:5000": {"available": False},
+        }}
+        joined = _join_pool_status(pool, status_raw)
+        self.assertFalse(joined["backends"][0]["available"])
+        self.assertEqual(joined["free"], 0)
+
+    def test_status_not_ok_still_unavailable_despite_gateway_flag(self):
+        pool = self._pool(status="down", inflight=0, available=False)
+        status_raw = {"free_slots": 1, "backends": {
+            "http://localhost:5000": {"available": True},
+        }}
+        joined = _join_pool_status(pool, status_raw)
+        self.assertFalse(joined["backends"][0]["available"])
+
+    def test_cooldown_still_unavailable_despite_gateway_flag(self):
+        pool = self._pool(inflight=0, cooldown=12.0, available=False)
+        status_raw = {"free_slots": 1, "backends": {
+            "http://localhost:5000": {"available": True},
+        }}
+        joined = _join_pool_status(pool, status_raw)
+        self.assertFalse(joined["backends"][0]["available"])
+
+    def test_missing_available_flag_falls_back_to_local_formula(self):
+        """No per-backend "available" key in /pool/status -> the pre-1.0.2 local
+        formula (status/inflight/cooldown/reserved) is unchanged."""
+        pool = self._pool(inflight=3, available=False)
+        status_raw = {"free_slots": 1, "backends": {
+            "http://localhost:5000": {"serves_all": True},
+        }}
+        joined = _join_pool_status(pool, status_raw)
+        self.assertFalse(joined["backends"][0]["available"])
+
+
+class LlmPoolFailsNeverWarnTests(unittest.TestCase):
+    """A nonzero `fails` count is a neutral pass-through — /health is the only
+    verdict (fact:2715: upstream 429/5xx now count toward fails, so fails > 0 is
+    normal for a hosted provider and must never drive warn/critical on its own)."""
+
+    def test_high_fails_healthy_backend_state_stays_ok(self):
+        health = {
+            **_healthy_gateway(),
+            "llm_backends": {"http://localhost:5000": "ok"},
+            "llm_pool": {
+                "http://localhost:5000": {
+                    "weight": 1.0, "inflight": 0, "routed": 10, "routed_pct": 100.0,
+                    "fails": 4, "cooldown": 0.0, "reserved": False,
+                },
+            },
+        }
+        pool = _llm_pool_summary(health)
+        self.assertEqual(pool["backends"][0]["fails"], 4)
+        workload = _workload_part("llm", health, {}, inference_busy="idle", llm_pool=pool)
+        self.assertEqual(workload["state"], "ok")
+
+
+class LlmPoolTuningHttpFailThresholdTests(unittest.TestCase):
+    """fact:2715 key 4: config.llm_pool_tuning.http_fail_threshold (int, default 5)."""
+
+    def test_http_fail_threshold_present_next_to_fail_threshold(self):
+        health = {
+            **_healthy_gateway(),
+            "config": {
+                "llm_backends": [{"url": "http://localhost:4000", "weight": 1.0}],
+                "llm_pool_tuning": {
+                    "fail_threshold": 2,
+                    "http_fail_threshold": 5,
+                    "fail_window_s": 60.0,
+                    "cooldown_s": 300.0,
+                    "max_tries": 3,
+                },
+            },
+        }
+        cfg = _gateway_config(health)
+        self.assertEqual(cfg["pool_tuning"]["fail_threshold"], 2)
+        self.assertEqual(cfg["pool_tuning"]["http_fail_threshold"], 5)
+
+    def test_http_fail_threshold_absent_stays_none(self):
+        health = {
+            **_healthy_gateway(),
+            "config": {
+                "llm_backends": [{"url": "http://localhost:4000", "weight": 1.0}],
+                "llm_pool_tuning": {"fail_threshold": 2},
+            },
+        }
+        cfg = _gateway_config(health)
+        self.assertIsNone(cfg["pool_tuning"]["http_fail_threshold"])
 
 
 class LlmFaultsCredentialsJoinTests(unittest.TestCase):

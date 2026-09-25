@@ -441,7 +441,15 @@ def _dream_free_slots(status_raw) -> int | None:
 
 
 def _join_pool_status(llm_pool: dict | None, status_raw) -> dict | None:
-    """Copy serves_all / counts_free_slot onto matching pool backends (I19)."""
+    """Copy serves_all / counts_free_slot onto matching pool backends (I19).
+
+    fact:2715 (framework 1.0.2): backends[url].available means spare capacity
+    (in-flight below the gateway's own max_inflight), not idle. When the gateway
+    sends that flag it replaces only the local formula's inflight==0 term —
+    status/cooldown/reserved still gate — because a down or cooled backend must
+    stay unavailable no matter what the gateway's in-flight count says. Without
+    the flag (older gateway), the local formula is unchanged.
+    """
     if not isinstance(llm_pool, dict):
         return llm_pool
     if not isinstance(status_raw, dict):
@@ -471,6 +479,14 @@ def _join_pool_status(llm_pool: dict | None, status_raw) -> dict | None:
                 row["serves_all"] = entry["serves_all"]
             if "counts_free_slot" in entry:
                 row["counts_free_slot"] = entry["counts_free_slot"]
+            gw_available = entry.get("available")
+            if isinstance(gw_available, bool):
+                row["available"] = (
+                    gw_available
+                    and row.get("status") == "ok"
+                    and float(row.get("cooldown") or 0.0) <= 0
+                    and not row.get("reserved")
+                )
         joined.append(row)
     return _recompute_pool_totals(joined)
 
@@ -613,6 +629,9 @@ def _gateway_config(raw: dict) -> dict | None:
         "embed_max_chars": embed_max,
         "pool_tuning": {
             "fail_threshold": pool_tuning.get("fail_threshold"),
+            # fact:2715 key 4: upstream 429/5xx count toward this threshold too
+            # (default 5), separate from the transport-error fail_threshold.
+            "http_fail_threshold": pool_tuning.get("http_fail_threshold"),
             "fail_window_s": pool_tuning.get("fail_window_s"),
             "cooldown_s": pool_tuning.get("cooldown_s"),
             "max_tries": pool_tuning.get("max_tries"),
