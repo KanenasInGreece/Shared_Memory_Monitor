@@ -297,3 +297,26 @@ class DoctorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMainCheckExit(unittest.TestCase):
+    def _report(self, *, rejected, samples):
+        return {
+            "keys": {"AGENT_TOKEN": "set"},
+            "connectivity": {
+                "coordinator": {"ok": True},
+                "read_role": {"token_rejected": rejected},
+            },
+            "local_data": {"samples": samples},
+            "features": [{"ok": False}],
+        }
+
+    def test_rejected_token_is_not_ready_even_with_history(self):
+        with patch.object(_doctor_mod, "run_doctor", return_value=self._report(rejected=True, samples=2319)), \
+                patch.object(_doctor_mod, "format_report", return_value=""):
+            self.assertEqual(_doctor_mod.main_check(), 2)
+
+    def test_accepted_token_with_failed_feature_is_partial(self):
+        with patch.object(_doctor_mod, "run_doctor", return_value=self._report(rejected=False, samples=2319)), \
+                patch.object(_doctor_mod, "format_report", return_value=""):
+            self.assertEqual(_doctor_mod.main_check(), 1)

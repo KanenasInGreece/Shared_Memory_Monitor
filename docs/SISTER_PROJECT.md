@@ -26,7 +26,7 @@ The monitor never imports framework Python code. **No third data path** in monit
 | `GET /memory/telemetry` | Pipeline metrics, `nrem`, `breakdown`, `spine`, `compliance`, `latency` (**≥0.9.60** `rem_ms.by_model` `wall_ms` / `n_service` / `timing_source` / `backend`), `entity_graph`, `consolidation`; **≥0.9.4** `llm_faults` + `credentials`; **≥0.9.8** `credentials.*_last_ts` siblings; **≥0.9.9** `credentialed_route_denied` |
 | `POST /memory/graph` | Neo4j schema panels (read-only Cypher, server-side guard) |
 
-**Client API version:** Monitor **v0.9.31** sets `bridge.API_VERSION = 4` to match
+**Client API version:** Monitor **v0.9.32** sets `bridge.API_VERSION = 4` to match
 the **deployed** gateway `api_version` (framework **≥ 0.8.33** / projects registry
 + sentinel + telemetry enhancements). **Alternative vectors** on first-write quality
 expects **framework ≥ 0.8.40** (`telemetry.spine.alternative_vectors`). Full Status +
@@ -71,7 +71,7 @@ Typical homelab layout:
 1. On the framework host, mint the `monitor` token (`generate_tokens.py`) and set `AGENT_ROLES=monitor:read` — see [framework SECURITY.md](https://github.com/KanenasInGreece/Shared_Memory/blob/main/SECURITY.md#agent-authentication--implemented-v035).
 2. Clone this repo, `cp .env.example .env`, set `AGENT_TOKEN` + `COORDINATOR_URL`.
 3. `./scripts/install.sh` then optional `./scripts/install-systemd-user.sh` for persistence.
-4. **Agents:** follow root [AGENTS.md](../AGENTS.md) Part 1; use `./scripts/agent-status.sh`
+4. **Agents:** follow root [OPERATE.md](../OPERATE.md); use `./scripts/agent-status.sh`
    and `./scripts/agent-upgrade.sh` for check/update loops.
 
 ## What this repo is not

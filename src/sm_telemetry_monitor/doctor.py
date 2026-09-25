@@ -256,6 +256,7 @@ def _check_read_role() -> dict[str, Any]:
             "ok": ok,
             "telemetry_ok": telemetry_ok,
             "write_denied": write_denied,
+            "token_rejected": t.status_code == 401,
             "error": err,
         }
     except Exception as exc:
@@ -522,6 +523,10 @@ def main_check(*, as_json: bool = False) -> int:
         report["keys"].get("AGENT_TOKEN") != "set"
         or not report["connectivity"]["coordinator"]["ok"]
     )
+    # A rejected token is never "partial": history keeps the dashboard rendering while
+    # every poll 401s, which is exactly the state an agent must not read as healthy.
+    if report["connectivity"]["read_role"].get("token_rejected"):
+        return 2
     if critical and report["local_data"]["samples"] == 0:
         return 2
     if any(not f["ok"] for f in report["features"]):

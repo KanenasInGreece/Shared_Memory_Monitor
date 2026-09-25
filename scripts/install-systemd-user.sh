@@ -30,23 +30,22 @@ else
 fi
 
 
-if command -v ss >/dev/null 2>&1 && ss -tln 2>/dev/null | grep -q ':8765 '; then
-  echo ""
-  echo "Port 8765 in use — stopping foreground listener, then starting user unit..."
-  if command -v fuser >/dev/null 2>&1; then
-    fuser -k 8765/tcp 2>/dev/null || true
-  else
-    echo "fuser not found. Please manually kill the process on port 8765 if the restart fails."
-  fi
-  sleep 0.5
+# A listener on :8765 while our unit is NOT running is someone else's process (often a
+# foreground run-loop). Stopping it is the operator's call, so refuse instead of killing it.
+if ! systemctl --user is-active --quiet shared-memory-monitor.service \
+    && command -v ss >/dev/null 2>&1 && ss -tln 2>/dev/null | grep -q ':8765 '; then
+  echo "✗ Port 8765 is held by another process. Stop it (e.g. a foreground run-loop), then re-run." >&2
+  exit 3
 fi
 
 systemctl --user restart shared-memory-monitor.service
-systemctl --user --no-pager status shared-memory-monitor.service
+# Wait for the dashboard so a status check straight after this does not report it down.
+for _ in $(seq 1 30); do
+  curl -sf -o /dev/null http://127.0.0.1:8765/api/meta && break
+  sleep 0.5
+done
+systemctl --user --no-pager --lines=0 status shared-memory-monitor.service
 echo ""
 echo "Dashboard → http://127.0.0.1:8765/  (/diagram, /logs)"
 echo "Status:    ./scripts/agent-status.sh"
 echo "Doctor:    ./scripts/check-env.sh   # gateway version · API compat · telemetry panels · LLM placement"
-echo ""
-echo "On Status (/): Infrastructure shows Gateway version · API · N LLM backends · local|external;"
-echo "multi-backend gateways also show the LLM pool chips (local/external badges when gateway ≥0.8.9)."

@@ -305,12 +305,16 @@ if not out["env_file_present"]:
     out["next"] = "Run ./scripts/install.sh and set AGENT_TOKEN + COORDINATOR_URL in .env"
 elif not out["gateway_http_ok"]:
     out["next"] = f"Start Shared Memory gateway or fix COORDINATOR_URL ({out['coordinator_url']})"
+elif ((conn.get("read_role") or {}).get("token_rejected")):
+    out["next"] = ("Token rejected (HTTP 401) — OPERATOR, in their own terminal on the gateway host: "
+                   "bootstrap_tokens.sh --remint monitor --reveal monitor, paste into this .env, "
+                   "restart the gateway, then this unit (OPERATE.md Token)")
 elif out["doctor_exit"] == 2:
     out["next"] = "Fix AGENT_TOKEN / read_role — see ./scripts/check-env.sh"
-elif out["doctor_exit"] == 1 and not out["dashboard_http_ok"]:
-    out["next"] = "Doctor partial; start dashboard: ./scripts/run-loop.sh --serve or install-systemd-user.sh"
 elif not out["dashboard_http_ok"] and out["unit"] not in ("active", "activating"):
     out["next"] = "Start monitor: ./scripts/install-systemd-user.sh or ./scripts/run-loop.sh --serve --interval 600"
+elif not out["dashboard_http_ok"]:
+    out["next"] = "Unit is up but :8765 does not answer — journalctl --user -u shared-memory-monitor.service -n 50"
 elif out.get("api_compat") == "incompatible":
     out["next"] = "API version skew — upgrade monitor or gateway so api_version matches"
 elif updates_avail:

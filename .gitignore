@@ -41,7 +41,10 @@ docs/GITHUB.md
 docs/GATEWAY_AUDIT_HANDOFF.md
 docs/archive/
 
-# Local agent/IDE config folders
+# Local agent constitutions (workstation — not shipped; decision:304)
+#   CLAUDE.md     Claude Code; Grok CLI also loads this filename
+#   GEMINI.md     agy (Antigravity)
+#   OPENCODE.md   opencode seat (Grok 4.6 and Kimi 3)
 GEMINI.md
 CLAUDE.md
 CLAUDE.local.md
