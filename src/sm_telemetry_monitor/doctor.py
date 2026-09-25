@@ -206,11 +206,10 @@ def _check_telemetry() -> dict[str, Any]:
 
 
 def _check_neo4j_breakdown() -> dict[str, Any]:
-    """Graph panels ride telemetry.compliance now (fact:2771) — no /memory/graph
-    call, so no 403 on a read-only token (the S1 visibility fix, v0.9.102). The
-    inner distributions are NOT required: they are absent on a healthy empty
-    graph and on gateways below 1.0.7, and their absence renders empty panels,
-    never a doctor failure (plan review C1/R4)."""
+    """Graph panels read telemetry.compliance (fact:2771, the 1.0.7 graph-shape note), so
+    a read-only token never meets the /memory/graph 403. The inner distributions are
+    NOT required: a healthy empty graph and pre-1.0.7 gateways lack them, and that
+    must render empty panels, never a doctor failure."""
     payload = get_telemetry()
     if payload.get("status") != "success":
         err = payload.get("message") or payload.get("error") or "telemetry poll failed"
@@ -218,7 +217,7 @@ def _check_neo4j_breakdown() -> dict[str, Any]:
     t = payload.get("telemetry")
     compliance = t.get("compliance") if isinstance(t, dict) else None
     if not isinstance(compliance, dict):
-        return {"ok": False, "error": "telemetry.compliance missing — needs framework >= 1.0.7"}
+        return {"ok": False, "error": "telemetry.compliance missing — gateway too old for the schema drawer graph panels"}
     return {"ok": True, "error": None}
 
 

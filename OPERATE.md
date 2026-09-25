@@ -37,11 +37,10 @@ without secrets; `--offline` skips the GitHub check.
    ```
    This creates `.env` from `.env.example`. Set `COORDINATOR_URL` there if it is not
    the default.
-3. **Token.** Needs framework ≥ 1.0.5: `--reveal` only works through `bootstrap_tokens.sh`
-   from that version on (fact:2759/fact:2764, the "own terminal" measurement). The
-   operator runs the commands below in their own terminal — an interactive one, such as
-   `ssh -t host`, never `ssh host 'cmd'` or an agent's shell escape; neither of those is a
-   terminal. Framework 1.0.4+ refuses `--reveal` unless it is run in one.
+3. **Token.** Needs framework ≥ 1.0.5 (earlier wrappers refuse every `--reveal`). The
+   operator runs the commands below in an interactive terminal of their own, such as
+   `ssh -t host`; `ssh host 'cmd'` and an agent's shell escape are not terminals, and the
+   reveal refuses them.
    ```bash
    # OPERATOR, on the gateway host, in the framework checkout:
    bash shared-memory/scripts/bootstrap_tokens.sh --add monitor --reveal monitor     # first time

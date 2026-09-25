@@ -2111,9 +2111,9 @@ function renderBreakdown(B) {
   const nodes = nj.nodes || [];
   const rels = nj.relationships || [];
   chartOrEmpty("bd-nodes", nodes.map(x => x.label), nodes.map(x => x.count), C.rem,
-    nj.error ? "Graph query failed — see alert above" : "No node labels returned");
+    nj.error ? "Telemetry poll failed — see alert above" : "No node labels returned");
   chartOrEmpty("bd-rels", rels.map(x => x.type), rels.map(x => x.count), C.nrem,
-    nj.error ? "Graph query failed — see alert above" : "No relationships returned");
+    nj.error ? "Telemetry poll failed — see alert above" : "No relationships returned");
 
   const types = pg.record_types || [];
   const agents = pg.agents || [];
@@ -2131,7 +2131,7 @@ function renderBreakdown(B) {
   // completed yet; present-and-set with an empty list means it ran and found none.
   const pathsSupported = "pipelines_as_of" in nj;
   let pathsEmptyMsg;
-  if (nj.error) pathsEmptyMsg = "Graph query failed — see alert above";
+  if (nj.error) pathsEmptyMsg = "Telemetry poll failed — see alert above";
   else if (!pathsSupported) pathsEmptyMsg = "Needs framework ≥ 1.0.7 for graph paths";
   else if (nj.pipelines_as_of == null) pathsEmptyMsg = "paths: computing…";
   else pathsEmptyMsg = "No graph paths";

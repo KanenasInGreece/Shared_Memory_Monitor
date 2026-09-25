@@ -20,15 +20,12 @@ def _is_count(value: object) -> bool:
 
 
 def fetch_neo4j_breakdown(t: dict | None) -> dict:
-    """Pure mapping of ONE telemetry payload's compliance + neo4j blocks into the
-    schema drawer graph shape (fact:2771, the 1.0.7 graph-shape note). No gateway
-    call here — the caller already made the one GET /memory/telemetry this and
-    the Postgres half share.
+    """Map one telemetry payload into the schema drawer graph shape (fact:2771, the
+    1.0.7 graph-shape note); the caller's single GET feeds this and the Postgres half.
 
-    ``pipelines_as_of`` is set only when the gateway sent ``top_paths`` at all:
-    its ABSENCE from the output (not just null) is how the UI tells "framework
-    < 1.0.7" apart from "still computing" (null as_of) or "computed, no paths"
-    (non-null as_of) — see AGENTS.md / OPERATE.md for the wording each implies.
+    ``pipelines_as_of`` is set only when the gateway sent ``top_paths`` at all. Its
+    ABSENCE is how dashboard.html tells a pre-1.0.7 gateway from "computing" (null)
+    and "no paths" (set), so never default it.
     """
     out: dict = {
         "nodes": [], "relationships": [], "pipelines": [],
@@ -67,9 +64,8 @@ def fetch_neo4j_breakdown(t: dict | None) -> dict:
 
     nj = t.get("neo4j")
     if isinstance(nj, dict) and nj:
-        # Verbatim passthrough of telemetry.neo4j — no monitor-side arithmetic
-        # (plan review R3). Deliberately not reconciled with label_distribution:
-        # the two counts differ by definition (e.g. live 1773 vs 1768).
+        # Verbatim passthrough: no monitor-side arithmetic. Never reconcile with
+        # label_distribution; the two Fact counts differ by definition.
         out["facts"] = {
             "total": nj.get("facts_total"),
             "rem_pending": nj.get("facts_rem_pending"),

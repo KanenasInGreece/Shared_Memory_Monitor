@@ -260,7 +260,7 @@ class DoctorTests(unittest.TestCase):
 
     def test_neo4j_breakdown_probe_ok_from_compliance_key_presence(self):
         """Doctor's graph probe rides telemetry.compliance now — inner distributions
-        are NOT required (fact:2771; plan review C1/R4): an empty graph or an older
+        are NOT required (fact:2771): an empty graph or an older
         gateway missing the sub-fields still passes, never a doctor failure."""
         with patch("sm_telemetry_monitor.doctor.get_telemetry", return_value={
             "status": "success",
@@ -271,7 +271,7 @@ class DoctorTests(unittest.TestCase):
         self.assertTrue(block["ok"])
         self.assertIsNone(block["error"])
 
-    def test_neo4j_breakdown_probe_fails_below_1_0_7(self):
+    def test_neo4j_breakdown_probe_fails_without_compliance_block(self):
         with patch("sm_telemetry_monitor.doctor.get_telemetry", return_value={
             "status": "success",
             "telemetry": {},
@@ -279,7 +279,7 @@ class DoctorTests(unittest.TestCase):
             from sm_telemetry_monitor.doctor import _check_neo4j_breakdown
             block = _check_neo4j_breakdown()
         self.assertFalse(block["ok"])
-        self.assertIn("1.0.7", block["error"])
+        self.assertIn("telemetry.compliance missing", block["error"])
 
     def test_neo4j_breakdown_probe_fails_when_telemetry_poll_fails(self):
         with patch("sm_telemetry_monitor.doctor.get_telemetry", return_value={
