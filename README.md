@@ -121,9 +121,10 @@ Everything on screen is one of those two upstreams, or a **poll cache** of past 
 | **Upstream data** | Serves telemetry; writes journal + audit JSONL | Reads those — never Postgres/Neo4j |
 | **Wire contract** | `api_version` on `GET /health` | Client advertises **API 4** (`X-SM-Api-Version: 4`) |
 
-**Surface:** the monitor binds **`127.0.0.1:8765`** and asks the gateway for four read-only
-things — `GET /health`, `GET /memory/telemetry`, `GET /pool/status`, and read-only Cypher via
-`POST /memory/graph` — under a dedicated `monitor:read` token. No database drivers, no write
+**Surface:** the monitor binds **`127.0.0.1:8765`** and asks the gateway for three read-only
+things — `GET /health`, `GET /memory/telemetry` and `GET /pool/status` — the schema drawer's
+graph panels come from `telemetry.compliance` (framework ≥ 1.0.7) — under a dedicated
+`monitor:read` token. No database drivers, no write
 route, no CORS header. The full allow-list is in [SECURITY.md](SECURITY.md#attack-surface--default-deny);
 set `SERVER_HOST` if you deliberately want to reach the dashboard from another machine.
 
@@ -234,13 +235,12 @@ flowchart TB
     GW[Gateway :8888]
     TEL["GET /memory/telemetry"]
     HLTH["GET /health"]
-    GRP["POST /memory/graph"]
     POOL["GET /pool/status"]
     JRN[journalctl user unit]
     REMF[rem-audit.jsonl]
     AGF[agent-audit.jsonl]
     CRED[credential-audit.jsonl]
-    GW --- TEL & HLTH & GRP & POOL
+    GW --- TEL & HLTH & POOL
   end
 
   subgraph mon [Monitor :8765 — presentation only]
@@ -249,7 +249,7 @@ flowchart TB
     LOOP[Poll loop ~600s]
     DB[(telemetry poll cache)]
     SRV[server.py + static UI]
-    BR --> TEL & HLTH & GRP & POOL
+    BR --> TEL & HLTH & POOL
     LR --> JRN & REMF & AGF & CRED
     LOOP --> BR
     LOOP --> DB
