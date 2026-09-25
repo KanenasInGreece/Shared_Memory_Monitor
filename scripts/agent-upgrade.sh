@@ -56,9 +56,18 @@ if [[ -n "$REF" ]]; then
   # If ref is a branch that tracks origin, pull; tags are fixed
   if git show-ref --verify --quiet "refs/heads/$REF" 2>/dev/null; then
     git pull --ff-only origin "$REF" || true
+  else
+    echo "==> Pinned to $REF (detached HEAD) — to return to the default branch: git checkout main"
   fi
 else
   branch="$(git rev-parse --abbrev-ref HEAD)"
+  if [[ "$branch" == "HEAD" ]]; then
+    # fact:2758: a prior --ref TAG run left this checkout detached, so there is
+    # no branch to fast-forward — go back to the default branch first.
+    echo "==> Detached HEAD — checking out main before fast-forward"
+    git checkout main
+    branch="main"
+  fi
   echo "==> Fast-forward $branch"
   git pull --ff-only origin "$branch"
 fi

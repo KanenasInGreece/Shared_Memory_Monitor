@@ -322,6 +322,12 @@ elif updates_avail:
     cmd = (updates or {}).get("upgrade_cmd") or "./scripts/agent-upgrade.sh"
     summary = (updates or {}).get("summary") or "updates available on GitHub"
     out["next"] = f"Update available ({summary}) — run: {cmd}"
+elif out["overall"] == "partial":
+    # fact:2758: doctor_exit == 1 only happens via a failing feature (see
+    # doctor.main_check) — name it, never say "OK" while one is still failing.
+    failing = sorted(fid for fid, f in features.items() if not f.get("ok"))
+    names = ", ".join(failing) if failing else "an unnamed feature"
+    out["next"] = f"Partial — not ready: {names}. See ./scripts/check-env.sh"
 else:
     out["next"] = "OK — open " + out["dashboard_url"]
 

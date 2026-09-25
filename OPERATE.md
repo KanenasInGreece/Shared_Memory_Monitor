@@ -37,9 +37,11 @@ without secrets; `--offline` skips the GitHub check.
    ```
    This creates `.env` from `.env.example`. Set `COORDINATOR_URL` there if it is not
    the default.
-3. **Token.** The operator runs the commands below in their own terminal, never through an
-   agent session or its shell escape. Framework 1.0.4+ refuses `--reveal` unless it is
-   run in a terminal.
+3. **Token.** Needs framework ≥ 1.0.5: `--reveal` only works through `bootstrap_tokens.sh`
+   from that version on (fact:2759/fact:2764, the "own terminal" measurement). The
+   operator runs the commands below in their own terminal — an interactive one, such as
+   `ssh -t host`, never `ssh host 'cmd'` or an agent's shell escape; neither of those is a
+   terminal. Framework 1.0.4+ refuses `--reveal` unless it is run in one.
    ```bash
    # OPERATOR, on the gateway host, in the framework checkout:
    bash shared-memory/scripts/bootstrap_tokens.sh --add monitor --reveal monitor     # first time
@@ -93,7 +95,7 @@ the same checkout reuses `.env`; only a fresh clone needs `--remint`.
 | `write probe … over-privileged` | The token is not read-only; remint `monitor` (it is always minted `read`) |
 | gateway unreachable | Start the gateway, or fix `COORDINATOR_URL` with the `sed` line in step 3 |
 | unit active, `:8765` silent | `journalctl --user -u shared-memory-monitor.service -n 50` |
-| panel missing in `check-env.sh` | The gateway is older; the UI leaves that band out and nothing fails |
+| panel missing in `check-env.sh` | The gateway is older; the UI leaves that band out and nothing fails. Graph panels (nodes/relationships/paths) need framework ≥ 1.0.7 |
 
 Optional `.env` keys (log paths, backup directory, bind address, retention) are
 documented inline in [`.env.example`](.env.example).
