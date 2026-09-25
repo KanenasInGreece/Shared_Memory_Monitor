@@ -53,7 +53,9 @@ Telemetery = signal. Logs = detail. The monitor never blurs that line.
 
 ## Quick start
 
-Hand an agent **[AGENTS.md](AGENTS.md)** and it will interview, install, wire `monitor:read`, verify with `./scripts/agent-status.sh`, and start or upgrade. Prefer full control? Use the same scripts yourself.
+Hand an agent **[OPERATE.md](OPERATE.md)** and it will interview, install, verify with
+`./scripts/agent-status.sh`, and start, upgrade or uninstall. The token step is yours:
+the agent never sees it. Prefer full control? Use the same scripts yourself.
 
 ```bash
 git clone https://github.com/KanenasInGreece/Shared_Memory_Monitor.git
@@ -65,7 +67,11 @@ cd Shared_Memory_Monitor
 
 The monitor is an add-on, not a stand-alone system. On the **framework host**, mint a dedicated **`monitor`** identity — register it in gateway `AGENT_TOKENS`, assign **`monitor:read`** in `AGENT_ROLES`, restart the gateway, and copy only that token into this repo’s gitignored `.env`. That role is read-only: health, telemetry, and guarded graph reads. Saves and searches return **403**.
 
-Use the framework’s [`generate_tokens.py`](https://github.com/KanenasInGreece/Shared_Memory/blob/main/shared-memory/scripts/generate_tokens.py) (or `bootstrap_tokens.sh` on a fresh install). It prints the lines to add to the **gateway** `.env`. Details: [Framework SECURITY.md — read-only roles](https://github.com/KanenasInGreece/Shared_Memory/blob/main/SECURITY.md#agent-authentication--implemented-v035).
+In your own terminal on the framework host, run
+`bash shared-memory/scripts/bootstrap_tokens.sh --add monitor --reveal monitor`
+(`--remint` if `monitor` is already registered; framework 1.0.4+ refuses `--reveal`
+outside a terminal), restart the gateway, and paste the token into this repo's `.env`.
+Details: [OPERATE.md](OPERATE.md) Install step 3 and [Framework SECURITY.md — read-only roles](https://github.com/KanenasInGreece/Shared_Memory/blob/main/SECURITY.md#agent-authentication--implemented-v035).
 
 In **this** repo’s `.env` (monitor values win for `AGENT_TOKEN` and `COORDINATOR_URL`):
 
@@ -421,7 +427,8 @@ Long-running processes do **not** hot-reload after `.env` or code changes — re
 | [SISTER_PROJECT.md](docs/SISTER_PROJECT.md) | Framework boundary and wire contract |
 | [CHANGELOG.md](CHANGELOG.md) | Releases (current: **v0.9.32**) |
 | [SECURITY.md](SECURITY.md) | Secrets policy |
-| [AGENTS.md](AGENTS.md) | Agent install / status / upgrade |
+| [OPERATE.md](OPERATE.md) | Agent install / upgrade / uninstall |
+| [AGENTS.md](AGENTS.md) | Rules for coding agents |
 
 ```bash
 ./scripts/pre-publish-check.sh && ./scripts/publish.sh
