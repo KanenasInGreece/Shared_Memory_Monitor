@@ -1,7 +1,9 @@
 """Sole gateway client — all telemetry on screen comes through here.
 
-Reads GET /memory/telemetry, GET /health, GET /pool/status, POST /memory/graph only.
-No parallel monitor metrics API; no framework imports; no Postgres/Neo4j.
+Reads GET /memory/telemetry, GET /health, GET /pool/status only. No parallel
+monitor metrics API; no framework imports; no Postgres/Neo4j. The graph shape
+rides telemetry.compliance (framework >= 1.0.7, fact:2771) — no POST
+/memory/graph call, and no 403 for a read-only token (the S1 visibility fix).
 """
 
 from __future__ import annotations
@@ -84,31 +86,6 @@ def get_telemetry() -> dict:
         return payload
     except Exception as exc:
         return _coordinator_unavailable(exc)
-
-
-def query_graph(cypher: str, params: dict | None = None) -> list | dict:
-    """POST /memory/graph with read-only Cypher."""
-    try:
-        r = _http().post(
-            f"{_coordinator_base()}/memory/graph",
-            json={"cypher": cypher, "params": params or {}},
-            headers=_request_headers(),
-            timeout=30.0,
-        )
-        if r.status_code == 401:
-            return _auth_error()
-        if r.status_code >= 400:
-            return {
-                "status": "error",
-                "message": sanitize_error(f"coordinator returned HTTP {r.status_code}"),
-            }
-        result = r.json()
-    except Exception as exc:
-        return _coordinator_unavailable(exc)
-
-    if isinstance(result, dict):
-        return result.get("records", result)
-    return result
 
 
 def get_health() -> dict:

@@ -2077,6 +2077,7 @@ function renderBreakdownErrors(nj, pg) {
   const box = document.getElementById("schema-errors");
   const msgs = [];
   if (nj.error) msgs.push({ src: "Neo4j", msg: nj.error });
+  if (nj.pipelines_error) msgs.push({ src: "Graph paths", msg: nj.pipelines_error });
   if (pg.error) msgs.push({ src: "Breakdown", msg: pg.error });
   if (!msgs.length) {
     box.hidden = true;
@@ -2121,9 +2122,18 @@ function renderBreakdown(B) {
     pg.error ? "Breakdown unavailable — see alert above" : "No domain breakdown");
 
   const paths = nj.pipelines || [];
+  // "pipelines_as_of" absent entirely means the gateway never sent top_paths
+  // (framework < 1.0.7); present-but-null means the background refresh hasn't
+  // completed yet; present-and-set with an empty list means it ran and found none.
+  const pathsSupported = "pipelines_as_of" in nj;
+  let pathsEmptyMsg;
+  if (nj.error) pathsEmptyMsg = "Graph query failed — see alert above";
+  else if (!pathsSupported) pathsEmptyMsg = "Needs framework ≥ 1.0.7 for graph paths";
+  else if (nj.pipelines_as_of == null) pathsEmptyMsg = "paths: computing…";
+  else pathsEmptyMsg = "No graph paths";
   document.querySelector("#bd-paths tbody").innerHTML = paths.length
     ? paths.map(p => `<tr><td>${esc(p.from)}</td><td>${esc(p.rel)}</td><td>${esc(p.to)}</td><td>${p.count}</td></tr>`).join("")
-    : `<tr class="schema-row-empty"><td colspan="4">${esc(nj.error || "No graph paths")}</td></tr>`;
+    : `<tr class="schema-row-empty"><td colspan="4">${esc(pathsEmptyMsg)}</td></tr>`;
 
   const sources = pg.sources || [];
   document.querySelector("#bd-sources tbody").innerHTML = sources.length
@@ -2138,11 +2148,11 @@ function renderBreakdown(B) {
   (pg.outbox || []).forEach(o => metaRows.push(["outbox", o.key, o.count]));
   (pg.summaries || []).forEach(s => metaRows.push(["summary", `${s.kind} (active)`, s.active]));
   (pg.summaries || []).forEach(s => metaRows.push(["summary", `${s.kind} (superseded)`, s.superseded]));
-  if (nj.facts) metaRows.push(["neo4j Fact", "total", nj.facts.total]);
-  if (nj.facts) metaRows.push(["neo4j Fact", "rem_processed", nj.facts.rem_done]);
-  if (nj.facts) metaRows.push(["neo4j Fact", "consolidated", nj.facts.consolidated]);
-  if (nj.decisions) metaRows.push(["neo4j Decision", "total", nj.decisions.total]);
-  if (nj.decisions) metaRows.push(["neo4j Decision", "rem_processed", nj.decisions.rem_done]);
+  if (nj.facts?.total != null) metaRows.push(["neo4j Fact", "total", nj.facts.total]);
+  if (nj.facts?.rem_pending != null) metaRows.push(["neo4j Fact", "rem_pending", nj.facts.rem_pending]);
+  if (nj.facts?.unconsolidated != null) metaRows.push(["neo4j Fact", "unconsolidated", nj.facts.unconsolidated]);
+  if (nj.decisions?.total != null) metaRows.push(["neo4j Decision", "total", nj.decisions.total]);
+  if (nj.decisions?.rem_pending != null) metaRows.push(["neo4j Decision", "rem_pending", nj.decisions.rem_pending]);
   const metaFallback = pg.error || nj.error || "No outbox or summary rows";
   document.querySelector("#bd-pg-meta tbody").innerHTML = metaRows.length
     ? metaRows.map(r => `<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td><td>${r[2]}</td></tr>`).join("")

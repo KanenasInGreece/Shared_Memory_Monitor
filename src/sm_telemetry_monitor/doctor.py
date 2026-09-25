@@ -10,7 +10,7 @@ from typing import Any
 
 import httpx
 
-from .bridge import API_VERSION, get_health, get_pool_status, get_telemetry, query_graph, patch_raw
+from .bridge import API_VERSION, get_health, get_pool_status, get_telemetry, patch_raw
 from .config import DATA_DIR, DB_FILE, ROOT, STATIC_DIR
 from .env_loader import (
     MONITOR_ROOT,
@@ -206,11 +206,20 @@ def _check_telemetry() -> dict[str, Any]:
 
 
 def _check_neo4j_breakdown() -> dict[str, Any]:
-    result = query_graph("RETURN 1 AS ok LIMIT 1")
-    if isinstance(result, dict) and result.get("status") == "error":
-        return {"ok": False, "error": sanitize_error(result.get("message"))}
-    records = result if isinstance(result, list) else (result.get("records") if isinstance(result, dict) else [])
-    return {"ok": bool(records), "error": None if records else "empty graph response"}
+    """Graph panels ride telemetry.compliance now (fact:2771) — no /memory/graph
+    call, so no 403 on a read-only token (the S1 visibility fix, v0.9.102). The
+    inner distributions are NOT required: they are absent on a healthy empty
+    graph and on gateways below 1.0.7, and their absence renders empty panels,
+    never a doctor failure (plan review C1/R4)."""
+    payload = get_telemetry()
+    if payload.get("status") != "success":
+        err = payload.get("message") or payload.get("error") or "telemetry poll failed"
+        return {"ok": False, "error": sanitize_error(str(err))}
+    t = payload.get("telemetry")
+    compliance = t.get("compliance") if isinstance(t, dict) else None
+    if not isinstance(compliance, dict):
+        return {"ok": False, "error": "telemetry.compliance missing — needs framework >= 1.0.7"}
+    return {"ok": True, "error": None}
 
 
 def _check_read_role() -> dict[str, Any]:

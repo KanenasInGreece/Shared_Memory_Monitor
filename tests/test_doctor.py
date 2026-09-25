@@ -258,6 +258,38 @@ class DoctorTests(unittest.TestCase):
         self.assertRegex(text, r"coordinator: ok · .*llm_routing")
         self.assertRegex(text, r"coordinator: ok · .*llm_token_usage")
 
+    def test_neo4j_breakdown_probe_ok_from_compliance_key_presence(self):
+        """Doctor's graph probe rides telemetry.compliance now — inner distributions
+        are NOT required (fact:2771; plan review C1/R4): an empty graph or an older
+        gateway missing the sub-fields still passes, never a doctor failure."""
+        with patch("sm_telemetry_monitor.doctor.get_telemetry", return_value={
+            "status": "success",
+            "telemetry": {"compliance": {}},
+        }):
+            from sm_telemetry_monitor.doctor import _check_neo4j_breakdown
+            block = _check_neo4j_breakdown()
+        self.assertTrue(block["ok"])
+        self.assertIsNone(block["error"])
+
+    def test_neo4j_breakdown_probe_fails_below_1_0_7(self):
+        with patch("sm_telemetry_monitor.doctor.get_telemetry", return_value={
+            "status": "success",
+            "telemetry": {},
+        }):
+            from sm_telemetry_monitor.doctor import _check_neo4j_breakdown
+            block = _check_neo4j_breakdown()
+        self.assertFalse(block["ok"])
+        self.assertIn("1.0.7", block["error"])
+
+    def test_neo4j_breakdown_probe_fails_when_telemetry_poll_fails(self):
+        with patch("sm_telemetry_monitor.doctor.get_telemetry", return_value={
+            "status": "error", "message": "coordinator unreachable",
+        }):
+            from sm_telemetry_monitor.doctor import _check_neo4j_breakdown
+            block = _check_neo4j_breakdown()
+        self.assertFalse(block["ok"])
+        self.assertIn("coordinator unreachable", block["error"])
+
     def test_dashboard_history_ready_when_samples(self):
         checks = {
             "keys": {"AGENT_TOKEN": "set", "agent_token_source": "monitor"},

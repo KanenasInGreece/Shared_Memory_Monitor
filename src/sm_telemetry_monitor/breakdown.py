@@ -1,11 +1,12 @@
-"""Schema drawer — gateway telemetry.breakdown + POST /memory/graph via bridge.py."""
+"""Schema drawer — everything from telemetry.compliance + telemetry.neo4j; the
+Postgres half from telemetry.breakdown. One GET /memory/telemetry call, no POST."""
 
 from __future__ import annotations
 
 import threading
 import time
 
-from .bridge import get_telemetry, query_graph
+from .bridge import get_telemetry
 from .sanitize import sanitize_error
 
 _CACHE: dict | None = None
@@ -14,93 +15,71 @@ _CACHE_TTL = 60
 _CACHE_LOCK = threading.Lock()
 
 
-def _records(result, errors: list[str]) -> list[dict]:
-    if isinstance(result, dict):
-        if result.get("status") == "error":
-            msg = result.get("message", "query failed")
-            if msg not in errors:
-                errors.append(msg)
-            return []
-        if "records" in result:
-            return result["records"] or []
-        if "data" in result and isinstance(result["data"], list):
-            return result["data"]
-        return []
-    if isinstance(result, list):
-        return result
-    return []
+def _is_count(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
-from concurrent.futures import ThreadPoolExecutor
+def fetch_neo4j_breakdown(t: dict | None) -> dict:
+    """Pure mapping of ONE telemetry payload's compliance + neo4j blocks into the
+    schema drawer graph shape (fact:2771, the 1.0.7 graph-shape note). No gateway
+    call here — the caller already made the one GET /memory/telemetry this and
+    the Postgres half share.
 
-def fetch_neo4j_breakdown() -> dict:
-    out: dict = {"nodes": [], "relationships": [], "pipelines": [], "error": None}
-    errors: list[str] = []
+    ``pipelines_as_of`` is set only when the gateway sent ``top_paths`` at all:
+    its ABSENCE from the output (not just null) is how the UI tells "framework
+    < 1.0.7" apart from "still computing" (null as_of) or "computed, no paths"
+    (non-null as_of) — see AGENTS.md / OPERATE.md for the wording each implies.
+    """
+    out: dict = {
+        "nodes": [], "relationships": [], "pipelines": [],
+        "pipelines_error": None, "facts": None, "decisions": None, "error": None,
+    }
+    if not isinstance(t, dict):
+        return out
 
-    def _q_nodes():
-        return _records(query_graph(
-            "MATCH (n) UNWIND labels(n) AS label "
-            "RETURN label, count(*) AS count ORDER BY count DESC"
-        ), errors)
+    compliance = t.get("compliance")
+    compliance = compliance if isinstance(compliance, dict) else {}
 
-    def _q_rels():
-        return _records(query_graph(
-            "MATCH ()-[r]->() RETURN type(r) AS type, count(r) AS count ORDER BY count DESC"
-        ), errors)
+    label_dist = compliance.get("label_distribution")
+    if isinstance(label_dist, dict):
+        out["nodes"] = sorted(
+            ({"label": k, "count": v} for k, v in label_dist.items() if _is_count(v)),
+            key=lambda r: r["count"], reverse=True,
+        )
 
-    def _q_paths():
-        return _records(query_graph(
-            "MATCH (a)-[r]->(b) "
-            "RETURN coalesce(labels(a)[0],'?') AS from_label, type(r) AS rel, "
-            "coalesce(labels(b)[0],'?') AS to_label, count(*) AS count "
-            "ORDER BY count DESC LIMIT 15"
-        ), errors)
-
-    def _q_facts():
-        return _records(query_graph(
-            "MATCH (f:Fact) WHERE f.pg_id IS NOT NULL RETURN "
-            "count(f) AS total, "
-            "count(CASE WHEN coalesce(f.rem_processed,false) THEN 1 END) AS rem_done, "
-            "count(CASE WHEN coalesce(f.consolidated,false) THEN 1 END) AS consolidated"
-        ), errors)
-
-    def _q_decisions():
-        return _records(query_graph(
-            "MATCH (d:Decision) RETURN "
-            "count(d) AS total, "
-            "count(CASE WHEN coalesce(d.rem_processed,false) THEN 1 END) AS rem_done"
-        ), errors)
-
-    with ThreadPoolExecutor(max_workers=5) as ex:
-        f_nodes = ex.submit(_q_nodes)
-        f_rels = ex.submit(_q_rels)
-        f_paths = ex.submit(_q_paths)
-        f_facts = ex.submit(_q_facts)
-        f_decisions = ex.submit(_q_decisions)
-
-        nodes = f_nodes.result()
-        rels = f_rels.result()
-        paths = f_paths.result()
-        facts = f_facts.result()
-        decisions = f_decisions.result()
-
-    if nodes:
-        out["nodes"] = [{"label": r.get("label"), "count": r.get("count", 0)} for r in nodes]
-    if rels:
-        out["relationships"] = [{"type": r.get("type"), "count": r.get("count", 0)} for r in rels]
-    if paths:
-        out["pipelines"] = [
-            {"from": r.get("from_label"), "rel": r.get("rel"),
-             "to": r.get("to_label"), "count": r.get("count", 0)}
-            for r in paths
+    pred_dist = compliance.get("predicate_distribution")
+    if isinstance(pred_dist, dict):
+        out["relationships"] = [
+            {"type": k, "count": v} for k, v in pred_dist.items() if _is_count(v)
         ]
-    if facts:
-        out["facts"] = facts[0]
-    if decisions:
-        out["decisions"] = decisions[0]
 
-    if errors:
-        out["error"] = sanitize_error(errors[0])
+    if "top_paths" in compliance:
+        raw_paths = compliance.get("top_paths")
+        out["pipelines"] = [
+            {"from": p.get("from"), "rel": p.get("rel"), "to": p.get("to"),
+             "count": p.get("count")}
+            for p in raw_paths if isinstance(p, dict)
+        ] if isinstance(raw_paths, list) else []
+        out["pipelines_as_of"] = compliance.get("top_paths_as_of")
+
+    if "top_paths_error" in compliance:
+        out["pipelines_error"] = sanitize_error(str(compliance["top_paths_error"]))
+
+    nj = t.get("neo4j")
+    if isinstance(nj, dict) and nj:
+        # Verbatim passthrough of telemetry.neo4j — no monitor-side arithmetic
+        # (plan review R3). Deliberately not reconciled with label_distribution:
+        # the two counts differ by definition (e.g. live 1773 vs 1768).
+        out["facts"] = {
+            "total": nj.get("facts_total"),
+            "rem_pending": nj.get("facts_rem_pending"),
+            "unconsolidated": nj.get("facts_unconsolidated"),
+        }
+        out["decisions"] = {
+            "total": nj.get("decisions_total"),
+            "rem_pending": nj.get("decisions_rem_pending"),
+        }
+
     return out
 
 
@@ -135,18 +114,21 @@ def postgres_breakdown_from_telemetry(telemetry: dict) -> dict:
     return out
 
 
-def fetch_postgres_breakdown() -> dict:
-    """Postgres panels from GET /memory/telemetry — no direct DB connection."""
-    payload = get_telemetry()
-    if payload.get("status") != "success":
-        err = payload.get("message") or payload.get("error") or "telemetry poll failed"
-        return {
-            "record_types": [], "agents": [], "sources": [], "domains": [],
-            "summaries": [], "outbox": [],
-            "technical_docs": None, "technical_docs_superseded": None,
-            "error": sanitize_error(str(err)),
-        }
-    return postgres_breakdown_from_telemetry(payload["telemetry"])
+def _error_breakdowns(err: object) -> tuple[dict, dict]:
+    msg = sanitize_error(str(err))
+    neo4j = {
+        "nodes": [], "relationships": [], "pipelines": [],
+        "pipelines_error": None, "facts": None, "decisions": None,
+        "error": msg,
+    }
+    postgres = {
+        "record_types": [], "agents": [], "sources": [], "domains": [],
+        "summaries": [], "outbox": [],
+        "technical_docs": None, "technical_docs_superseded": None,
+        "error": msg,
+    }
+    return neo4j, postgres
+
 
 def _breakdown_ok(payload: dict) -> bool:
     nj = payload.get("neo4j") or {}
@@ -163,16 +145,27 @@ def fetch_breakdown(*, force: bool = False) -> dict:
         if not force and _CACHE and (now - _CACHE_AT) < _CACHE_TTL:
             return _CACHE
 
-    with ThreadPoolExecutor(max_workers=2) as ex:
-        f_neo4j = ex.submit(fetch_neo4j_breakdown)
-        f_pg = ex.submit(fetch_postgres_breakdown)
-        payload = {
-            "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "neo4j": f_neo4j.result(),
-            "postgres": f_pg.result(),
-        }
+    # One GET /memory/telemetry shared by both halves — the graph half used to
+    # cost five more POST /memory/graph calls on top of this.
+    payload = get_telemetry()
+    t = payload.get("telemetry") if isinstance(payload, dict) else None
+    if not isinstance(payload, dict) or payload.get("status") != "success" or not isinstance(t, dict):
+        if isinstance(payload, dict):
+            err = payload.get("message") or payload.get("error") or "telemetry poll failed"
+        else:
+            err = "telemetry poll failed"
+        neo4j, postgres = _error_breakdowns(err)
+    else:
+        neo4j = fetch_neo4j_breakdown(t)
+        postgres = postgres_breakdown_from_telemetry(t)
+
+    out_payload = {
+        "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "neo4j": neo4j,
+        "postgres": postgres,
+    }
     with _CACHE_LOCK:
-        if _breakdown_ok(payload):
-            _CACHE = payload
+        if _breakdown_ok(out_payload):
+            _CACHE = out_payload
             _CACHE_AT = now
-    return payload
+    return out_payload
