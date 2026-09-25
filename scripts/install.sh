@@ -16,39 +16,23 @@ echo "==> Installing Python dependencies (sm-telemetry-monitor ${PKG_VERSION:-?}
 uv sync
 
 if [[ ! -f .env ]]; then
-  cp .env.example .env
+  (umask 077 && cp .env.example .env)   # owner-only before a token is ever pasted in
   echo "==> Created .env from .env.example"
   echo "    Required: set AGENT_TOKEN (read-only monitor token) and COORDINATOR_URL"
   echo "    Optional:  SHARED_MEMORY_ROOT / BACKUP_DIR for logs + sidebar backup date"
   echo ""
-  echo "Please populate .env, then run ./scripts/check-env.sh to verify setup."
+  echo "    Next: the operator pastes the monitor token into .env (OPERATE.md Install step 3), then ./scripts/check-env.sh"
   exit 0
 else
   echo "==> .env already exists (unchanged)"
 fi
 
-echo ""
-echo "Prerequisites (gateway host — this monitor is a view only):"
-echo "  - hive-mind-gateway.service running (user unit)"
-echo "  - monitor token in gateway AGENT_TOKENS with AGENT_ROLES=monitor:read"
-echo "  - curl \$COORDINATOR_URL/health succeeds (default http://localhost:8888)"
-echo "  - Wire contract: monitor API v4 ↔ framework api_version 4 (gateway ≥0.8.33)"
-echo "  - Full UI (LLM local/external badges, graph/latency drawers): gateway ≥0.8.9"
-echo ""
-echo "Before git push, run: ./scripts/pre-publish-check.sh"
-echo ""
 echo "==> Environment check"
 set +e
 uv run python -m sm_telemetry_monitor check
 code=$?
 set -e
 
-echo ""
-echo "What the doctor lines mean for the dashboard:"
-echo "  coordinator … placement local|external  → Infrastructure config + LLM pool chips"
-echo "  telemetry … nrem+breakdown+consolidation+entity_graph+latency+spine+compliance"
-echo "    → backlog/NREM, schema drawer, consolidation drawer, latency drawer"
-echo "  Missing panel names = older gateway; UI omits those bands (no crash)."
 echo ""
 if [[ $code -eq 0 ]]; then
   echo "Ready."
@@ -57,7 +41,7 @@ if [[ $code -eq 0 ]]; then
   echo "  Status:      ./scripts/agent-status.sh"
   echo "  Dashboard:   http://127.0.0.1:8765/  (/diagram, /logs)"
 elif [[ $code -eq 2 ]]; then
-  echo "Not ready — edit .env (AGENT_TOKEN + COORDINATOR_URL), confirm gateway is up, then:"
+  echo "Not ready — token missing or rejected, or gateway down (OPERATE.md Install step 3). Then:"
   echo "  ./scripts/check-env.sh"
   echo "  ./scripts/agent-status.sh"
 else

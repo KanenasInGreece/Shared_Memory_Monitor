@@ -285,7 +285,7 @@ ready = (
     out["env_file_present"]
     and out["gateway_http_ok"]
     and out["doctor_exit"] == 0
-    and (out["dashboard_http_ok"] or out["unit"] in ("active", "activating"))
+    and out["dashboard_http_ok"]
 )
 partial = out["env_file_present"] and out["gateway_http_ok"] and out["doctor_exit"] in (0, 1)
 updates_avail = bool((updates or {}).get("updates_available"))
@@ -305,12 +305,17 @@ if not out["env_file_present"]:
     out["next"] = "Run ./scripts/install.sh and set AGENT_TOKEN + COORDINATOR_URL in .env"
 elif not out["gateway_http_ok"]:
     out["next"] = f"Start Shared Memory gateway or fix COORDINATOR_URL ({out['coordinator_url']})"
+elif ((conn.get("read_role") or {}).get("token_rejected")):
+    out["next"] = ("Token rejected (HTTP 401) — hand to the OPERATOR, do not run: "
+                   "OPERATE.md Install step 3 (remint the monitor token in their own terminal "
+                   "on the gateway host, paste it into this .env, restart gateway then this unit)")
 elif out["doctor_exit"] == 2:
-    out["next"] = "Fix AGENT_TOKEN / read_role — see ./scripts/check-env.sh"
-elif out["doctor_exit"] == 1 and not out["dashboard_http_ok"]:
-    out["next"] = "Doctor partial; start dashboard: ./scripts/run-loop.sh --serve or install-systemd-user.sh"
+    out["next"] = ("Token missing, or doctor could not run — see ./scripts/check-env.sh; a token is "
+                   "issued by the OPERATOR (OPERATE.md Install step 3), never asked for")
 elif not out["dashboard_http_ok"] and out["unit"] not in ("active", "activating"):
     out["next"] = "Start monitor: ./scripts/install-systemd-user.sh or ./scripts/run-loop.sh --serve --interval 600"
+elif not out["dashboard_http_ok"]:
+    out["next"] = "Unit is up but :8765 does not answer — journalctl --user -u shared-memory-monitor.service -n 50"
 elif out.get("api_compat") == "incompatible":
     out["next"] = "API version skew — upgrade monitor or gateway so api_version matches"
 elif updates_avail:

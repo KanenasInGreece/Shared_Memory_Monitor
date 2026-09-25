@@ -13,7 +13,7 @@ This sister repository is that picture. It does not install databases or daemons
 | **What you get** | Live ops view over framework telemetry and logs |
 | **What you do not get** | A second metrics store, DB credentials, or write access to memory |
 | **Dashboard** | **http://127.0.0.1:8765/** |
-| **This release** | **v0.9.31** — API **v4** client · wire-compatible with framework **≥ 0.8.33** · full panels on **≥ 0.8.9** · alternative vectors on **≥ 0.8.40** · credential-audit / `llm_faults` on **≥ 0.9.4** · credential last-event age on **≥ 0.9.8** · `credentialed_route_denied` on **≥ 0.9.9** · LLM routing / token usage / backend descriptors / `GET /pool/status` dream-ready slots on **≥ 0.9.13** · wall/mixed `by_model` latency on **≥ 0.9.60** · encoder percentiles / health-as-verdict on **≥ 0.9.74** · dual-emit drop ready for **≥ 0.9.90** |
+| **This release** | **v0.9.32** — API **v4** client · wire-compatible with framework **≥ 0.8.33** · full panels on **≥ 0.8.9** · alternative vectors on **≥ 0.8.40** · credential-audit / `llm_faults` on **≥ 0.9.4** · credential last-event age on **≥ 0.9.8** · `credentialed_route_denied` on **≥ 0.9.9** · LLM routing / token usage / backend descriptors / `GET /pool/status` dream-ready slots on **≥ 0.9.13** · wall/mixed `by_model` latency on **≥ 0.9.60** · encoder percentiles / health-as-verdict on **≥ 0.9.74** · dual-emit drop ready for **≥ 0.9.90** |
 
 ---
 
@@ -53,7 +53,9 @@ Telemetery = signal. Logs = detail. The monitor never blurs that line.
 
 ## Quick start
 
-Hand an agent **[AGENTS.md](AGENTS.md)** and it will interview, install, wire `monitor:read`, verify with `./scripts/agent-status.sh`, and start or upgrade. Prefer full control? Use the same scripts yourself.
+Hand an agent **[OPERATE.md](OPERATE.md)** and it will interview, install, verify with
+`./scripts/agent-status.sh`, and start, upgrade or uninstall. The token step is yours:
+the agent never sees it. Prefer full control? Use the same scripts yourself.
 
 ```bash
 git clone https://github.com/KanenasInGreece/Shared_Memory_Monitor.git
@@ -65,7 +67,11 @@ cd Shared_Memory_Monitor
 
 The monitor is an add-on, not a stand-alone system. On the **framework host**, mint a dedicated **`monitor`** identity — register it in gateway `AGENT_TOKENS`, assign **`monitor:read`** in `AGENT_ROLES`, restart the gateway, and copy only that token into this repo’s gitignored `.env`. That role is read-only: health, telemetry, and guarded graph reads. Saves and searches return **403**.
 
-Use the framework’s [`generate_tokens.py`](https://github.com/KanenasInGreece/Shared_Memory/blob/main/shared-memory/scripts/generate_tokens.py) (or `bootstrap_tokens.sh` on a fresh install). It prints the lines to add to the **gateway** `.env`. Details: [Framework SECURITY.md — read-only roles](https://github.com/KanenasInGreece/Shared_Memory/blob/main/SECURITY.md#agent-authentication--implemented-v035).
+In your own terminal on the framework host, run
+`bash shared-memory/scripts/bootstrap_tokens.sh --add monitor --reveal monitor`
+(`--remint` if `monitor` is already registered; framework 1.0.4+ refuses `--reveal`
+outside a terminal), restart the gateway, and paste the token into this repo's `.env`.
+Details: [OPERATE.md](OPERATE.md) Install step 3 and [Framework SECURITY.md — read-only roles](https://github.com/KanenasInGreece/Shared_Memory/blob/main/SECURITY.md#agent-authentication--implemented-v035).
 
 In **this** repo’s `.env` (monitor values win for `AGENT_TOKEN` and `COORDINATOR_URL`):
 
@@ -126,7 +132,7 @@ set `SERVER_HOST` if you deliberately want to reach the dashboard from another m
 around **20 MB/year** instead of growing without limit. Nothing is reset — thinning keeps the
 long trend and drops only minute-level detail nobody scrubs to.
 
-**Compatibility:** Monitor **v0.9.31** speaks **API v4** against framework **≥ 0.8.33** (`compat=ok` from doctor). Prefer **≥ 0.8.9** for the full Status picture (LLM local/external placement, entity census, latency drawer), **≥ 0.8.40** for alternative-vectors on first-write quality, **≥ 0.9.4** for credential-audit tails and `llm_faults` on pool chips, **≥ 0.9.8** for `credentials.*_last_ts` last-failure age, **≥ 0.9.9** for `credentialed_route_denied`, **≥ 0.9.13** for `llm_routing` / `llm_token_usage` / backend descriptors / `GET /pool/status` dream-ready slots, **≥ 0.9.60** for wall/mixed `by_model` latency (external OpenAI-compatible backends), **≥ 0.9.74** for encoder latency percentiles and dependency health verdicts, and **≥ 0.9.90** for telemetry dual-emit drop readiness (`patch_telemetry` normalizes relocated outbox, REM, and fault keys). Older gateways stay on the wire; missing panels simply omit fields rather than fail hard.
+**Compatibility:** Monitor **v0.9.32** speaks **API v4** against framework **≥ 0.8.33** (`compat=ok` from doctor). Prefer **≥ 0.8.9** for the full Status picture (LLM local/external placement, entity census, latency drawer), **≥ 0.8.40** for alternative-vectors on first-write quality, **≥ 0.9.4** for credential-audit tails and `llm_faults` on pool chips, **≥ 0.9.8** for `credentials.*_last_ts` last-failure age, **≥ 0.9.9** for `credentialed_route_denied`, **≥ 0.9.13** for `llm_routing` / `llm_token_usage` / backend descriptors / `GET /pool/status` dream-ready slots, **≥ 0.9.60** for wall/mixed `by_model` latency (external OpenAI-compatible backends), **≥ 0.9.74** for encoder latency percentiles and dependency health verdicts, and **≥ 0.9.90** for telemetry dual-emit drop readiness (`patch_telemetry` normalizes relocated outbox, REM, and fault keys). Older gateways stay on the wire; missing panels simply omit fields rather than fail hard.
 
 Where a number on the screen comes from is always the framework payload or a log line. For the field-level mapping of telemetry keys to UI bands, see [docs/SISTER_PROJECT.md](docs/SISTER_PROJECT.md) and the framework’s own telemetry docs — this README stays on the operator path, not the catalog.
 
@@ -419,9 +425,10 @@ Long-running processes do **not** hot-reload after `.env` or code changes — re
 | Doc | Topic |
 |-----|-------|
 | [SISTER_PROJECT.md](docs/SISTER_PROJECT.md) | Framework boundary and wire contract |
-| [CHANGELOG.md](CHANGELOG.md) | Releases (current: **v0.9.31**) |
+| [CHANGELOG.md](CHANGELOG.md) | Releases (current: **v0.9.32**) |
 | [SECURITY.md](SECURITY.md) | Secrets policy |
-| [AGENTS.md](AGENTS.md) | Agent install / status / upgrade |
+| [OPERATE.md](OPERATE.md) | Agent install / upgrade / uninstall |
+| [AGENTS.md](AGENTS.md) | Rules for coding agents |
 
 ```bash
 ./scripts/pre-publish-check.sh && ./scripts/publish.sh

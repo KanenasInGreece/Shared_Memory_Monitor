@@ -6,6 +6,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.32] - 2026-09-25
+Agent-assisted install, upgrade and uninstall, re-tested on d9400 (Debian 13) against gateway 1.0.4.
+
+### Fixed
+- **Uninstall no longer disables linger.** Linger is per-user; turning it off stopped the gateway's own user unit at the next logout. The script now verifies the unit is gone and leaves `.env` and `data/`.
+- **A rejected token is "not ready".** `check` exited 1 (partial) on a 401 whenever poll history existed, so `agent-status` pointed at an upgrade. It now exits 2 and `next:` names the operator's remint step.
+- **`install-systemd-user.sh` no longer kills processes on `:8765`.** It refuses (exit 3) when a foreign process holds the port, and waits for the dashboard before returning, so the upgrade's status check no longer reports it down.
+
+### Changed
+- **`AGENTS.md` split in two**: `OPERATE.md` is the install/upgrade/uninstall runbook, `AGENTS.md` the coding-agent rules. The token step follows framework 1.0.4 (`bootstrap_tokens.sh --add|--remint monitor --reveal monitor`, operator-only).
+
 ## [0.9.31] - 2026-09-06
 Ready for the framework's `/memory/telemetry` dual-emit drop (the 16 old homes in `fact:1989`).
 

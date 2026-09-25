@@ -68,10 +68,10 @@ else
   ok "README.md references v$PYVER"
 fi
 
-if ! grep -q "v$PYVER" AGENTS.md; then
-  fail "AGENTS.md does not reference current release v$PYVER"
+if ! grep -q "v$PYVER" OPERATE.md; then
+  fail "OPERATE.md does not reference current release v$PYVER"
 else
-  ok "AGENTS.md references v$PYVER"
+  ok "OPERATE.md references v$PYVER"
 fi
 
 if ! grep -q "v$PYVER" docs/SISTER_PROJECT.md; then

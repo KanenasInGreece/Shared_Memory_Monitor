@@ -26,27 +26,35 @@ elif sudo -n loginctl enable-linger "$USER" 2>/dev/null; then
 else
   echo "WARNING: Could not enable linger."
   echo "  Without linger, the monitor will die when you log out."
-  echo "  Please run this manually: sudo loginctl enable-linger "$USER""
+  echo "  Please run this manually: sudo loginctl enable-linger $USER"
 fi
 
 
-if command -v ss >/dev/null 2>&1 && ss -tln 2>/dev/null | grep -q ':8765 '; then
-  echo ""
-  echo "Port 8765 in use — stopping foreground listener, then starting user unit..."
-  if command -v fuser >/dev/null 2>&1; then
-    fuser -k 8765/tcp 2>/dev/null || true
-  else
-    echo "fuser not found. Please manually kill the process on port 8765 if the restart fails."
-  fi
-  sleep 0.5
+# A listener on :8765 while our unit is NOT running is someone else's process (often a
+# foreground run-loop). Stopping it is the operator's call, so refuse instead of killing it.
+# curl covers hosts without ss.
+port_held() {
+  if command -v ss >/dev/null 2>&1; then ss -tln 2>/dev/null | grep -q ':8765 '
+  else curl -s -o /dev/null --max-time 2 http://127.0.0.1:8765/; fi
+}
+if ! systemctl --user is-active --quiet shared-memory-monitor.service && port_held; then
+  echo "✗ Port 8765 is held by another process. Stop it (e.g. a foreground run-loop), then re-run." >&2
+  exit 3
 fi
 
 systemctl --user restart shared-memory-monitor.service
-systemctl --user --no-pager status shared-memory-monitor.service
+# Wait for the dashboard so a status check straight after this does not report it down.
+up=0
+for _ in $(seq 1 30); do
+  curl -sf -o /dev/null http://127.0.0.1:8765/api/meta && { up=1; break; }
+  sleep 0.5
+done
+systemctl --user --no-pager --lines=0 status shared-memory-monitor.service || true
+if [[ $up -ne 1 ]]; then
+  echo "✗ Unit started but :8765 did not answer — journalctl --user -u shared-memory-monitor.service -n 50" >&2
+  exit 4
+fi
 echo ""
 echo "Dashboard → http://127.0.0.1:8765/  (/diagram, /logs)"
 echo "Status:    ./scripts/agent-status.sh"
 echo "Doctor:    ./scripts/check-env.sh   # gateway version · API compat · telemetry panels · LLM placement"
-echo ""
-echo "On Status (/): Infrastructure shows Gateway version · API · N LLM backends · local|external;"
-echo "multi-backend gateways also show the LLM pool chips (local/external badges when gateway ≥0.8.9)."
