@@ -31,7 +31,10 @@ uv run --with pytest python -m pytest -q
 - Everything on screen comes from the gateway through `bridge.py` or from the framework's
   log files through `logs_reader.py`. When a number is missing, the fix belongs in the
   framework's telemetry, never in a monitor-side database or metrics API.
-- No Postgres or Neo4j credentials, no framework imports, no LLM API keys.
+- No Postgres or Neo4j credentials and no framework imports.
+- No LLM API keys in the monitor `.env`, even when a backend looks uncredentialed: cloud
+  credentials stay on the gateway, and the monitor shows only the non-secret
+  `has_credential` and `model` it reads from `/health`.
 - `/health` is the verdict and `/memory/telemetry` is the numbers. Never derive a
   health state from counts the gateway has already judged.
 - The server binds loopback and has no auth of its own. Widening the bind publishes an
@@ -41,7 +44,8 @@ uv run --with pytest python -m pytest -q
 
 - Write only inside this checkout. Outside it, use only `systemctl --user`,
   `journalctl` and `curl` to `:8888`/`:8765`.
-- Never commit `.env`, `data/`, `graphs/`, `.venv/` or a token, and never print a token.
+- Never commit `.env`, `data/`, `graphs/`, `.venv/` or a token, never print a token, and
+  never force-push without asking.
 - The workstation constitutions (`CLAUDE.md`, `GEMINI.md`, `OPENCODE.md`) are gitignored
   and hold the cycle, review and seat rules. Do not copy them here.
 

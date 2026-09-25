@@ -14,9 +14,10 @@ running. It installs no database, daemon or gateway.
 2. **Never disable linger.** It is per-user, and the gateway's user unit on the same account
    depends on it.
 3. **Ask first** before you delete the checkout or `data/`, stop a process holding `:8765`,
-   restart the gateway, or rotate any token.
-4. **Start with `./scripts/agent-status.sh` and do what its `next:` line says.** Run only
-   the steps that failed. Every script is idempotent and exports `~/.local/bin`, so it works
+   restart the gateway, rotate any token, or force-push.
+4. **Start with `./scripts/agent-status.sh` and do what its `next:` line says**, except a
+   line addressed to the OPERATOR: hand that over, never run it. Run only the steps
+   that failed. Every script is idempotent and exports `~/.local/bin`, so it works
    over a non-login SSH shell where a bare `uv` does not.
 
 `agent-status.sh` exit codes: `0` ready · `1` partial, or ready with an update on GitHub ·
