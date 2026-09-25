@@ -54,8 +54,8 @@ def fetch_neo4j_breakdown(t: dict | None) -> dict:
         raw_paths = compliance.get("top_paths")
         out["pipelines"] = [
             {"from": p.get("from"), "rel": p.get("rel"), "to": p.get("to"),
-             "count": p.get("count")}
-            for p in raw_paths if isinstance(p, dict)
+             "count": p["count"]}
+            for p in raw_paths if isinstance(p, dict) and _is_count(p.get("count"))
         ] if isinstance(raw_paths, list) else []
         out["pipelines_as_of"] = compliance.get("top_paths_as_of")
 
@@ -66,14 +66,18 @@ def fetch_neo4j_breakdown(t: dict | None) -> dict:
     if isinstance(nj, dict) and nj:
         # Verbatim passthrough: no monitor-side arithmetic. Never reconcile with
         # label_distribution; the two Fact counts differ by definition.
+        def count(key: str) -> int | None:
+            v = nj.get(key)
+            return v if _is_count(v) else None
+
         out["facts"] = {
-            "total": nj.get("facts_total"),
-            "rem_pending": nj.get("facts_rem_pending"),
-            "unconsolidated": nj.get("facts_unconsolidated"),
+            "total": count("facts_total"),
+            "rem_pending": count("facts_rem_pending"),
+            "unconsolidated": count("facts_unconsolidated"),
         }
         out["decisions"] = {
-            "total": nj.get("decisions_total"),
-            "rem_pending": nj.get("decisions_rem_pending"),
+            "total": count("decisions_total"),
+            "rem_pending": count("decisions_rem_pending"),
         }
 
     return out

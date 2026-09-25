@@ -340,7 +340,7 @@
           <div class="schema-chart-card"><h4>Relationships by type</h4><div class="schema-chart" data-chart="bd-rels"><canvas id="bd-rels"></canvas><p class="schema-empty" hidden></p></div></div>
         </div>
         <div class="schema-table-card">
-          <h4>Top graph paths <span class="schema-table-hint">from → relationship → to</span></h4>
+          <h4>Top graph paths <span class="schema-table-hint">from → relationship → to</span> <span id="bd-paths-asof" class="schema-table-hint"></span></h4>
           <div class="schema-table-scroll">
             <table id="bd-paths"><thead><tr><th>From</th><th>Relationship</th><th>To</th><th>Count</th></tr></thead><tbody></tbody></table>
           </div>
@@ -1770,8 +1770,9 @@ function renderLlmPool(H) {
     list.innerHTML = pool.backends.map(b => {
       const url = b.url || "";
       if (url) llmPoolByUrl.set(url, b);
-      const st = (b.status === "ok") ? (b.inflight > 0 ? "busy" : (b.available ? "free" : "held"))
-               : (b.status === "unknown" ? "unknown" : "down");
+      const st = (b.status === "ok")
+        ? (b.inflight > 0 ? "busy" : b.available ? "free" : "held")
+        : (b.status === "unknown" ? "unknown" : "down");
       const stateClass = st === "busy" ? "busy" : st === "free" ? "free"
                        : st === "down" ? "down" : st === "held" ? "held" : "unknown";
       // placement from /health.config has_credential (framework ≥0.8.9) — never inferred
@@ -1784,6 +1785,7 @@ function renderLlmPool(H) {
       if (place) meta.push(place);
       if (b.model) meta.push(b.model);
       if (b.inflight != null) meta.push(`in-flight ${b.inflight}`);
+      if (b.status === "ok" && b.available && b.inflight > 0) meta.push("spare capacity");
       if (b.routed_pct != null) meta.push(`${b.routed_pct}% routed`);
       else if (b.routed != null) meta.push(`routed ${b.routed}`);
       if (b.weight != null) meta.push(`w=${b.weight}`);
@@ -2080,9 +2082,13 @@ function waitDrawerPaint(drawerId = "schema-drawer") {
 function renderBreakdownErrors(nj, pg) {
   const box = document.getElementById("schema-errors");
   const msgs = [];
-  if (nj.error) msgs.push({ src: "Neo4j", msg: nj.error });
+  // One telemetry failure fills both halves with the same message; show it once.
+  if (nj.error && nj.error === pg.error) msgs.push({ src: "Telemetry", msg: nj.error });
+  else {
+    if (nj.error) msgs.push({ src: "Neo4j", msg: nj.error });
+    if (pg.error) msgs.push({ src: "Breakdown", msg: pg.error });
+  }
   if (nj.pipelines_error) msgs.push({ src: "Graph paths", msg: nj.pipelines_error });
-  if (pg.error) msgs.push({ src: "Breakdown", msg: pg.error });
   if (!msgs.length) {
     box.hidden = true;
     box.innerHTML = "";
@@ -2133,10 +2139,14 @@ function renderBreakdown(B) {
   let pathsEmptyMsg;
   if (nj.error) pathsEmptyMsg = "Telemetry poll failed — see alert above";
   else if (!pathsSupported) pathsEmptyMsg = "Needs framework ≥ 1.0.7 for graph paths";
-  else if (nj.pipelines_as_of == null) pathsEmptyMsg = "paths: computing…";
+  else if (nj.pipelines_as_of == null) pathsEmptyMsg = "paths: not computed yet (or disabled: GRAPH_TOP_PATHS_REFRESH_S=0)";
   else pathsEmptyMsg = "No graph paths";
+  // Kept rows after a failed refresh must show their age, or they read as fresh.
+  const asOf = document.getElementById("bd-paths-asof");
+  if (asOf) asOf.textContent = paths.length && nj.pipelines_as_of
+    ? `· as of ${nj.pipelines_as_of}${nj.pipelines_error ? " (refresh failing)" : ""}` : "";
   document.querySelector("#bd-paths tbody").innerHTML = paths.length
-    ? paths.map(p => `<tr><td>${esc(p.from)}</td><td>${esc(p.rel)}</td><td>${esc(p.to)}</td><td>${p.count}</td></tr>`).join("")
+    ? paths.map(p => `<tr><td>${esc(p.from)}</td><td>${esc(p.rel)}</td><td>${esc(p.to)}</td><td>${esc(p.count)}</td></tr>`).join("")
     : `<tr class="schema-row-empty"><td colspan="4">${esc(pathsEmptyMsg)}</td></tr>`;
 
   const sources = pg.sources || [];
@@ -2159,7 +2169,7 @@ function renderBreakdown(B) {
   if (nj.decisions?.rem_pending != null) metaRows.push(["neo4j Decision", "rem_pending", nj.decisions.rem_pending]);
   const metaFallback = pg.error || nj.error || "No outbox or summary rows";
   document.querySelector("#bd-pg-meta tbody").innerHTML = metaRows.length
-    ? metaRows.map(r => `<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td><td>${r[2]}</td></tr>`).join("")
+    ? metaRows.map(r => `<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td><td>${esc(r[2])}</td></tr>`).join("")
     : `<tr class="schema-row-empty"><td colspan="3">${esc(metaFallback)}</td></tr>`;
 
   resizeBreakdownCharts();

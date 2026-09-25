@@ -57,19 +57,28 @@ if [[ -n "$REF" ]]; then
   if git show-ref --verify --quiet "refs/heads/$REF" 2>/dev/null; then
     git pull --ff-only origin "$REF" || true
   else
-    echo "==> Pinned to $REF (detached HEAD) — to return to the default branch: git checkout main"
+    echo "==> Pinned to $REF (detached HEAD). ./scripts/agent-upgrade.sh with no --ref returns to the default branch."
   fi
 else
   branch="$(git rev-parse --abbrev-ref HEAD)"
   if [[ "$branch" == "HEAD" ]]; then
-    # fact:2758: a prior --ref TAG run left this checkout detached, so there is
-    # no branch to fast-forward — go back to the default branch first.
-    echo "==> Detached HEAD — checking out main before fast-forward"
-    git checkout main
-    branch="main"
+    # A prior --ref TAG left this detached (fact:2758); return to main, but never orphan
+    # commits made while detached.
+    default="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || echo origin/main)"
+    default="${default#origin/}"
+    if ! git merge-base --is-ancestor HEAD "origin/$default"; then
+      echo "Detached HEAD $(git rev-parse --short HEAD) has commits not on origin/$default — keep them on a branch first." >&2
+      exit 2
+    fi
+    echo "==> Detached HEAD — checking out $default before fast-forward"
+    git checkout "$default"
+    branch="$default"
   fi
   echo "==> Fast-forward $branch"
-  git pull --ff-only origin "$branch"
+  if ! git pull --ff-only origin "$branch"; then
+    echo "Local $branch has diverged from origin/$branch; nothing was changed. Resolve it by hand." >&2
+    exit 2
+  fi
 fi
 
 echo "==> uv sync"

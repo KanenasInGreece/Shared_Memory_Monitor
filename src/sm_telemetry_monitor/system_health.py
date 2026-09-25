@@ -443,12 +443,9 @@ def _dream_free_slots(status_raw) -> int | None:
 def _join_pool_status(llm_pool: dict | None, status_raw) -> dict | None:
     """Copy serves_all / counts_free_slot onto matching pool backends (I19).
 
-    fact:2715 (framework 1.0.2): backends[url].available means spare capacity
-    (in-flight below the gateway's own max_inflight), not idle. When the gateway
-    sends that flag it replaces only the local formula's inflight==0 term —
-    status/cooldown/reserved still gate — because a down or cooled backend must
-    stay unavailable no matter what the gateway's in-flight count says. Without
-    the flag (older gateway), the local formula is unchanged.
+    The gateway's available (spare capacity, fact:2715: the 1.0.2 pool-semantics note)
+    replaces only the local inflight==0 term; status, cooldown and reserved still gate,
+    because a down or cooled backend must never count as free.
     """
     if not isinstance(llm_pool, dict):
         return llm_pool
@@ -481,8 +478,9 @@ def _join_pool_status(llm_pool: dict | None, status_raw) -> dict | None:
                 row["counts_free_slot"] = entry["counts_free_slot"]
             gw_available = entry.get("available")
             if isinstance(gw_available, bool):
+                # Local inflight 0 means not at cap even if the two reads were skewed.
                 row["available"] = (
-                    gw_available
+                    (gw_available or int(row.get("inflight") or 0) == 0)
                     and row.get("status") == "ok"
                     and float(row.get("cooldown") or 0.0) <= 0
                     and not row.get("reserved")
@@ -629,8 +627,8 @@ def _gateway_config(raw: dict) -> dict | None:
         "embed_max_chars": embed_max,
         "pool_tuning": {
             "fail_threshold": pool_tuning.get("fail_threshold"),
-            # fact:2715 key 4: upstream 429/5xx count toward this threshold too
-            # (default 5), separate from the transport-error fail_threshold.
+            # Upstream 429/5xx streak before cooldown (fact:2715, the 1.0.2 pool note),
+            # separate from the transport-error fail_threshold.
             "http_fail_threshold": pool_tuning.get("http_fail_threshold"),
             "fail_window_s": pool_tuning.get("fail_window_s"),
             "cooldown_s": pool_tuning.get("cooldown_s"),

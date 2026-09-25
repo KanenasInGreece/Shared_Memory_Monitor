@@ -811,14 +811,31 @@ class JoinPoolStatusAvailableFlagTests(unittest.TestCase):
         self.assertTrue(b["available"])
         self.assertEqual(joined["free"], 1)
 
-    def test_gateway_available_false_wins_even_if_status_ok(self):
-        pool = self._pool(inflight=0, available=True)
+    def test_gateway_available_false_wins_while_busy(self):
+        pool = self._pool(inflight=2, available=False)
         status_raw = {"free_slots": 0, "backends": {
             "http://localhost:5000": {"available": False},
         }}
         joined = _join_pool_status(pool, status_raw)
         self.assertFalse(joined["backends"][0]["available"])
         self.assertEqual(joined["free"], 0)
+
+    def test_skewed_gateway_false_with_local_idle_counts_free(self):
+        pool = self._pool(inflight=0, available=True)
+        status_raw = {"free_slots": 0, "backends": {
+            "http://localhost:5000": {"available": False},
+        }}
+        joined = _join_pool_status(pool, status_raw)
+        self.assertTrue(joined["backends"][0]["available"])
+
+    def test_reserved_stays_unavailable_despite_gateway_flag(self):
+        pool = self._pool(inflight=0, available=False)
+        pool["backends"][0]["reserved"] = True
+        status_raw = {"free_slots": 1, "backends": {
+            "http://localhost:5000": {"available": True},
+        }}
+        joined = _join_pool_status(pool, status_raw)
+        self.assertFalse(joined["backends"][0]["available"])
 
     def test_status_not_ok_still_unavailable_despite_gateway_flag(self):
         pool = self._pool(status="down", inflight=0, available=False)
@@ -839,12 +856,13 @@ class JoinPoolStatusAvailableFlagTests(unittest.TestCase):
     def test_missing_available_flag_falls_back_to_local_formula(self):
         """No per-backend "available" key in /pool/status -> the pre-1.0.2 local
         formula (status/inflight/cooldown/reserved) is unchanged."""
-        pool = self._pool(inflight=3, available=False)
-        status_raw = {"free_slots": 1, "backends": {
-            "http://localhost:5000": {"serves_all": True},
-        }}
-        joined = _join_pool_status(pool, status_raw)
-        self.assertFalse(joined["backends"][0]["available"])
+        for inflight, local in ((0, True), (3, False)):
+            pool = self._pool(inflight=inflight, available=local)
+            status_raw = {"free_slots": 1, "backends": {
+                "http://localhost:5000": {"serves_all": True},
+            }}
+            joined = _join_pool_status(pool, status_raw)
+            self.assertIs(joined["backends"][0]["available"], local, inflight)
 
 
 class LlmPoolFailsNeverWarnTests(unittest.TestCase):

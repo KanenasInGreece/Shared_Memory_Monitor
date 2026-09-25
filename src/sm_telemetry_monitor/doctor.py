@@ -206,8 +206,8 @@ def _check_telemetry() -> dict[str, Any]:
 
 
 def _check_neo4j_breakdown() -> dict[str, Any]:
-    """Graph panels read telemetry.compliance (fact:2771, the 1.0.7 graph-shape note), so
-    a read-only token never meets the /memory/graph 403. The inner distributions are
+    """Graph panels read telemetry.compliance (fact:2771, the 1.0.7 graph-shape note),
+    so a read-only token never meets the /memory/graph 403. The inner distributions are
     NOT required: a healthy empty graph and pre-1.0.7 gateways lack them, and that
     must render empty panels, never a doctor failure."""
     payload = get_telemetry()
@@ -346,7 +346,7 @@ def _feature_readiness(checks: dict[str, Any]) -> list[dict[str, Any]]:
             if keys.get("AGENT_TOKEN") != "set":
                 return False, "set AGENT_TOKEN"
             if not c["neo4j_breakdown"]["ok"]:
-                return False, c["neo4j_breakdown"].get("error") or "graph query failed"
+                return False, c["neo4j_breakdown"].get("error") or "telemetry.compliance missing"
             return True, "ok"
         if feature == "telemetry":
             if not c["telemetry"]["ok"]:

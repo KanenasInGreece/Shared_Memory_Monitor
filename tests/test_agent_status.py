@@ -71,6 +71,9 @@ class AgentStatusPartialNeverOkTests(unittest.TestCase):
 
             env = dict(os.environ)
             env["PATH"] = f"{fakebin}:{env.get('PATH', '')}"
+            # The scripts re-export $HOME/.local/bin first; a temp HOME keeps a real uv
+            # or systemctl there out of the test, and no global git config leaks in.
+            env.update(HOME=str(root), GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1")
             proc = subprocess.run(
                 ["bash", "scripts/agent-status.sh", "--json", "--offline"],
                 cwd=root, env=env, capture_output=True, text=True, timeout=30,

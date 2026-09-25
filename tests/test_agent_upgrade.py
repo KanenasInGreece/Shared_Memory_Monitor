@@ -29,7 +29,7 @@ def _git(args, cwd, **kw):
 
 
 class AgentUpgradeDetachedHeadTests(unittest.TestCase):
-    def _make_origin_and_clone(self, td: Path):
+    def _make_origin_and_clone(self, td: Path, branch: str = "main"):
         origin = td / "origin.git"
         origin.mkdir()
         _git(["init", "-q"], cwd=origin)
@@ -42,7 +42,7 @@ class AgentUpgradeDetachedHeadTests(unittest.TestCase):
         _git(["tag", "v1.0.0"], cwd=origin)
         (origin / "pyproject.toml").write_text('[project]\nversion = "1.0.1"\n')
         _git(["commit", "-q", "-am", "second"], cwd=origin)
-        _git(["branch", "-M", "main"], cwd=origin)
+        _git(["branch", "-M", branch], cwd=origin)
 
         clone = td / "clone"
         _git(["clone", "-q", str(origin), str(clone)], cwd=td)
@@ -59,6 +59,9 @@ class AgentUpgradeDetachedHeadTests(unittest.TestCase):
             clone, fakebin = self._make_origin_and_clone(Path(td))
             env = dict(os.environ)
             env["PATH"] = f"{fakebin}:{env.get('PATH', '')}"
+            # The scripts re-export $HOME/.local/bin first; a temp HOME keeps a real uv
+            # or systemctl there out of the test, and no global git config leaks in.
+            env.update(HOME=str(Path(td)), GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1")
             proc = subprocess.run(
                 ["bash", "scripts/agent-upgrade.sh"],
                 cwd=clone, env=env, capture_output=True, text=True, timeout=30,
@@ -74,15 +77,53 @@ class AgentUpgradeDetachedHeadTests(unittest.TestCase):
             clone, fakebin = self._make_origin_and_clone(Path(td))
             env = dict(os.environ)
             env["PATH"] = f"{fakebin}:{env.get('PATH', '')}"
+            # The scripts re-export $HOME/.local/bin first; a temp HOME keeps a real uv
+            # or systemctl there out of the test, and no global git config leaks in.
+            env.update(HOME=str(Path(td)), GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1")
             proc = subprocess.run(
                 ["bash", "scripts/agent-upgrade.sh", "--ref", "v1.0.0"],
                 cwd=clone, env=env, capture_output=True, text=True, timeout=30,
             )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             self.assertIn("Pinned to v1.0.0", proc.stdout)
-            self.assertIn("git checkout main", proc.stdout)
+            self.assertIn("with no --ref returns to the default branch", proc.stdout)
             branch = _git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=clone).stdout.strip()
             self.assertEqual(branch, "HEAD")  # still detached — pinning does not move it
+
+    def _run(self, clone, fakebin, td, *args):
+        env = dict(os.environ)
+        env["PATH"] = f"{fakebin}:{env.get('PATH', '')}"
+        env.update(HOME=str(td), GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1")
+        return subprocess.run(["bash", "scripts/agent-upgrade.sh", *args], cwd=clone,
+                              env=env, capture_output=True, text=True, timeout=30)
+
+    def test_detached_head_returns_to_a_non_main_default_branch(self):
+        with tempfile.TemporaryDirectory() as td:
+            clone, fakebin = self._make_origin_and_clone(Path(td), branch="master")
+            proc = self._run(clone, fakebin, td)
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            branch = _git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=clone).stdout.strip()
+            self.assertEqual(branch, "master")
+
+    def test_detached_commits_are_never_orphaned(self):
+        with tempfile.TemporaryDirectory() as td:
+            clone, fakebin = self._make_origin_and_clone(Path(td))
+            _git(["commit", "-q", "--allow-empty", "-m", "made while detached"], cwd=clone)
+            before = _git(["rev-parse", "HEAD"], cwd=clone).stdout
+            proc = self._run(clone, fakebin, td)
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertIn("not on origin/main", proc.stderr)
+            self.assertEqual(_git(["rev-parse", "HEAD"], cwd=clone).stdout, before)
+
+    def test_diverged_branch_exits_with_a_reason(self):
+        with tempfile.TemporaryDirectory() as td:
+            clone, fakebin = self._make_origin_and_clone(Path(td))
+            _git(["checkout", "-q", "main"], cwd=clone)
+            _git(["reset", "-q", "--hard", "v1.0.0"], cwd=clone)
+            _git(["commit", "-q", "--allow-empty", "-m", "local only"], cwd=clone)
+            proc = self._run(clone, fakebin, td)
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertIn("has diverged", proc.stderr)
 
 
 if __name__ == "__main__":

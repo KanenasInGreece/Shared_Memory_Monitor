@@ -135,5 +135,44 @@ class BreakdownFromTelemetryTests(unittest.TestCase):
         self.assertIn("db down", pg["error"])
 
 
+class BreakdownHardeningTests(unittest.TestCase):
+    def test_string_counts_never_reach_the_ui(self):
+        from sm_telemetry_monitor.breakdown import fetch_neo4j_breakdown
+        out = fetch_neo4j_breakdown({
+            "compliance": {"top_paths": [
+                {"from": "A", "rel": "R", "to": "B", "count": "<img src=x onerror=1>"},
+                {"from": "A", "rel": "R", "to": "C", "count": 3},
+            ], "top_paths_as_of": "t"},
+            "neo4j": {"facts_total": "<b>", "facts_rem_pending": 0, "decisions_total": True},
+        })
+        self.assertEqual([p["count"] for p in out["pipelines"]], [3])
+        self.assertIsNone(out["facts"]["total"])
+        self.assertEqual(out["facts"]["rem_pending"], 0)
+        self.assertIsNone(out["decisions"]["total"])
+
+    def test_fetch_breakdown_makes_one_telemetry_call(self):
+        from unittest import mock
+        from sm_telemetry_monitor import breakdown
+        payload = {"status": "success", "telemetry": {
+            "compliance": {"label_distribution": {"Fact": 2}},
+            "breakdown": {"record_types": [{"type": "fact", "count": 2}]},
+        }}
+        with mock.patch.object(breakdown, "get_telemetry", return_value=payload) as gt:
+            out = breakdown.fetch_breakdown(force=True)
+        self.assertEqual(gt.call_count, 1)
+        self.assertEqual(out["neo4j"]["nodes"], [{"label": "Fact", "count": 2}])
+
+    def test_failed_poll_is_reported_and_not_cached(self):
+        from unittest import mock
+        from sm_telemetry_monitor import breakdown
+        breakdown._CACHE = None
+        fail = {"status": "error", "message": "coordinator unreachable"}
+        with mock.patch.object(breakdown, "get_telemetry", return_value=fail):
+            out = breakdown.fetch_breakdown(force=True)
+        self.assertEqual(out["neo4j"]["error"], out["postgres"]["error"])
+        self.assertIn("unreachable", out["neo4j"]["error"])
+        self.assertIsNone(breakdown._CACHE)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -38,9 +38,8 @@ for one.
 | Call | Why it is needed |
 |------|------------------|
 | `GET /health` | node states, versions, dependency enums |
-| `GET /memory/telemetry` | every number the dashboard renders |
+| `GET /memory/telemetry` | every number the dashboard renders, including the schema drawer's graph panels |
 | `GET /pool/status` | LLM pool free slots / per-backend serves_all |
-| `POST /memory/graph` | read-only Cypher for the schema drawer (write clauses are refused gateway-side) |
 
 `sm_telemetry_monitor check` additionally sends one deliberately **unsaveable** body to
 `POST /memory/save` to prove the write door is shut. It expects `403`. The body is invalid

@@ -12,15 +12,23 @@ class PoolWordingTests(unittest.TestCase):
         self.html = _DASHBOARD.read_text()
 
     def test_free_means_spare_capacity_not_idle(self):
-        self.assertIn("spare capacity", self.html)
+        self.assertIn('line.title = "free = spare capacity', self.html)
 
     def test_dream_free_slots_stays_labelled_dream_ready(self):
         self.assertIn("dream-ready", self.html)
 
     def test_graph_paths_empty_states_distinguish_framework_version(self):
-        self.assertIn("Needs framework", self.html)
-        self.assertIn("computing", self.html)
-        self.assertIn("pipelines_as_of", self.html)
+        self.assertIn('pathsEmptyMsg = "Needs framework ≥ 1.0.7', self.html)
+        self.assertIn('pathsEmptyMsg = "paths: not computed yet (or disabled', self.html)
+        self.assertIn('const pathsSupported = "pipelines_as_of" in nj;', self.html)
+
+    def test_kept_paths_show_their_age(self):
+        self.assertIn("asOf.textContent = paths.length && nj.pipelines_as_of", self.html)
+
+    def test_count_cells_are_escaped(self):
+        self.assertIn("<td>${esc(p.count)}</td>", self.html)
+        self.assertIn("<td>${esc(r[2])}</td>", self.html)
+        self.assertNotIn("<td>${p.count}</td>", self.html)
 
     def test_fact_decision_meta_rows_use_rem_pending_and_unconsolidated(self):
         self.assertIn('"neo4j Fact", "rem_pending"', self.html)

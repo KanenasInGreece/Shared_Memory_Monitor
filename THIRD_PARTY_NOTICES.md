@@ -10,7 +10,7 @@ this project's own source code.
 
 | Package | License | Role |
 |---------|---------|------|
-| [httpx](https://github.com/encode/httpx) | BSD-3-Clause | HTTP client (gateway `/health`, `/memory/telemetry`, `/memory/graph`) |
+| [httpx](https://github.com/encode/httpx) | BSD-3-Clause | HTTP client (gateway `/health`, `/memory/telemetry`, `/pool/status`) |
 | [matplotlib](https://matplotlib.org/) | BSD-style (Matplotlib License) | PNG chart export |
 
 ## Transitive dependencies (selected)
@@ -33,7 +33,7 @@ Run `pip-licenses -r` in the project venv for a full transitive list.
 ## Gateway integration (HTTP, not vendored)
 
 The monitor calls the Shared Memory Framework hive-mind gateway over HTTP
-(`GET /memory/telemetry`, `POST /memory/graph`, `GET /health`). It does not
+(`GET /memory/telemetry`, `GET /pool/status`, `GET /health`). It does not
 bundle or import `memory_bridge.py`.
 
 ## Generating a full license report
