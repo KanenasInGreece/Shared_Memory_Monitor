@@ -6,8 +6,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.34] - 2026-10-23
+Security floors for the October 2026 trust-store and image-decoder advisories. No dashboard or API change.
+
 ### Security
-- **certifi floor 2026.10.19.** A fresh install of httpx can no longer resolve a trust store that still includes the compromised emSign ECC Root CA - G3 (GHSA-6q48-6c7w-9gw2). The pin is declared directly because httpx only requires certifi, not a fixed release.
+- **certifi floor 2026.10.19.** A fresh install of httpx can no longer resolve a trust store that still includes the compromised emSign ECC Root CA - G3 (GHSA-6q48-6c7w-9gw2). The pin is declared directly because httpx only requires certifi, not a fixed release. The lock is certifi 2026.10.23.
 - **Pillow floor 13.0.0.** matplotlib accepts Pillow back to 6.2.0. The lock and the declared floor are now 13.0.0, which is the first release past the October image-decoder advisories. The monitor draws its own charts and does not decode untrusted images.
 
 ## [0.9.33] - 2026-09-25
