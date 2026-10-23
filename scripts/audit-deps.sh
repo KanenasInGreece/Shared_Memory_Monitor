@@ -52,6 +52,17 @@ for pkg in $(sed -n '/^dependencies = \[/,/^]/p' pyproject.toml \
   case "$pkg" in
     python-dotenv) mod="dotenv" ;;
   esac
+  # httpx loads certifi. This package does not import it. The floor is here
+  # so a fresh install cannot resolve a bundle that still trusts the
+  # compromised emSign ECC Root CA - G3 (GHSA-6q48-6c7w-9gw2).
+  if [[ "$pkg" == "certifi" ]]; then
+    say "    ok: $pkg is the httpx trust-store floor"
+    continue
+  fi
+  if [[ "$pkg" == "pillow" ]]; then
+    say "    ok: $pkg is the matplotlib image-codec floor"
+    continue
+  fi
   if grep -rqE "^\s*(import|from)\s+${mod}\b" src/ --include=*.py; then
     say "    ok: $pkg is imported"
   else
