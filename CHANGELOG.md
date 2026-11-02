@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.38] - 2026-11-02
+
+### Changed
+- The install guide wraps the token and upgrade examples onto their own
+  lines. The commands and the prohibitions are unchanged.
+
 ## [0.9.37] - 2026-11-02
 
 ### Security

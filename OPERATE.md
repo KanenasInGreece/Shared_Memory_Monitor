@@ -45,8 +45,10 @@ gives the same data without secrets; `--offline` skips the GitHub check.
    escape are not terminals, and the reveal refuses them.
    ```bash
    # OPERATOR, on the gateway host, in the framework checkout:
-   bash shared-memory/scripts/bootstrap_tokens.sh --add monitor --reveal monitor     # first time
-   bash shared-memory/scripts/bootstrap_tokens.sh --remint monitor --reveal monitor  # already registered
+   # First time.
+   bash shared-memory/scripts/bootstrap_tokens.sh --add monitor --reveal monitor
+   # Already registered.
+   bash shared-memory/scripts/bootstrap_tokens.sh --remint monitor --reveal monitor
    systemctl --user restart hive-mind-gateway.service   # auth is read at startup
    # OPERATOR, then: paste the value as AGENT_TOKEN=... into <monitor-checkout>/.env
    chmod 600 <monitor-checkout>/.env
@@ -70,8 +72,10 @@ gives the same data without secrets; `--offline` skips the GitHub check.
 ## Upgrade
 
 ```bash
-./scripts/agent-upgrade.sh                  # fast-forward main, uv sync, restart the unit, status
-./scripts/agent-upgrade.sh --ref v0.9.37    # pin a release
+# Fast-forward main, uv sync, restart the unit, then status.
+./scripts/agent-upgrade.sh
+# Pin a release.
+./scripts/agent-upgrade.sh --ref v0.9.38
 ```
 
 It refuses a dirty tree. After a restart the process has new code; `.env`
