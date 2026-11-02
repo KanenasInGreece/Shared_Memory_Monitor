@@ -6,6 +6,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.35] - 2026-11-02
+
+### Fixed
+- The schema drawer and `/api/health` use
+  `/health.consolidation.graph_invalid_nodes` when the top-level key is absent.
+  That health count is the verdict and wins over `telemetry.graph_integrity`
+  when the two disagree.
+
 ## [0.9.34] - 2026-10-23
 Security floors for the October 2026 trust-store and image-decoder advisories. No dashboard or API change.
 

@@ -1618,6 +1618,53 @@ class GraphIntegrityHealthTests(unittest.TestCase):
         self.assertEqual(snap["graph_invalid_nodes"], 0)
         self.assertTrue(snap["graph_integrity"]["clean"])
 
+    @patch("sm_telemetry_monitor.system_health.get_telemetry")
+    @patch("sm_telemetry_monitor.system_health.live_summary", return_value={"latest": {}})
+    @patch("sm_telemetry_monitor.system_health.get_health")
+    def test_nested_consolidation_graph_invalid_nodes_triggers_warn_and_wins(
+        self, mock_health, _summary, mock_telemetry
+    ):
+        mock_health.return_value = {
+            **_healthy_gateway(),
+            "consolidation": {"graph_invalid_nodes": 4},
+        }
+        mock_telemetry.return_value = self._telemetry_payload({
+            "invalid_nodes": 0, "clean": True
+        })
+        snap = system_health_snapshot()
+        self.assertEqual(snap["graph_invalid_nodes"], 4)
+        self.assertEqual(snap["status"], "warn")
+
+    @patch("sm_telemetry_monitor.system_health.get_telemetry")
+    @patch("sm_telemetry_monitor.system_health.live_summary", return_value={"latest": {}})
+    @patch("sm_telemetry_monitor.system_health.get_health")
+    def test_top_level_wins_over_nested_consolidation(
+        self, mock_health, _summary, mock_telemetry
+    ):
+        mock_health.return_value = {
+            **_healthy_gateway(),
+            "graph_invalid_nodes": 2,
+            "consolidation": {"graph_invalid_nodes": 9},
+        }
+        mock_telemetry.return_value = self._telemetry_payload()
+        snap = system_health_snapshot()
+        self.assertEqual(snap["graph_invalid_nodes"], 2)
+
+    @patch("sm_telemetry_monitor.system_health.get_telemetry")
+    @patch("sm_telemetry_monitor.system_health.live_summary", return_value={"latest": {}})
+    @patch("sm_telemetry_monitor.system_health.get_health")
+    def test_nested_zero_without_top_level_publishes_zero_and_status_ok(
+        self, mock_health, _summary, mock_telemetry
+    ):
+        mock_health.return_value = {
+            **_healthy_gateway(),
+            "consolidation": {"graph_invalid_nodes": 0},
+        }
+        mock_telemetry.return_value = self._telemetry_payload(integrity=None)
+        snap = system_health_snapshot()
+        self.assertEqual(snap["graph_invalid_nodes"], 0)
+        self.assertEqual(snap["status"], "ok")
+
 
 class HealthAsVerdictTests(unittest.TestCase):
     """decision:1973 — /health is the verdict; telemetry is the numbers."""

@@ -1858,14 +1858,15 @@ function renderGraphIntegrity(H) {
   const inval = H?.graph_invalid_nodes;
   const gi = H?.graph_integrity;
 
+  // The gateway already judged the count on /health, and telemetry is the breakdown.
   let hasError = false;
-  if ((inval != null && inval > 0) || (gi && gi.error)) {
-    hasError = true;
+  if (typeof inval === "number") {
+    hasError = inval > 0 || !!(gi && gi.error);
   } else if (gi) {
     if (typeof gi.invalid_nodes === "number" && gi.invalid_nodes > 0) {
       hasError = true;
     }
-    if (gi.clean === false) {
+    if (gi.clean === false || gi.error) {
       hasError = true;
     }
   }
@@ -1879,7 +1880,9 @@ function renderGraphIntegrity(H) {
   if (inval != null || gi) {
     block.hidden = false;
     const kpis = [];
-    const totalInvalid = (gi && typeof gi.invalid_nodes === "number") ? gi.invalid_nodes : inval;
+    const totalInvalid = typeof inval === "number"
+      ? inval
+      : ((gi && typeof gi.invalid_nodes === "number") ? gi.invalid_nodes : inval);
     if (totalInvalid != null) {
       kpis.push([
         "Invalid nodes",

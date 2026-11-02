@@ -1296,7 +1296,7 @@ def system_health_snapshot() -> dict:
         "backup": backup,
         "consolidation": consolidation,
         "error": sanitize_error(raw.get("error")) or None,
-        "graph_invalid_nodes": raw.get("graph_invalid_nodes"),
+        "graph_invalid_nodes": graph_invalid_nodes,
         "graph_integrity": (telemetry_payload or {}).get("telemetry", {}).get("graph_integrity"),
         "credentials": credentials,
     }
