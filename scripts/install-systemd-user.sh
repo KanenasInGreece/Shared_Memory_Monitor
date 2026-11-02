@@ -30,8 +30,9 @@ else
 fi
 
 
-# A listener on :8765 while our unit is NOT running is someone else's process (often a
-# foreground run-loop). Stopping it is the operator's call, so refuse instead of killing it.
+# A listener on :8765 while our unit is NOT running is someone else's process
+# (often a foreground run-loop). Stopping it is the operator's call, so refuse
+# instead of killing it.
 # curl covers hosts without ss.
 port_held() {
   if command -v ss >/dev/null 2>&1; then ss -tln 2>/dev/null | grep -q ':8765 '

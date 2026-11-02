@@ -1,3 +1,5 @@
+"""Poll the gateway and serve the loopback dashboard."""
+
 from __future__ import annotations
 
 import argparse

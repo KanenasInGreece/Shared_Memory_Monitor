@@ -1,3 +1,5 @@
+"""One chart of where work sits in the sleep-cycle pipeline."""
+
 from __future__ import annotations
 
 import matplotlib

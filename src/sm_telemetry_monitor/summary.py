@@ -1,3 +1,5 @@
+"""The latest cached sample, shaped for the summary the UI reads."""
+
 from __future__ import annotations
 
 from .analytics import enrich_row, story_summary

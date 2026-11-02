@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Identity reads only `project_identity` and `domain_identity`. A short key
+  named project or domain is not that verdict.
+
 ## [0.9.36] - 2026-11-02
 
 ### Added

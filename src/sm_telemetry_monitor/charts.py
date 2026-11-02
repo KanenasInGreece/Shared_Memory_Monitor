@@ -1,3 +1,5 @@
+"""Render the history charts in graphs/ from cached telemetry rows."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

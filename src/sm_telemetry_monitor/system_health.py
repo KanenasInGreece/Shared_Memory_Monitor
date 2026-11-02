@@ -441,7 +441,7 @@ def _dream_free_slots(status_raw) -> int | None:
 
 
 def _join_pool_status(llm_pool: dict | None, status_raw) -> dict | None:
-    """Copy serves_all / counts_free_slot onto matching pool backends (I19).
+    """Copy serves_all / counts_free_slot onto matching pool backends.
 
     The gateway's available (spare capacity, fact:2715: the 1.0.2 pool-semantics note)
     replaces only the local inflight==0 term; status, cooldown and reserved still gate,
@@ -641,7 +641,7 @@ def _gateway_config(raw: dict) -> dict | None:
         } if affinity else None,
         "summary": " · ".join(bits) if bits else "configured",
     }
-    # I17: only when gateway sent it (config preferred, else top-level health bool).
+    # Only when the gateway sent it (config preferred, else top-level health bool).
     if "allow_unauthenticated_provider_keys" in cfg:
         out["allow_unauthenticated_provider_keys"] = cfg["allow_unauthenticated_provider_keys"]
     
@@ -1197,11 +1197,7 @@ def _identity_part(raw: dict, telemetry_payload: dict | None) -> dict | None:
     for out_key, name in keys:
         val = cons.get(name)
         if not isinstance(val, dict):
-            val = cons.get(out_key)
-        if not isinstance(val, dict):
             val = axes.get(name)
-        if not isinstance(val, dict):
-            val = axes.get(out_key)
         if isinstance(val, dict):
             result[out_key] = val
             found = True
@@ -1292,7 +1288,7 @@ def system_health_snapshot() -> dict:
     inference_busy = _inference_busy_state(raw)
     llm_pool = _llm_pool_summary(raw)
     # Join additive telemetry.llm_faults / credentials after pool summary.
-    # Fault counts never feed _overall_state / _status_summary (I2).
+    # Fault counts never feed _overall_state / _status_summary.
     llm_pool, credentials = _join_llm_faults(llm_pool, telemetry_payload, raw)
     pool_status_raw = get_pool_status()
     llm_pool = _join_pool_status(llm_pool, pool_status_raw)
@@ -1349,7 +1345,7 @@ def system_health_snapshot() -> dict:
         out["warnings"] = raw["warnings"]
     if dream_free_slots is not None:
         out["dream_free_slots"] = dream_free_slots
-    # I12/I13: flat passthrough — absent keys stay absent; never invent zeros.
+    # Flat passthrough — absent keys stay absent; never invent zeros.
     if "llm_routing" in raw and isinstance(raw.get("llm_routing"), dict):
         out["llm_routing"] = raw["llm_routing"]
     if "llm_token_usage" in raw and isinstance(raw.get("llm_token_usage"), dict):

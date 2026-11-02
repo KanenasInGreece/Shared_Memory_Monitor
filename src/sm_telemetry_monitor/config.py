@@ -1,3 +1,5 @@
+"""Paths and thresholds. The bind stays loopback because the server has no auth."""
+
 import os
 from pathlib import Path
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Remove the shared-memory-monitor user unit. Leaves the checkout, .env and data/ in place.
+# Remove the shared-memory-monitor user unit. Leaves the checkout, .env and
+# data/ in place.
 # Never disables linger: it is per-user, and the gateway's own user unit on the same
 # account depends on it, so turning it off would stop the gateway at the next logout.
 set -euo pipefail

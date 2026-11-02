@@ -61,6 +61,10 @@ This follows framework decision:2751, the consolidated rules for agent-read text
 - A comment-only change must leave the AST unchanged once docstrings are blanked.
 - Each file has one job: `OPERATE.md` runs the monitor, this file changes it, and
   `README.md` is the maintainer's voice (propose README edits, do not apply them).
+- decision:3363, the familiarise additions: a file opens with an overview, a
+  non-obvious function states its contract, a comment that restates the code
+  is deleted, a TODO is capitals plus a name and is not a promise, and shell
+  wraps near 88 columns too.
 
 ## Releases
 

@@ -1767,6 +1767,23 @@ class IdentityHealthTests(unittest.TestCase):
         self.assertIsNone(snap["identity"]["domain"])
         self.assertEqual(snap["status"], "ok")
 
+    @patch("sm_telemetry_monitor.system_health.get_telemetry")
+    @patch("sm_telemetry_monitor.system_health.live_summary", return_value={"latest": {}})
+    @patch("sm_telemetry_monitor.system_health.get_health")
+    def test_short_keys_project_and_domain_are_ignored(
+        self, mock_health, _summary, mock_telemetry
+    ):
+        mock_health.return_value = {
+            **_healthy_gateway(),
+            "consolidation": {"project": {"complete": False}},
+        }
+        mock_telemetry.return_value = self._telemetry_payload(axes={
+            "domain": {"complete": False},
+        })
+        snap = system_health_snapshot()
+        self.assertIsNone(snap.get("identity"))
+        self.assertEqual(snap["status"], "ok")
+
 
 
 class HealthAsVerdictTests(unittest.TestCase):

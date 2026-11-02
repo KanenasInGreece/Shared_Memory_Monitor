@@ -135,7 +135,7 @@ def _check_coordinator() -> dict[str, Any]:
                 n_local += 1
     pool = raw.get("llm_pool")
     has_llm_pool = isinstance(pool, dict) and bool(pool)
-    # 0.9.13 surfaces: key presence on /health (empty {} still counts — I8 style).
+    # 0.9.13 surfaces: key presence on /health (empty {} still counts).
     has_llm_routing = "llm_routing" in raw
     has_llm_token_usage = "llm_token_usage" in raw
     has_llm_latency = "llm_latency" in raw or ("llm_latency" in cfg if isinstance(cfg, dict) else False)
@@ -187,7 +187,7 @@ def _check_telemetry() -> dict[str, Any]:
     spine = t.get("spine") if isinstance(t.get("spine"), dict) else {}
     compliance = t.get("compliance") if isinstance(t.get("compliance"), dict) else {}
     gi = t.get("graph_integrity") if isinstance(t.get("graph_integrity"), dict) else {}
-    # llm_faults / credentials: key presence only (empty {} still counts — I8).
+    # llm_faults / credentials: key presence only (empty {} still counts).
     return {
         "ok": ok,
         "status": payload.get("status"),
