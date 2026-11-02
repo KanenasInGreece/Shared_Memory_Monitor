@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.45] - 2026-11-02
+
+### Changed
+- The `agent-status` branch-relation comment is one sentence. It still
+  names ahead, behind, diverged, and not-fetched. Behavior is unchanged.
+
 ## [0.9.44] - 2026-11-02
 
 ### Changed

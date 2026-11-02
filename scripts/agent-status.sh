@@ -179,9 +179,9 @@ def _git_ok(args):
     )
     return proc.returncode == 0
 
-# Inequality is not "behind". Ahead: the remote tip is already in HEAD.
-# Behind: HEAD is in the remote tip. Diverged: neither contains the other.
-# Not-fetched: this clone does not have the remote tip yet.
+# Inequality is not "behind": ahead means the remote tip is already in
+# HEAD, behind means HEAD is in that tip, diverged means neither contains
+# the other, and not-fetched means this clone lacks the tip.
 behind_branch = None
 branch_relation = None
 if branch_sha and local:
