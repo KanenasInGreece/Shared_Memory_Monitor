@@ -10,9 +10,11 @@ Wants=hive-mind-gateway.service
 
 [Service]
 Type=simple
-WorkingDirectory="@MONITOR_ROOT@"
-EnvironmentFile="@MONITOR_ROOT@/.env"
-ExecStart="@MONITOR_ROOT@/.venv/bin/python" -m sm_telemetry_monitor loop --serve --interval 600
+# Path settings take the rest of the line. A wrapping quote stays part of
+# the path, so these two stay unquoted. ExecStart is a command token.
+WorkingDirectory=@MONITOR_ROOT@
+EnvironmentFile=@MONITOR_ROOT@/.env
+ExecStart=@MONITOR_EXEC@ -m sm_telemetry_monitor loop --serve --interval 600
 Restart=on-failure
 RestartSec=30
 

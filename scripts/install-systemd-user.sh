@@ -15,12 +15,17 @@ mkdir -p "$(dirname "$UNIT_DST")"
 python3 - "$ROOT" "$UNIT_SRC" "$UNIT_DST" <<'PY'
 import pathlib, sys
 root, src, dst = sys.argv[1:]
-# systemd splits an unquoted path and expands %. Quotes keep one argument.
-# %% is a literal percent. Backslash and quote are escaped inside the quotes.
-escaped = (
-    root.replace("\\", "\\\\").replace("%", "%%").replace('"', '\\"')
+# Path settings take the rest of the line and do not decode C escapes.
+# A space stays a space. A percent is a specifier, so it is doubled.
+# ExecStart is a command token: quotes hold one path, and \, %, and " are escaped.
+path = root.replace("%", "%%")
+program = root + "/.venv/bin/python"
+exec_tok = '"' + program.replace("\\", "\\\\").replace("%", "%%").replace('"', '\\"') + '"'
+text = (
+    pathlib.Path(src).read_text()
+    .replace("@MONITOR_ROOT@", path)
+    .replace("@MONITOR_EXEC@", exec_tok)
 )
-text = pathlib.Path(src).read_text().replace("@MONITOR_ROOT@", escaped)
 pathlib.Path(dst).write_text(text)
 PY
 echo "Installed → $UNIT_DST (MONITOR_ROOT=$ROOT)"

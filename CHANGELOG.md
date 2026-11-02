@@ -6,6 +6,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Installed unit paths for the working directory and the env file are not
+  wrapped in quotes. systemd treated the quote as part of the path and
+  refused to restart the unit.
+
 ## [1.0.0] - 2026-11-02
 
 ### Security
