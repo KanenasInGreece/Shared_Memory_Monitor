@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.37] - 2026-11-02
+
 ### Security
 - Dependency floors are the current pip-audit-clean releases: httpx 0.28.1,
   matplotlib 3.11.2, certifi 2026.10.23, pillow 13.0.0. A fresh install can
