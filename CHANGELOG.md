@@ -6,6 +6,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.41] - 2026-11-02
+
+### Fixed
+- A REM or NREM backlog stays a count. The pipeline headline states that
+  count. It no longer says saturated, and it no longer raises warn or
+  critical from dream_backlog or outbox_failed. A gateway consolidation
+  stall still marks the story critical. A stale consolidation signal still
+  warns, because that flag is the gateway's.
+- The infrastructure hint shows token_verify_failed and audit_log_dropped
+  as a count and a last timestamp. An empty /health warnings list does not
+  call that a current rejection. A warning the gateway emits is still shown.
+- A diagram replay follows the live /health status. It does not invent warn
+  or critical from a past sample's counts.
+
 ## [0.9.40] - 2026-11-02
 
 ### Fixed

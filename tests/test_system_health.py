@@ -1945,6 +1945,12 @@ class HealthAsVerdictTests(unittest.TestCase):
         self.assertNotIn('gwVis.label = "Outbox failed"', src)
         self.assertNotIn("outbox_failed || 0) > 0", src)
 
+    def test_diagram_scrub_does_not_invent_health_from_counts(self):
+        src = Path("static/diagram.html").read_text()
+        self.assertNotIn("snap.dream_backlog > 30", src)
+        self.assertNotIn('snap.outbox_failed > 0 ? "critical"', src)
+        self.assertIn('health: health?.status || "ok"', src)
+
     def test_dashboard_escapes_health_warnings_before_innerhtml(self):
         src = Path("static/dashboard.html").read_text()
         self.assertIn("esc(formatHealthWarning", src)

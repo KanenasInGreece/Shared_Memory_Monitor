@@ -1047,11 +1047,14 @@ function storyForView(health) {
   if (isLiveMode() && liveStory) return liveStory;
   const snap = snapshotForView();
   const n = sampleCount();
+  // Counts on a past sample are not a verdict. decision:1973 (GET /health is
+  // the verdict and GET /memory/telemetry is the numbers). updateStatus already
+  // paints health.status, so a scrub must not invent warn or critical.
   return {
     headline: n ? (isLiveMode() ? (liveStory?.headline || "Latest poll snapshot") : `Snapshot at ${fmtTs(snap.collected_at)}`)
       : "No samples",
     detail: "",
-    health: snap.outbox_failed > 0 ? "critical" : (snap.dream_backlog > 30 ? "warn" : "ok"),
+    health: health?.status || "ok",
   };
 }
 

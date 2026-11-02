@@ -40,5 +40,19 @@ class PoolWordingTests(unittest.TestCase):
         self.assertNotIn('"neo4j Fact", "consolidated"', self.html)
 
 
+class FrontDoorCountTests(unittest.TestCase):
+    """fact:1620 — token_verify_failed is a count, not a current rejection."""
+
+    def setUp(self):
+        self.html = _DASHBOARD.read_text()
+
+    def test_empty_warnings_keep_a_quiet_count(self):
+        self.assertNotIn("gateway rejected client auth", self.html)
+        self.assertNotIn("const doorWarn = tokenFailed > 0 || auditDropped > 0", self.html)
+        self.assertIn("const isWarn = unauthWarn || healthWarnings.length > 0;", self.html)
+        self.assertIn("`token verify failed ${tokenFailed}`", self.html)
+        self.assertIn("`audit log dropped ${auditDropped}`", self.html)
+
+
 if __name__ == "__main__":
     unittest.main()

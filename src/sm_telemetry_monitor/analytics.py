@@ -63,9 +63,11 @@ def enrich_row(row: dict, *, pg_counts: dict | None = None, nrem_counts: dict | 
     row["rem_backlog"] = facts_rem + decisions_rem
     row = _apply_nrem_counts(row, nrem_counts)
     row["dream_backlog"] = row["rem_backlog"] + row["nrem_backlog"]
-    row["health"] = "critical" if (row.get("outbox_failed") or 0) > 0 else (
-        "warn" if row["dream_backlog"] > 30 else "ok"
-    )
+    # The gateway already judged health, and rem_backlog, nrem_backlog, and
+    # dream_backlog are counts. decision:1973 (framework 0.9.74+: GET /health
+    # is the verdict and GET /memory/telemetry is the numbers; a count must
+    # not become a warn or critical badge), so a stored health key is dropped.
+    row.pop("health", None)
     return row
 
 
@@ -207,7 +209,7 @@ def story_summary(rows: list[dict]) -> dict:
         detail = "No REM or NREM backlog. New saves will re-queue work."
     elif rem >= nrem:
         eta_h = rem / rem_items_per_hour() if rem_items_per_hour() else None
-        headline = f"REM-saturated — {rem} items awaiting enrichment"
+        headline = f"{rem} items awaiting enrichment"
         detail = (
             f"NREM backlog is {nrem} cycle(s) ({uncon_raw} raw facts). "
             f"At ~{rem_items_per_hour():.0f}/hr max REM rate, ~{eta_h:.1f}h to clear REM."
@@ -215,7 +217,7 @@ def story_summary(rows: list[dict]) -> dict:
             f"NREM backlog is {nrem} cycle(s) ({uncon_raw} raw facts)."
         )
     else:
-        headline = f"NREM-saturated — {nrem} consolidation cycle(s) pending"
+        headline = f"{nrem} consolidation cycle(s) pending"
         detail = (
             f"REM queue is {rem}. NREM triggers per domain cluster "
             f"(≥{NREM_FACT_CLUSTER_MIN} facts or ≥{NREM_DECISION_CLUSTER_MIN} decisions); "
@@ -235,10 +237,13 @@ def story_summary(rows: list[dict]) -> dict:
 
     eta_rem_h = rem / rem_items_per_hour() if rem and rem_items_per_hour() else None
     bottleneck = "rem" if rem >= nrem else ("nrem" if nrem else "none")
-    health = latest["health"]
+    # consolidation_fresh is /health.consolidation.fresh, copied by the
+    # collector. It is the gateway's boolean, not a clock compared here,
+    # so a false value may still raise this story to warn.
+    health = "ok"
     if cons_stalled and cons_fresh is not False:
         health = "critical"
-    elif cons_fresh is False and health == "ok":
+    elif cons_fresh is False:
         health = "warn"
     return {
         "headline": headline,

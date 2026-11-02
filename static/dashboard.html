@@ -2009,10 +2009,13 @@ function renderSystemHealth(H) {
   const creds = H?.credentials;
   const tokenFailed = Number(creds?.token_verify_failed) || 0;
   const auditDropped = Number(creds?.audit_log_dropped) || 0;
-  const doorWarn = tokenFailed > 0 || auditDropped > 0;
   const healthWarnings = Array.isArray(H?.warnings) ? H.warnings : [];
   if (hint) {
-    const isWarn = unauthWarn || doorWarn || healthWarnings.length > 0;
+    // Front-door counts stay on this hint. decision:1973 (GET /health is the
+    // verdict and GET /memory/telemetry is the numbers; a count is not a
+    // badge). fact:1620 (token_verify_failed is a cumulative front-door count,
+    // not an LLM fault and not a current rejection while warnings are empty).
+    const isWarn = unauthWarn || healthWarnings.length > 0;
     hint.className = "hint sidebar-hint" + (isWarn ? " warn" : "");
     const hintParts = [];
     if (healthWarnings.length > 0) {
@@ -2022,17 +2025,17 @@ function renderSystemHealth(H) {
     if (unauthWarn) {
       hintParts.push("allow_unauthenticated_provider_keys: true");
     }
-    if (doorWarn) {
-      const doorBits = [];
-      if (tokenFailed > 0) {
-        const ageTxt = fmtLastEventAge(creds?.token_verify_failed_last_ts);
-        doorBits.push(`token verify failed ${tokenFailed}` + (ageTxt ? ` ${ageTxt}` : ""));
-      }
-      if (auditDropped > 0) {
-        const ageTxt = fmtLastEventAge(creds?.audit_log_dropped_last_ts);
-        doorBits.push("audit log dropped" + (ageTxt ? ` ${ageTxt}` : ""));
-      }
-      hintParts.push("gateway rejected client auth: " + doorBits.join(" · ") + ` · <a class="pool-pop-link" href="/logs?source=credential_audit">credential audit</a>`);
+    const doorBits = [];
+    if (tokenFailed > 0) {
+      const ageTxt = fmtLastEventAge(creds?.token_verify_failed_last_ts);
+      doorBits.push(`token verify failed ${tokenFailed}` + (ageTxt ? ` ${ageTxt}` : ""));
+    }
+    if (auditDropped > 0) {
+      const ageTxt = fmtLastEventAge(creds?.audit_log_dropped_last_ts);
+      doorBits.push(`audit log dropped ${auditDropped}` + (ageTxt ? ` ${ageTxt}` : ""));
+    }
+    if (doorBits.length) {
+      hintParts.push(doorBits.join(" · ") + ` · <a class="pool-pop-link" href="/logs?source=credential_audit">credential audit</a>`);
     }
     
     if (hintParts.length > 0) {
