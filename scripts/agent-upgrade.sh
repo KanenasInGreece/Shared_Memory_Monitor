@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Upgrade monitor checkout to latest (or --ref TAG/BRANCH), reinstall deps, restart unit.
+# Upgrade the checkout to latest, or to --ref TAG/BRANCH.
+# Reinstall dependencies and restart the unit.
 # Idempotent. Never prints secrets.
 set -euo pipefail
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
@@ -10,7 +11,11 @@ REF=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --ref)
-      REF="${2:-}"
+      if [[ $# -lt 2 || -z "${2:-}" ]]; then
+        echo "Usage: $0 [--ref <tag-or-branch>]" >&2
+        exit 2
+      fi
+      REF="$2"
       shift 2
       ;;
     -h|--help)
@@ -53,21 +58,28 @@ git fetch origin --tags
 if [[ -n "$REF" ]]; then
   echo "==> Checkout $REF"
   git checkout "$REF"
-  # If ref is a branch that tracks origin, pull; tags are fixed
+  # A branch ref fast-forwards. A tag is fixed, so it is not pulled.
+  # A failed pull must not reach uv sync or the unit restart.
   if git show-ref --verify --quiet "refs/heads/$REF" 2>/dev/null; then
-    git pull --ff-only origin "$REF" || true
+    if ! git pull --ff-only origin "$REF"; then
+      echo "Could not fast-forward $REF from origin. The unit was not restarted." >&2
+      exit 2
+    fi
   else
-    echo "==> Pinned to $REF (detached HEAD). ./scripts/agent-upgrade.sh with no --ref returns to the default branch."
+    echo "==> Pinned to $REF (detached HEAD)."
+    echo "    ./scripts/agent-upgrade.sh with no --ref returns to the default branch."
   fi
 else
   branch="$(git rev-parse --abbrev-ref HEAD)"
   if [[ "$branch" == "HEAD" ]]; then
-    # A prior --ref TAG left this detached (fact:2758); return to main, but never orphan
-    # commits made while detached.
-    default="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || echo origin/main)"
+    # fact:2758, the v0.9.32 release that left --ref on a detached HEAD.
+    # Return to the default branch, and never orphan commits made while detached.
+    default="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null \
+      || echo origin/main)"
     default="${default#origin/}"
     if ! git merge-base --is-ancestor HEAD "origin/$default"; then
-      echo "Detached HEAD $(git rev-parse --short HEAD) has commits not on origin/$default — keep them on a branch first." >&2
+      echo "Detached HEAD $(git rev-parse --short HEAD) has commits not on origin/$default." >&2
+      echo "Keep them on a branch first." >&2
       exit 2
     fi
     echo "==> Detached HEAD — checking out $default before fast-forward"
@@ -76,7 +88,8 @@ else
   fi
   echo "==> Fast-forward $branch"
   if ! git pull --ff-only origin "$branch"; then
-    echo "Local $branch has diverged from origin/$branch; nothing was changed. Resolve it by hand." >&2
+    echo "Local $branch has diverged from origin/$branch." >&2
+    echo "Nothing was changed. Resolve it by hand." >&2
     exit 2
   fi
 fi
@@ -88,7 +101,7 @@ if systemctl --user cat shared-memory-monitor.service >/dev/null 2>&1; then
   echo "==> Restart user unit"
   # Re-install unit if checkout path template needs refresh
   if [[ -x ./scripts/install-systemd-user.sh ]]; then
-    # enable + restart without killing unrelated work more than needed
+    # Rewrites the unit so its checkout path matches this tree, then restarts.
     ./scripts/install-systemd-user.sh
   else
     systemctl --user restart shared-memory-monitor.service

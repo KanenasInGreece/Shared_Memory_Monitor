@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Poll the gateway and, with --serve, also serve the loopback dashboard.
 set -euo pipefail
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

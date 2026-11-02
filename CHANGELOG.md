@@ -6,6 +6,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.39] - 2026-11-02
+
+### Fixed
+- A branch upgrade that cannot fast-forward stops before `uv sync` and
+  before the unit restarts. `--ref` with no value exits 2 and prints usage.
+- Once `.env` exists, `install.sh` exits with the doctor's code. A rejected
+  token is not a successful install. A new `.env` still stops before the
+  doctor, mode 0600.
+- The systemd unit copies the checkout path as text. A path that contains
+  `|`, `&`, or `\` cannot rewrite the unit.
+
 ## [0.9.38] - 2026-11-02
 
 ### Changed

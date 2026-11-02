@@ -115,6 +115,41 @@ class AgentUpgradeDetachedHeadTests(unittest.TestCase):
             self.assertIn("not on origin/main", proc.stderr)
             self.assertEqual(_git(["rev-parse", "HEAD"], cwd=clone).stdout, before)
 
+    def test_ref_without_a_value_exits_before_checkout(self):
+        with tempfile.TemporaryDirectory() as td:
+            clone, fakebin = self._make_origin_and_clone(Path(td))
+            before = _git(["rev-parse", "HEAD"], cwd=clone).stdout
+            proc = self._run(clone, fakebin, td, "--ref")
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertIn("Usage:", proc.stderr)
+            self.assertEqual(_git(["rev-parse", "HEAD"], cwd=clone).stdout, before)
+
+    def test_ref_branch_does_not_restart_when_fast_forward_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            clone, fakebin = self._make_origin_and_clone(Path(td))
+            _git(["checkout", "-q", "main"], cwd=clone)
+            # Ahead of the tag and beside origin/main, so --ff-only cannot move.
+            _git(["reset", "-q", "--hard", "v1.0.0"], cwd=clone)
+            _git(["commit", "-q", "--allow-empty", "-m", "local only"], cwd=clone)
+            before = _git(["rev-parse", "HEAD"], cwd=clone).stdout
+            log = Path(td) / "systemctl.log"
+            _write_exec(fakebin / "systemctl",
+                        "#!/usr/bin/env bash\necho \"$@\" >> \"$LOG\"\nexit 1\n")
+            env_log = dict(os.environ)
+            # The helper sets PATH; pass the log path through the environment
+            # the stub reads. _run rebuilds env, so call the script here.
+            env_log["PATH"] = f"{fakebin}:{env_log.get('PATH', '')}"
+            env_log.update(HOME=str(td), GIT_CONFIG_GLOBAL="/dev/null",
+                           GIT_CONFIG_NOSYSTEM="1", LOG=str(log))
+            proc = subprocess.run(
+                ["bash", "scripts/agent-upgrade.sh", "--ref", "main"],
+                cwd=clone, env=env_log, capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertIn("not restarted", proc.stderr)
+            self.assertEqual(_git(["rev-parse", "HEAD"], cwd=clone).stdout, before)
+            self.assertFalse(log.exists())
+
     def test_diverged_branch_exits_with_a_reason(self):
         with tempfile.TemporaryDirectory() as td:
             clone, fakebin = self._make_origin_and_clone(Path(td))

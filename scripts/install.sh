@@ -21,7 +21,8 @@ if [[ ! -f .env ]]; then
   echo "    Required: set AGENT_TOKEN (read-only monitor token) and COORDINATOR_URL"
   echo "    Optional:  SHARED_MEMORY_ROOT / BACKUP_DIR for logs + sidebar backup date"
   echo ""
-  echo "    Next: the operator pastes the monitor token into .env (OPERATE.md Install step 3), then ./scripts/check-env.sh"
+  echo "    Next: the operator pastes the monitor token into .env"
+  echo "    (OPERATE.md Install step 3), then ./scripts/check-env.sh"
   exit 0
 else
   echo "==> .env already exists (unchanged)"
@@ -41,7 +42,8 @@ if [[ $code -eq 0 ]]; then
   echo "  Status:      ./scripts/agent-status.sh"
   echo "  Dashboard:   http://127.0.0.1:8765/  (/diagram, /logs)"
 elif [[ $code -eq 2 ]]; then
-  echo "Not ready — token missing or rejected, or gateway down (OPERATE.md Install step 3). Then:"
+  echo "Not ready — token missing or rejected, or gateway down."
+  echo "  OPERATE.md Install step 3. Then:"
   echo "  ./scripts/check-env.sh"
   echo "  ./scripts/agent-status.sh"
 else
@@ -49,4 +51,6 @@ else
   echo "  Re-check: ./scripts/check-env.sh"
   echo "  When green enough: ./scripts/run-loop.sh --serve --interval 600"
 fi
-exit 0
+# The doctor exit is the install result once .env exists. Exit 0 here
+# would tell an agent a rejected token was a successful install.
+exit "$code"

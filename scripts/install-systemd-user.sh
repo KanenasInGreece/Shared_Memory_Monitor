@@ -11,7 +11,13 @@ if [[ ! -f "$UNIT_SRC" ]]; then
 fi
 
 mkdir -p "$(dirname "$UNIT_DST")"
-sed "s|@MONITOR_ROOT@|$ROOT|g" "$UNIT_SRC" > "$UNIT_DST"
+# Literal replace. sed would treat | & and \ in the checkout path as syntax.
+python3 - "$ROOT" "$UNIT_SRC" "$UNIT_DST" <<'PY'
+import pathlib, sys
+root, src, dst = sys.argv[1:]
+text = pathlib.Path(src).read_text()
+pathlib.Path(dst).write_text(text.replace("@MONITOR_ROOT@", root))
+PY
 echo "Installed → $UNIT_DST (MONITOR_ROOT=$ROOT)"
 
 systemctl --user daemon-reload

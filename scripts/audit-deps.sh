@@ -2,8 +2,8 @@
 # Dependency audit — checks the versions a FRESH INSTALL could resolve to, not
 # just the ones happening to sit in this checkout's lockfile.
 #
-# The distinction is the whole point: pyproject declares floors ("httpx>=0.27"),
-# and a downstream installer is entitled to any version at or above them. A
+# The distinction is the whole point: pyproject declares floors, and a
+# downstream installer is entitled to any version at or above them. A
 # lockfile that is clean today says nothing about the floor a new user gets.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
