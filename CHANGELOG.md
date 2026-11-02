@@ -6,6 +6,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.40] - 2026-11-02
+
+### Fixed
+- `agent-status` no longer calls a checkout that is only ahead of origin
+  an update. A remote tip missing from this clone, or a diverged HEAD, is
+  described as that. It does not claim origin has commits absent from HEAD.
+- `updates.branch_relation` is `same`, `ahead`, `behind`, `diverged`, or
+  `not-fetched`.
+
 ## [0.9.39] - 2026-11-02
 
 ### Fixed

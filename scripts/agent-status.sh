@@ -54,7 +54,8 @@ fi
 
 pkg_version=""
 if [[ -f pyproject.toml ]]; then
-  pkg_version="$(grep -E '^version\s*=' pyproject.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+  pkg_version="$(grep -E '^version\s*=' pyproject.toml | head -1 \
+    | sed -E 's/.*"([^"]+)".*/\1/')"
 fi
 
 env_exists=0
@@ -82,7 +83,8 @@ fi
 unit_state="absent"
 if have systemctl; then
   if systemctl --user cat shared-memory-monitor.service >/dev/null 2>&1; then
-    unit_state="$(systemctl --user is-active shared-memory-monitor.service 2>/dev/null || echo inactive)"
+    unit_state="$(systemctl --user is-active shared-memory-monitor.service \
+      2>/dev/null || echo inactive)"
   fi
 fi
 
@@ -112,13 +114,27 @@ else
   echo '{}' >"$doctor_tmp"
 fi
 
-# ── GitHub / origin update check (git ls-remote — no local ref rewrite) ─────
+# git ls-remote reads origin and does not move any local ref.
+updates_unchecked() {
+  python3 - "$1" "$2" <<'PY'
+import json, sys
+print(json.dumps({
+    "checked": False,
+    "updates_available": None,
+    "error": sys.argv[1],
+    "summary": sys.argv[2],
+}))
+PY
+}
+
 if [[ "$OFFLINE" -eq 0 ]] && have git && git rev-parse --git-dir >/dev/null 2>&1 \
    && git remote get-url "$git_remote" >/dev/null 2>&1; then
   set +e
   # Bound network wait; never fail the whole status if GitHub is unreachable
-  ls_out="$(GIT_TERMINAL_PROMPT=0 git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=8 \
-    ls-remote "$git_remote" "refs/heads/${git_default_branch}" "refs/tags/*" 2>/dev/null)"
+  ls_out="$(GIT_TERMINAL_PROMPT=0 \
+    git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=8 \
+    ls-remote "$git_remote" "refs/heads/${git_default_branch}" \
+    "refs/tags/*" 2>/dev/null)"
   ls_rc=$?
   set -e
   if [[ $ls_rc -eq 0 && -n "$ls_out" ]]; then
@@ -156,9 +172,35 @@ for line in ls.splitlines():
 tags.sort(key=lambda t: t[0])
 latest_tag = tags[-1] if tags else None
 
+def _git_ok(args):
+    import subprocess
+    proc = subprocess.run(
+        ["git", *args], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    return proc.returncode == 0
+
+# Inequality is not "behind": a checkout that is only ahead still differs.
+# ahead: the remote tip is already in HEAD. behind: HEAD is in the remote tip.
+# diverged: both objects exist and neither contains the other.
+# not-fetched: this clone does not have the remote tip yet.
 behind_branch = None
+branch_relation = None
 if branch_sha and local:
-    behind_branch = branch_sha != local
+    if branch_sha == local:
+        behind_branch = False
+        branch_relation = "same"
+    elif not _git_ok(["cat-file", "-e", f"{branch_sha}^{{commit}}"]):
+        behind_branch = True
+        branch_relation = "not-fetched"
+    elif _git_ok(["merge-base", "--is-ancestor", branch_sha, local]):
+        behind_branch = False
+        branch_relation = "ahead"
+    elif _git_ok(["merge-base", "--is-ancestor", local, branch_sha]):
+        behind_branch = True
+        branch_relation = "behind"
+    else:
+        behind_branch = True
+        branch_relation = "diverged"
 
 def parse_pkg(s):
     m = re.match(r"v?(\d+)\.(\d+)\.(\d+)", s or "")
@@ -185,6 +227,7 @@ out = {
     "remote_branch_sha": branch_sha[:12] if branch_sha else None,
     "local_head": local_short or (local[:12] if local else None),
     "behind_branch": behind_branch,
+    "branch_relation": branch_relation,
     "latest_release_tag": latest_tag_name,
     "latest_release_sha": latest_tag_sha[:12] if latest_tag_sha else None,
     "local_package_version": local_pkg or None,
@@ -194,14 +237,22 @@ out = {
 }
 if updates_available:
     bits = []
-    if behind_branch:
-        bits.append(f"{remote}/{branch} has commits not in HEAD")
+    if branch_relation == "behind":
+        bits.append(f"{remote}/{branch} is ahead of HEAD")
+    elif branch_relation == "diverged":
+        bits.append(f"HEAD has diverged from {remote}/{branch}")
+    elif branch_relation == "not-fetched":
+        bits.append(f"{remote}/{branch} tip is not in this clone")
     if behind_release:
-        bits.append(f"newer release {latest_tag_name} (local package {local_pkg or 'unknown'})")
+        bits.append(
+            f"newer release {latest_tag_name} "
+            f"(local package {local_pkg or 'unknown'})"
+        )
     out["summary"] = "; ".join(bits)
-    out["upgrade_cmd"] = "./scripts/agent-upgrade.sh" + (
-        f" --ref {latest_tag_name}" if behind_release and latest_tag_name and not behind_branch else ""
-    )
+    ref = ""
+    if behind_release and latest_tag_name and not behind_branch:
+        ref = f" --ref {latest_tag_name}"
+    out["upgrade_cmd"] = "./scripts/agent-upgrade.sh" + ref
 else:
     out["summary"] = "up to date with origin" if branch_sha else "no remote branch tip"
     out["upgrade_cmd"] = None
@@ -209,13 +260,14 @@ else:
 print(json.dumps(out))
 PY
   else
-    python3 -c 'import json; print(json.dumps({"checked": False, "updates_available": None, "error": "git ls-remote failed or timed out", "summary": "could not reach GitHub/origin"}))' >"$updates_tmp"
+    updates_unchecked "git ls-remote failed or timed out" \
+      "could not reach GitHub/origin" >"$updates_tmp"
   fi
 else
   if [[ "$OFFLINE" -eq 1 ]]; then
-    python3 -c 'import json; print(json.dumps({"checked": False, "updates_available": None, "error": "offline", "summary": "update check skipped (--offline)"}))' >"$updates_tmp"
+    updates_unchecked "offline" "update check skipped (--offline)" >"$updates_tmp"
   else
-    python3 -c 'import json; print(json.dumps({"checked": False, "updates_available": None, "error": "no git remote", "summary": "update check skipped"}))' >"$updates_tmp"
+    updates_unchecked "no git remote" "update check skipped" >"$updates_tmp"
   fi
 fi
 
@@ -288,7 +340,11 @@ ready = (
     and out["doctor_exit"] == 0
     and out["dashboard_http_ok"]
 )
-partial = out["env_file_present"] and out["gateway_http_ok"] and out["doctor_exit"] in (0, 1)
+partial = (
+    out["env_file_present"]
+    and out["gateway_http_ok"]
+    and out["doctor_exit"] in (0, 1)
+)
 updates_avail = bool((updates or {}).get("updates_available"))
 
 # Health overall ignores updates; separate flag for agents. Exit code bumps to 1
@@ -303,20 +359,38 @@ else:
     out["overall"] = "not_ready"
 
 if not out["env_file_present"]:
-    out["next"] = "Run ./scripts/install.sh and set AGENT_TOKEN + COORDINATOR_URL in .env"
+    out["next"] = (
+        "Run ./scripts/install.sh and set AGENT_TOKEN + "
+        "COORDINATOR_URL in .env"
+    )
 elif not out["gateway_http_ok"]:
-    out["next"] = f"Start Shared Memory gateway or fix COORDINATOR_URL ({out['coordinator_url']})"
+    out["next"] = (
+        "Start Shared Memory gateway or fix COORDINATOR_URL "
+        f"({out['coordinator_url']})"
+    )
 elif ((conn.get("read_role") or {}).get("token_rejected")):
-    out["next"] = ("Token rejected (HTTP 401) — hand to the OPERATOR, do not run: "
-                   "OPERATE.md Install step 3 (remint the monitor token in their own terminal "
-                   "on the gateway host, paste it into this .env, restart gateway then this unit)")
+    out["next"] = (
+        "Token rejected (HTTP 401) — hand to the OPERATOR, do not run: "
+        "OPERATE.md Install step 3 (remint the monitor token in their "
+        "own terminal on the gateway host, paste it into this .env, "
+        "restart gateway then this unit)"
+    )
 elif out["doctor_exit"] == 2:
-    out["next"] = ("Token missing, or doctor could not run — see ./scripts/check-env.sh; a token is "
-                   "issued by the OPERATOR (OPERATE.md Install step 3), never asked for")
+    out["next"] = (
+        "Token missing, or doctor could not run — see "
+        "./scripts/check-env.sh; a token is issued by the OPERATOR "
+        "(OPERATE.md Install step 3), never asked for"
+    )
 elif not out["dashboard_http_ok"] and out["unit"] not in ("active", "activating"):
-    out["next"] = "Start monitor: ./scripts/install-systemd-user.sh or ./scripts/run-loop.sh --serve --interval 600"
+    out["next"] = (
+        "Start monitor: ./scripts/install-systemd-user.sh "
+        "or ./scripts/run-loop.sh --serve --interval 600"
+    )
 elif not out["dashboard_http_ok"]:
-    out["next"] = "Unit is up but :8765 does not answer — journalctl --user -u shared-memory-monitor.service -n 50"
+    out["next"] = (
+        "Unit is up but :8765 does not answer — "
+        "journalctl --user -u shared-memory-monitor.service -n 50"
+    )
 elif out.get("api_compat") == "incompatible":
     out["next"] = "API version skew — upgrade monitor or gateway so api_version matches"
 elif updates_avail:
@@ -324,7 +398,8 @@ elif updates_avail:
     summary = (updates or {}).get("summary") or "updates available on GitHub"
     out["next"] = f"Update available ({summary}) — run: {cmd}"
 elif out["overall"] not in ("ready", "ready_updates"):
-    # Never say OK unless ready (fact:2758: it once did while partial).
+    # fact:2758 finding (b): after v0.9.32, next said OK while
+    # overall was partial. Name the failing feature instead.
     failing = sorted(fid for fid, f in features.items() if not f.get("ok"))
     names = ", ".join(failing) if failing else "doctor failed without naming a feature"
     out["next"] = f"Not ready: {names}. See ./scripts/check-env.sh"
@@ -358,7 +433,8 @@ if u.get("checked"):
     if u.get("latest_release_tag"):
         print(f"  latest tag:  {u.get('latest_release_tag')}")
     if u.get("behind_branch"):
-        print(f"  origin:      {u.get('remote')}/{u.get('branch')} tip {u.get('remote_branch_sha')} ≠ HEAD")
+        remote = f"{u.get('remote')}/{u.get('branch')}"
+        print(f"  origin:      {remote} tip {u.get('remote_branch_sha')} ≠ HEAD")
 elif u.get("error"):
     print(f"  github:      check skipped ({u.get('error')})")
 print(f"  .env:        {'present' if d.get('env_file_present') else 'MISSING'}")
@@ -378,7 +454,12 @@ print(f"  next:        {d.get('next')}")
 PY
 fi
 
-overall="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("overall"))' "$status_tmp")"
+overall="$(python3 - "$status_tmp" <<'PY'
+import json, sys
+with open(sys.argv[1]) as handle:
+    print(json.load(handle).get("overall"))
+PY
+)"
 case "$overall" in
   ready) exit 0 ;;
   ready_updates|partial) exit 1 ;;
