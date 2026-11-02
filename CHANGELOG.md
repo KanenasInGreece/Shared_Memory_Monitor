@@ -6,6 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.42] - 2026-11-02
+
+### Changed
+- `agent-status` comments keep all four branch relations and drop the
+  review-round label. fact:2758 is glossed as the v0.9.32 status mislabel:
+  next said OK while overall was partial. Behavior is unchanged.
+
 ## [0.9.41] - 2026-11-02
 
 ### Fixed

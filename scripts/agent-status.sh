@@ -179,10 +179,9 @@ def _git_ok(args):
     )
     return proc.returncode == 0
 
-# Inequality is not "behind": a checkout that is only ahead still differs.
-# ahead: the remote tip is already in HEAD. behind: HEAD is in the remote tip.
-# diverged: both objects exist and neither contains the other.
-# not-fetched: this clone does not have the remote tip yet.
+# Inequality is not "behind". Ahead: the remote tip is already in HEAD.
+# Behind: HEAD is in the remote tip. Diverged: neither contains the other.
+# Not-fetched: this clone does not have the remote tip yet.
 behind_branch = None
 branch_relation = None
 if branch_sha and local:
@@ -398,7 +397,7 @@ elif updates_avail:
     summary = (updates or {}).get("summary") or "updates available on GitHub"
     out["next"] = f"Update available ({summary}) — run: {cmd}"
 elif out["overall"] not in ("ready", "ready_updates"):
-    # fact:2758 finding (b): after v0.9.32, next said OK while
+    # fact:2758, the v0.9.32 status mislabel: next said OK while
     # overall was partial. Name the failing feature instead.
     failing = sorted(fid for fid, f in features.items() if not f.get("ok"))
     names = ", ".join(failing) if failing else "doctor failed without naming a feature"
