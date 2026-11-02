@@ -1209,6 +1209,21 @@ def _identity_part(raw: dict, telemetry_payload: dict | None) -> dict | None:
     return result
 
 
+def _public_graph_integrity(block: dict | None) -> dict | None:
+    """Copy the telemetry block and redact its error before /api/health."""
+    if not isinstance(block, dict):
+        return None
+    out = dict(block)
+    if "error" in out:
+        out["error"] = sanitize_error(str(out.get("error") or "")) or None
+    return out
+
+
+def _health_published_graph_count(value) -> bool:
+    """True when /health sent a numeric invalid-node count, including zero."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def _overall_state(
     components: list[dict],
     *,
@@ -1308,13 +1323,18 @@ def system_health_snapshot() -> dict:
     if graph_invalid_nodes is None and isinstance(raw.get("consolidation"), dict):
         graph_invalid_nodes = raw.get("consolidation", {}).get("graph_invalid_nodes")
     graph_integrity = (telemetry_payload or {}).get("telemetry", {}).get("graph_integrity")
-    
+    # A number from /health, including zero, is the verdict. Telemetry may
+    # warn only when health omitted that count.
+    integrity_for_status = (
+        None if _health_published_graph_count(graph_invalid_nodes) else graph_integrity
+    )
+
     status = _overall_state(
         components,
         reachable=True,
         consolidation=consolidation,
         graph_invalid_nodes=graph_invalid_nodes,
-        graph_integrity=graph_integrity,
+        graph_integrity=integrity_for_status,
         identity=identity,
     )
 
@@ -1337,7 +1357,7 @@ def system_health_snapshot() -> dict:
         "consolidation": consolidation,
         "error": sanitize_error(raw.get("error")) or None,
         "graph_invalid_nodes": graph_invalid_nodes,
-        "graph_integrity": (telemetry_payload or {}).get("telemetry", {}).get("graph_integrity"),
+        "graph_integrity": _public_graph_integrity(graph_integrity),
         "credentials": credentials,
         "identity": identity,
     }

@@ -3,16 +3,17 @@
 import os
 from pathlib import Path
 
-from .env_loader import bootstrap_env, get
+from .env_loader import bootstrap_env, get, layout_paths
 
 bootstrap_env()
 
-ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = ROOT / "data"
+_layout = layout_paths()
+ROOT = _layout.monitor_root
+DATA_DIR = _layout.data_dir
 DATA_FILE = DATA_DIR / "telemetry.jsonl"
 DB_FILE = DATA_DIR / "telemetry.db"
-GRAPHS_DIR = ROOT / "graphs"
-STATIC_DIR = ROOT / "static"
+GRAPHS_DIR = _layout.graphs_dir
+STATIC_DIR = _layout.static_dir
 
 POLL_INTERVAL_S = 600
 REM_POLL_S = 120
@@ -40,8 +41,9 @@ except ValueError:
 
 NEO4J_BROWSER_URL = get("NEO4J_BROWSER_URL", "http://127.0.0.1:7474") or "http://127.0.0.1:7474"
 
-# Known stale outbox failures (prerelease test rows) — excluded from health alerts.
-# Comma-separated neo4j_outbox.id values; default: id 4 (phase2_test).
+# neo4j_outbox ids recorded on /api/meta. The list is not evidence those rows
+# are inside the aggregate failure count, so it is not subtracted from it.
+# Comma-separated ids; default: id 4 (phase2_test).
 _ignored = os.environ.get("SM_IGNORED_OUTBOX_IDS", "4")
 IGNORED_OUTBOX_IDS = tuple(
     int(x.strip()) for x in _ignored.split(",") if x.strip().isdigit()

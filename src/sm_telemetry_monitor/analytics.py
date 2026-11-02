@@ -184,10 +184,13 @@ def story_summary(rows: list[dict]) -> dict:
     cons_outcome = latest.get("consolidation_last_outcome")
 
     if failed:
-        headline = f"{failed} outbox failure(s) — pipeline may be stuck"
-        detail = "Check gateway logs and neo4j_outbox before trusting backlog metrics."
+        headline = f"{failed} outbox failure(s)"
+        detail = (
+            "The count is the gateway aggregate. "
+            "It does not by itself mean the pipeline is stuck."
+        )
         if ignored:
-            detail += f" ({ignored} known stale failure(s) excluded from this alert.)"
+            detail += f" ({ignored} identified stale failure(s) are not in this count.)"
     elif cons_fresh is False:
         headline = "Consolidation signal stale"
         detail = "Cached /health consolidation snapshot is outdated — do not trust stalled."

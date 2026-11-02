@@ -61,25 +61,6 @@ fi
 env_exists=0
 [[ -f .env ]] && env_exists=1
 
-coord_url="http://localhost:8888"
-if [[ -f .env ]]; then
-  line="$(grep -E '^COORDINATOR_URL=' .env | head -1 || true)"
-  if [[ -n "$line" ]]; then
-    coord_url="${line#COORDINATOR_URL=}"
-    coord_url="${coord_url%\"}"
-    coord_url="${coord_url#\"}"
-    coord_url="${coord_url%\'}"
-    coord_url="${coord_url#\'}"
-  fi
-fi
-
-gateway_http=0
-if have curl; then
-  if curl -sf --max-time 3 "${coord_url%/}/health" >/dev/null 2>&1; then
-    gateway_http=1
-  fi
-fi
-
 unit_state="absent"
 if have systemctl; then
   if systemctl --user cat shared-memory-monitor.service >/dev/null 2>&1; then
@@ -277,8 +258,6 @@ payload="$(
   GIT_HEAD="$git_head" \
   GIT_DIRTY="$git_dirty" \
   ENV_EXISTS="$env_exists" \
-  COORD_URL="$coord_url" \
-  GW_OK="$gateway_http" \
   UNIT_STATE="$unit_state" \
   DASH_OK="$dashboard_http" \
   DOC_EXIT="$doctor_exit" \
@@ -298,6 +277,7 @@ doc = jload(os.environ["DOC_JSON_PATH"])
 updates = jload(os.environ["UPDATES_JSON_PATH"])
 conn = doc.get("connectivity") or {}
 coord = conn.get("coordinator") or {}
+gc = doc.get("gateway_client") or {}
 features = {f.get("id"): f for f in (doc.get("features") or []) if isinstance(f, dict)}
 
 out = {
@@ -310,8 +290,9 @@ out = {
     },
     "updates": updates,
     "env_file_present": os.environ.get("ENV_EXISTS") == "1",
-    "coordinator_url": os.environ.get("COORD_URL"),
-    "gateway_http_ok": os.environ.get("GW_OK") == "1",
+    # Reachability is the doctor probe. This script does not call /health.
+    "coordinator_url": gc.get("coordinator_url"),
+    "gateway_http_ok": bool(coord.get("ok")),
     "gateway_version": coord.get("version"),
     "api_version": coord.get("api_version"),
     "client_api_version": coord.get("client_api_version"),

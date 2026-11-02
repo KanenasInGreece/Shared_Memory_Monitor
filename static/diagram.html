@@ -338,7 +338,7 @@ function setMetrics(id, parts) {
   const el = document.getElementById(id);
   if (!el) return;
   el.innerHTML = parts.filter(Boolean).map(p =>
-    `<span class="arch-metric${p.hot ? " hot" : ""}${p.bad ? " bad" : ""}">${p.k}: <b>${p.v}</b></span>`
+    `<span class="arch-metric${p.hot ? " hot" : ""}${p.bad ? " bad" : ""}">${esc(p.k)}: <b>${esc(p.v)}</b></span>`
   ).join("") || "<span>—</span>";
 }
 
@@ -467,8 +467,9 @@ function deriveVisualState(c, { backlog, activeWhenBacklog } = {}) {
   if (proc === "bad" || load === "bad") return { state: "bad", label: "Down" };
   const lv = (c.workload?.value || "").toLowerCase();
   if (lv.includes("busy")) return { state: "active", label: "Active" };
+  // A queue size is a label. It may show the node as active. It does not warn.
   if (backlog > 0 || (activeWhenBacklog && load === "warn")) {
-    return { state: backlog >= 10 ? "warn" : "active", label: backlog >= 10 ? "Backlog" : "Active" };
+    return { state: "active", label: "Active" };
   }
   if (proc === "warn" || load === "warn") return { state: "warn", label: "Degraded" };
   if (lv === "idle" || lv === "standby" || lv === "queue idle" || lv === "outbox synced") {
@@ -550,7 +551,7 @@ function renderGatewayNodes(health, latest) {
   }, "ok");
   const dream = remQ + nremQ;
   setLayerBadge("layer-gateway-badge",
-    clusterWorst === "bad" ? "bad" : dream > 0 ? (dream >= 10 ? "warn" : "active") : "ok",
+    clusterWorst === "bad" ? "bad" : clusterWorst === "warn" ? "warn" : dream > 0 ? "active" : "ok",
     dream > 0 ? `${dream} dream backlog` : (clusterWorst === "bad" ? "Down" : "Operational"));
 
   const infWorst = ["embedder", "reranker", "llm"].reduce((w, key) => {
@@ -558,7 +559,7 @@ function renderGatewayNodes(health, latest) {
     const rank = { bad: 3, warn: 2, ok: 1, unknown: 0 };
     return rank[s] > rank[w] ? s : w;
   }, "ok");
-  const llmBusy = (by.llm?.workload?.value || "").toLowerCase().includes("busy") || dream > 0;
+  const llmBusy = (by.llm?.workload?.value || "").toLowerCase().includes("busy");
   const pool = health?.llm_pool;
   const placeBits = [];
   if (pool && (pool.local || pool.external)) {
@@ -582,8 +583,12 @@ function renderGatewayNodes(health, latest) {
 
   const pending = latest?.outbox_pending || 0;
   const failed = latest?.outbox_failed || 0;
-  const pgState = failed > 0 ? "bad" : pending > 0 ? "active" : "ok";
-  setNodeState(document.getElementById("node-postgres"), pgState, failed > 0 ? "Failed" : pending > 0 ? "Syncing" : "OK");
+  // Counts are labels. Node color follows /health reachability and the
+  // component, so a queue cannot paint a database down or up.
+  const pgVis = !reachable
+    ? { state: "unknown", label: "—" }
+    : deriveVisualState(by.postgres, {});
+  setNodeState(document.getElementById("node-postgres"), pgVis.state, pgVis.label);
   setMetrics("node-postgres-metrics", [
     { k: "Docs", v: latest?.technical_docs ?? "—" },
     { k: "Summaries", v: latest?.summaries_total ?? "—" },
@@ -593,8 +598,10 @@ function renderGatewayNodes(health, latest) {
 
   const remP = latest?.facts_rem_pending || 0;
   const decP = latest?.decisions_rem_pending || 0;
-  const njState = remP + decP > 0 ? "active" : (latest?.facts_unconsolidated || 0) > 0 ? "waiting" : "ok";
-  setNodeState(document.getElementById("node-neo4j"), njState, remP + decP > 0 ? "REM queue" : "OK");
+  const njVis = !reachable
+    ? { state: "unknown", label: "—" }
+    : deriveVisualState(by.neo4j, {});
+  setNodeState(document.getElementById("node-neo4j"), njVis.state, njVis.label);
   setMetrics("node-neo4j-metrics", [
     { k: "Facts", v: latest?.facts_total ?? "—" },
     { k: "REM pending", v: remP + decP, hot: remP + decP > 0 },
@@ -602,8 +609,14 @@ function renderGatewayNodes(health, latest) {
     { k: "Decisions", v: latest?.decisions_total ?? "—" },
   ]);
 
-  const memState = failed > 0 ? "bad" : (pending > 0 || remP + decP > 0 || nremQ > 0) ? "active" : "ok";
-  setLayerBadge("layer-memory-badge", memState, failed > 0 ? "Outbox errors" : (pending ? "Writes pending" : "Synced"));
+  const memRank = { bad: 4, warn: 3, active: 2, waiting: 1, ok: 0, unknown: 0 };
+  const worse = memRank[pgVis.state] >= memRank[njVis.state] ? pgVis : njVis;
+  const memState = !reachable ? "unknown" : worse.state;
+  setLayerBadge(
+    "layer-memory-badge",
+    memState,
+    !reachable ? "Unreachable" : (memState === "ok" ? "Synced" : worse.label),
+  );
 
   const canvas = document.getElementById("arch-canvas");
   if (canvas) {
@@ -1099,7 +1112,8 @@ function syncHealthPolling() {
     clearInterval(healthTimer);
     healthTimer = null;
   }
-  if (isLiveMode()) {
+  // Empty history is not replay. Keep polling until the first sample arrives.
+  if (isLiveMode() || sampleCount() === 0) {
     healthTimer = setInterval(() => {
       loadDiagram({ refreshHistory: true });
     }, HEALTH_MS);
@@ -1107,6 +1121,8 @@ function syncHealthPolling() {
 }
 
 async function loadHistory() {
+  const indexBefore = tlIndex;
+  const follow = isLiveMode() || sampleCount() === 0;
   try {
     // One request, so the series can never be keyed to a different set of
     // stamps than the slider is drawing: `range` resolves against now, and a
@@ -1117,8 +1133,13 @@ async function loadHistory() {
     agentSeries = historyData.agent_series || null;
     renderAgentRoster(agentSeries?.roster, agentSeries ? "ok" : "unavailable");
     const n = historyData.samples || 0;
-    tlIndex = Math.min(tlIndex, Math.max(0, n - 1));
+    // A scrub during the fetch changed the index. Keep that choice. Jumping
+    // back to the end would show live after the scrub had stopped polling.
+    const userMoved = tlIndex !== indexBefore;
+    if (follow && !userMoved) tlIndex = Math.max(0, n - 1);
+    else tlIndex = Math.min(tlIndex, Math.max(0, n - 1));
     applyView();
+    syncHealthPolling();
   } catch (e) {
     renderAgentRoster([], "error");
     const desc = document.getElementById("tl-caption-desc");
@@ -1156,12 +1177,13 @@ function renderPayload(data) {
 }
 
 async function loadDiagram({ refreshHistory = false } = {}) {
+  const follow = isLiveMode() || sampleCount() === 0;
   try {
     const r = await fetch("/api/diagram");
     if (!r.ok) throw new Error("HTTP " + r.status);
     renderPayload(await r.json());
     document.getElementById("bar-status").hidden = true;
-    if (refreshHistory && isLiveMode()) await loadHistory();
+    if (refreshHistory && follow) await loadHistory();
   } catch (e) {
     window.SmBarMeta?.set({ mode: "error", error: String(e.message || e) });
   }

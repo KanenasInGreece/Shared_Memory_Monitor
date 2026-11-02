@@ -7,18 +7,60 @@ optional — only needed for framework log paths (MEMORY_LOG_PATH, etc.).
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-MONITOR_ROOT = Path(__file__).resolve().parents[2]
 
-# Vars loaded from framework / skill .env files (never load whole files wholesale)
+@dataclass(frozen=True)
+class Layout:
+    """Checkout keeps data beside the repo. A wheel must not write site-packages."""
+
+    monitor_root: Path
+    static_dir: Path
+    data_dir: Path
+    graphs_dir: Path
+
+
+def layout_for(
+    package_file: Path, *, home: Path, xdg_data_home: str | None,
+) -> Layout:
+    """Source layout is src/<package>. An installed wheel has static beside it.
+
+    parents[2] is the repo only in the source tree. In a wheel it is the
+    library directory, so runtime files go under XDG data instead.
+    """
+    pkg = package_file.resolve().parent
+    container = pkg.parent
+    if container.name == "src":
+        root = container.parent
+        if (root / "pyproject.toml").is_file() and (root / "static").is_dir():
+            return Layout(root, root / "static", root / "data", root / "graphs")
+    static = container / "static"
+    marker = static / "dashboard.html"
+    if not marker.is_file() and (pkg / "static" / "dashboard.html").is_file():
+        static = pkg / "static"
+    base = Path(xdg_data_home).expanduser() if xdg_data_home else home / ".local" / "share"
+    data = base / "sm-telemetry-monitor"
+    return Layout(data, static, data, data / "graphs")
+
+
+def layout_paths() -> Layout:
+    return layout_for(
+        Path(__file__),
+        home=Path.home(),
+        xdg_data_home=os.environ.get("XDG_DATA_HOME"),
+    )
+
+
+MONITOR_ROOT = layout_paths().monitor_root
+
+# Log and gateway client keys only. Postgres and Neo4j credentials stay on
+# the gateway; loading them here would put database secrets in this process.
 _FRAMEWORK_KEYS = frozenset({
-    "PG_PASSWORD", "PG_CONN", "NEO4J_PASSWORD",
     "MEMORY_LOG_PATH", "AUDIT_LOG_PATH", "GATEWAY_AUDIT_LOG_PATH",
     "CREDENTIAL_AUDIT_LOG_PATH", "MEMORY_LOG_LEVEL",
     "COORDINATOR_URL", "AGENT_TOKEN",
-    "PG_HOST", "PG_PORT", "PG_DB", "PG_USER",
     "NEO4J_BROWSER_URL", "BACKUP_DIR",
 })
 
@@ -42,10 +84,6 @@ _DEFAULTS = {
     "MEMORY_LOG_PATH": "~/.shared-memory/logs",
     "NEO4J_BROWSER_URL": "http://127.0.0.1:7474",
     "BACKUP_DIR": "~/.shared-memory/backups",
-    "PG_HOST": "localhost",
-    "PG_PORT": "5432",
-    "PG_DB": "agent_data",
-    "PG_USER": "postgres",
 }
 
 _AGENT_TOKEN_SOURCE: str | None = None
@@ -195,6 +233,10 @@ def bootstrap_env() -> None:
                     os.environ[key] = val
                     if key == "AGENT_TOKEN":
                         _AGENT_TOKEN_SOURCE = "monitor"
+            elif key == "CREDENTIAL_AUDIT_LOG_PATH":
+                # An explicit empty value disables the audit file. Dropping it
+                # would let a framework path win, which the example forbids.
+                os.environ[key] = val
             elif key in _FRAMEWORK_KEYS and key not in _MONITOR_OVERRIDE_KEYS:
                 if val and os.environ.get(key) is None:
                     os.environ[key] = val

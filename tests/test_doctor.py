@@ -355,6 +355,22 @@ class TestMainCheckExit(unittest.TestCase):
                 patch.object(_doctor_mod, "format_report", return_value=""):
             self.assertEqual(_doctor_mod.main_check(), 2)
 
+    def test_read_role_not_ok_is_partial_even_when_features_pass(self):
+        report = self._report(rejected=False, samples=10)
+        report["connectivity"]["read_role"]["ok"] = False
+        report["features"] = [{"ok": True}]
+        with patch.object(_doctor_mod, "run_doctor", return_value=report), \
+                patch.object(_doctor_mod, "format_report", return_value=""):
+            self.assertEqual(_doctor_mod.main_check(), 1)
+
+    def test_read_role_ok_and_features_ok_is_ready(self):
+        report = self._report(rejected=False, samples=10)
+        report["connectivity"]["read_role"]["ok"] = True
+        report["features"] = [{"ok": True}]
+        with patch.object(_doctor_mod, "run_doctor", return_value=report), \
+                patch.object(_doctor_mod, "format_report", return_value=""):
+            self.assertEqual(_doctor_mod.main_check(), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1665,6 +1665,41 @@ class GraphIntegrityHealthTests(unittest.TestCase):
         self.assertEqual(snap["graph_invalid_nodes"], 0)
         self.assertEqual(snap["status"], "ok")
 
+    @patch("sm_telemetry_monitor.system_health.get_telemetry")
+    @patch("sm_telemetry_monitor.system_health.live_summary", return_value={"latest": {}})
+    @patch("sm_telemetry_monitor.system_health.get_health")
+    def test_health_zero_is_not_raised_by_telemetry_error(
+        self, mock_health, _summary, mock_telemetry
+    ):
+        mock_health.return_value = {**_healthy_gateway(), "graph_invalid_nodes": 0}
+        mock_telemetry.return_value = self._telemetry_payload({
+            "invalid_nodes": 9,
+            "clean": False,
+            "error": "postgres failed postgresql://user:secret@db/agent_data",
+        })
+        snap = system_health_snapshot()
+        self.assertEqual(snap["status"], "ok")
+        self.assertEqual(snap["graph_invalid_nodes"], 0)
+        self.assertIn("[redacted]", snap["graph_integrity"]["error"])
+        self.assertNotIn("secret", snap["graph_integrity"]["error"])
+
+    @patch("sm_telemetry_monitor.system_health.get_telemetry")
+    @patch("sm_telemetry_monitor.system_health.live_summary", return_value={"latest": {}})
+    @patch("sm_telemetry_monitor.system_health.get_health")
+    def test_omitted_health_count_still_warns_from_telemetry(
+        self, mock_health, _summary, mock_telemetry
+    ):
+        mock_health.return_value = _healthy_gateway()
+        mock_telemetry.return_value = self._telemetry_payload({
+            "invalid_nodes": 2,
+            "clean": False,
+            "error": "bolt://neo4j:secret@localhost:7687",
+        })
+        snap = system_health_snapshot()
+        self.assertEqual(snap["status"], "warn")
+        self.assertIn("[redacted]", snap["graph_integrity"]["error"])
+        self.assertNotIn("secret", snap["graph_integrity"]["error"])
+
 
 class IdentityHealthTests(unittest.TestCase):
     def _telemetry_payload(self, axes=None):
@@ -1944,6 +1979,13 @@ class HealthAsVerdictTests(unittest.TestCase):
         src = Path("static/diagram.html").read_text()
         self.assertNotIn('gwVis.label = "Outbox failed"', src)
         self.assertNotIn("outbox_failed || 0) > 0", src)
+        self.assertNotIn('failed > 0 ? "bad"', src)
+        self.assertIn("deriveVisualState(by.postgres", src)
+        self.assertIn("deriveVisualState(by.neo4j", src)
+        self.assertIn("esc(p.v)", src)
+        self.assertIn("isLiveMode() || sampleCount() === 0", src)
+        self.assertNotIn('backlog >= 10 ? "warn"', src)
+        self.assertNotIn('dream >= 10 ? "warn"', src)
 
     def test_diagram_scrub_does_not_invent_health_from_counts(self):
         src = Path("static/diagram.html").read_text()

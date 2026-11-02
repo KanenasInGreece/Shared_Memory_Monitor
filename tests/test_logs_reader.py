@@ -901,5 +901,72 @@ class AuditCoverageTests(unittest.TestCase):
             out["intervals"]["2026-06-12T10:10:00+00:00"]["agents"],
             {"grok": {"read": 0, "write": 1}})
 
+class TailBoundTests(unittest.TestCase):
+    def test_json_scalar_does_not_abort_the_timestamp(self):
+        from sm_telemetry_monitor.logs_reader import line_timestamp
+        self.assertIsNone(line_timestamp("null", kind="jsonl"))
+        self.assertIsNone(line_timestamp("[]", kind="jsonl"))
+        self.assertIsNone(line_timestamp("1", kind="jsonl"))
+
+    def test_offset_at_eof_returns_no_lines(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "agent-audit.jsonl"
+            path.write_text('{"ts":"2026-01-01T00:00:00+00:00"}\n', encoding="utf-8")
+            with mock.patch("sm_telemetry_monitor.logs_reader.agent_audit_path", return_value=path), \
+                    mock.patch("sm_telemetry_monitor.logs_reader._log_root", return_value=Path(td).resolve()):
+                first = tail_source("agent_audit", lines=10)
+                again = tail_source("agent_audit", lines=10, offset=first["offset"])
+                self.assertEqual(again["lines"], [])
+                self.assertEqual(again["offset"], first["size"])
+
+    def test_positive_offset_returns_at_most_the_requested_lines(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "agent-audit.jsonl"
+            path.write_text("one\n", encoding="utf-8")
+            with mock.patch("sm_telemetry_monitor.logs_reader.agent_audit_path", return_value=path), \
+                    mock.patch("sm_telemetry_monitor.logs_reader._log_root", return_value=Path(td).resolve()):
+                first = tail_source("agent_audit", lines=1, offset=0)
+                with path.open("a", encoding="utf-8") as handle:
+                    handle.write("two\nthree\n")
+                nxt = tail_source("agent_audit", lines=1, offset=first["offset"])
+            self.assertEqual(nxt["lines"], ["two"])
+            self.assertLess(nxt["offset"], path.stat().st_size)
+
+    def test_window_finds_a_match_older_than_the_last_2000_lines(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "agent-audit.jsonl"
+            early = json.dumps({"ts": "2020-01-01T00:00:00+00:00", "n": 0})
+            late = json.dumps({"ts": "2024-06-01T00:00:00+00:00", "n": 1})
+            path.write_text(early + "\n" + (late + "\n") * 2001, encoding="utf-8")
+            with mock.patch("sm_telemetry_monitor.logs_reader.agent_audit_path", return_value=path), \
+                    mock.patch("sm_telemetry_monitor.logs_reader._log_root", return_value=Path(td).resolve()):
+                result = tail_source(
+                    "agent_audit", lines=5,
+                    since="2020-01-01T00:00:00+00:00",
+                    until="2020-01-02T00:00:00+00:00",
+                )
+            self.assertEqual(len(result["lines"]), 1)
+            self.assertIn("2020-01-01", result["lines"][0])
+
+    def test_window_on_a_missing_file_returns_an_error_payload(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "agent-audit.jsonl"
+            with mock.patch("sm_telemetry_monitor.logs_reader.agent_audit_path", return_value=path), \
+                    mock.patch("sm_telemetry_monitor.logs_reader._log_root", return_value=Path(td).resolve()):
+                result = tail_source(
+                    "agent_audit", lines=5, since="2020-01-01T00:00:00+00:00",
+                )
+        self.assertEqual(result["lines"], [])
+        self.assertIn("not found", result["error"].lower())
+
+    def test_unparsed_journal_bound_is_not_an_argument(self):
+        with mock.patch("sm_telemetry_monitor.logs_reader.subprocess.run") as run:
+            run.return_value = mock.Mock(returncode=0, stdout="", stderr="tok_secretvalue password=hunter2")
+            tail_source("gateway", lines=1, since="not-a-date; touch /tmp/x")
+            cmd = run.call_args.args[0]
+        self.assertNotIn("--since", cmd)
+        self.assertNotIn("not-a-date", " ".join(cmd))
+
+
 if __name__ == "__main__":
     unittest.main()

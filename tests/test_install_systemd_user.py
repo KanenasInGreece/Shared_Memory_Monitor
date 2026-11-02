@@ -54,3 +54,5 @@ class InstallSystemdUserTests(unittest.TestCase):
             written = (xdg / "systemd" / "user" / "shared-memory-monitor.service").read_text()
             self.assertIn(str(root), written)
             self.assertNotIn("@MONITOR_ROOT@", written)
+            self.assertIn(f'WorkingDirectory="{root}"', written)
+            self.assertIn(f'ExecStart="{root}/.venv/bin/python"', written)

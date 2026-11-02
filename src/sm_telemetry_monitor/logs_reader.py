@@ -13,11 +13,13 @@ import os
 import re
 import subprocess
 import threading
+from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from .env_loader import bootstrap_env, get
+from .sanitize import sanitize_error
 
 bootstrap_env()
 
@@ -27,7 +29,11 @@ def journal_unit() -> str:
 
 
 def journalctl_cmd(*, lines: int | None = None, since: str | None = None, until: str | None = None) -> list[str]:
-    """Build journalctl argv for the gateway user unit."""
+    """Build journalctl argv for the gateway user unit.
+
+    since and until must already be a parsed datetime's isoformat. A raw
+    query string is not an allow-listed argument.
+    """
     cmd = ["journalctl", "--user", "-u", journal_unit(), "--no-pager", "-o", "short-iso"]
     if lines is not None:
         cmd.extend(["-n", str(lines)])
@@ -36,6 +42,10 @@ def journalctl_cmd(*, lines: int | None = None, since: str | None = None, until:
     if until:
         cmd.extend(["--until", until])
     return cmd
+
+# One record and one window scan stay bounded so a tail cannot read a file whole.
+_MAX_LINE_BYTES = 65536
+_MAX_WINDOW_SCAN_BYTES = 32 * 1024 * 1024
 
 _JOURNAL_TS_RE = re.compile(
     r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)",
@@ -305,9 +315,11 @@ def line_timestamp(line: str, *, kind: str) -> datetime | None:
     """Parse a timestamp from a raw line — used only for from/to filtering."""
     if kind == "jsonl":
         try:
-            return _parse_ts(json.loads(line).get("ts"))
+            payload = json.loads(line)
         except json.JSONDecodeError:
-            pass
+            payload = None
+        if isinstance(payload, dict):
+            return _parse_ts(payload.get("ts"))
     if kind == "journal":
         m = _JOURNAL_TS_RE.match(line)
         if m:
@@ -358,42 +370,118 @@ def _filter_entries(
     return out
 
 
+def _decode_capped(raw: bytes) -> str:
+    return raw[:_MAX_LINE_BYTES].decode("utf-8", errors="replace").rstrip("\r\n")
+
+
+def _read_capped_line(handle) -> bytes | None:
+    """Read one line, then discard the rest past the byte cap."""
+    raw = handle.readline(_MAX_LINE_BYTES + 1)
+    if not raw:
+        return None
+    if len(raw) > _MAX_LINE_BYTES and not raw.endswith(b"\n"):
+        while True:
+            more = handle.readline(_MAX_LINE_BYTES)
+            if not more or more.endswith(b"\n") or len(more) < _MAX_LINE_BYTES:
+                break
+    return raw
+
+
 def _tail_lines_text(path: Path, lines: int, offset: int = 0) -> dict:
     if not path.exists():
         return {"lines": [], "offset": 0, "size": 0, "error": f"File not found: {_basename(path)}"}
     size = path.stat().st_size
-    offset = min(offset, size)
-    collected: list[str] = []
-    if offset > 0 and offset < size:
-        with path.open("r", errors="replace") as f:
-            f.seek(offset)
-            collected = f.read().splitlines()
-    else:
-        with path.open("rb") as f:
-            f.seek(0, 2)
-            end = f.tell()
-            block = 8192
-            buf = b""
-            pos = end
-            while pos > 0 and len(buf.splitlines()) <= lines:
-                read_size = min(block, pos)
-                pos -= read_size
-                f.seek(pos)
-                buf = f.read(read_size) + buf
-            collected = buf.decode("utf-8", errors="replace").splitlines()[-lines:]
+    if offset > size:
+        offset = 0
+    if offset == size and size > 0:
+        return {"lines": [], "offset": size, "size": size}
+    if offset > 0:
+        collected: list[str] = []
+        new_offset = offset
+        with path.open("rb") as handle:
+            handle.seek(offset)
+            while len(collected) < lines:
+                raw = _read_capped_line(handle)
+                if raw is None:
+                    break
+                new_offset = handle.tell()
+                text = _decode_capped(raw)
+                if text:
+                    collected.append(text)
+        return {"lines": collected, "offset": new_offset, "size": size}
+    with path.open("rb") as handle:
+        handle.seek(0, 2)
+        end = handle.tell()
+        block = 8192
+        buf = b""
+        pos = end
+        while pos > 0 and len(buf.splitlines()) <= lines:
+            read_size = min(block, pos)
+            pos -= read_size
+            handle.seek(pos)
+            buf = handle.read(read_size) + buf
+        collected = [
+            ln[:_MAX_LINE_BYTES]
+            for ln in buf.decode("utf-8", errors="replace").splitlines()[-lines:]
+        ]
     return {"lines": collected, "offset": size, "size": size}
 
 
 def _tail_gz_jsonl(path: Path, lines: int) -> dict:
     if not path.exists():
         return {"lines": [], "offset": 0, "size": 0, "error": f"Archive not found: {_basename(path)}"}
-    out: list[str] = []
-    with gzip.open(path, "rt", encoding="utf-8", errors="replace") as f:
-        for line in f:
+    kept: deque[str] = deque(maxlen=max(lines, 0))
+    with gzip.open(path, "rt", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
             line = line.strip()
             if line:
-                out.append(line)
-    return {"lines": out[-lines:], "offset": path.stat().st_size, "size": path.stat().st_size}
+                kept.append(line[:_MAX_LINE_BYTES])
+    return {"lines": list(kept), "offset": path.stat().st_size, "size": path.stat().st_size}
+
+
+def _scan_text_window(
+    path: Path, *, lines: int, since: datetime | None, until: datetime | None, kind: str,
+) -> list[str]:
+    """Newest matching lines, scanning back only until `since` or the byte cap."""
+    size = path.stat().st_size
+    start = max(0, size - _MAX_WINDOW_SCAN_BYTES)
+    with path.open("rb") as handle:
+        handle.seek(start)
+        if start:
+            handle.readline()
+        text = handle.read().decode("utf-8", errors="replace")
+    chosen: list[str] = []
+    for line in reversed(text.splitlines()):
+        if not line:
+            continue
+        ts = line_timestamp(line[:_MAX_LINE_BYTES], kind=kind)
+        if since and ts is not None and ts < since:
+            break
+        if _in_window(ts, since, until):
+            chosen.append(line[:_MAX_LINE_BYTES])
+            if len(chosen) >= lines:
+                break
+    chosen.reverse()
+    return chosen
+
+
+def _scan_gz_window(
+    path: Path, *, lines: int, since: datetime | None, until: datetime | None, kind: str,
+) -> list[str]:
+    """Gzip is sequential. Keep only the newest matching lines, not the archive."""
+    kept: deque[str] = deque(maxlen=max(lines, 0))
+    with gzip.open(path, "rt", encoding="utf-8", errors="replace") as handle:
+        for raw in handle:
+            line = raw.strip()
+            if not line:
+                continue
+            line = line[:_MAX_LINE_BYTES]
+            ts = line_timestamp(line, kind=kind)
+            if until and ts is not None and ts > until:
+                break
+            if _in_window(ts, since, until):
+                kept.append(line)
+    return list(kept)
 
 
 def tail_source(
@@ -413,16 +501,20 @@ def tail_source(
     since_dt = _parse_ts(since) if since else None
     until_dt = _parse_ts(until) if until else None
     windowed = bool(since_dt or until_dt)
-    fetch_lines = max(lines, 2000) if windowed else lines
+    since_arg = since_dt.astimezone(UTC).isoformat() if since_dt else None
+    until_arg = until_dt.astimezone(UTC).isoformat() if until_dt else None
 
     if src.kind == "journal":
-        cmd = journalctl_cmd(lines=fetch_lines, since=since, until=until)
+        cmd = journalctl_cmd(lines=lines, since=since_arg, until=until_arg)
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
             raw = [ln for ln in proc.stdout.splitlines() if ln.strip()]
             if proc.returncode != 0 and not raw:
-                return {"error": proc.stderr.strip() or "journalctl failed", "lines": []}
-            entries = _filter_entries(_entries_from_lines(raw, kind="journal"), since=since_dt, until=until_dt)
+                err = sanitize_error(proc.stderr.strip()) or "journalctl failed"
+                return {"error": err, "lines": []}
+            entries = _filter_entries(
+                _entries_from_lines(raw, kind="journal"), since=since_dt, until=until_dt,
+            )
             if windowed:
                 entries = entries[-lines:]
             lines_out = [e["raw"] for e in entries]
@@ -431,8 +523,8 @@ def tail_source(
                 "kind": "journal",
                 "lines": lines_out,
                 "offset": len(lines_out),
-                "since": since,
-                "until": until,
+                "since": since_arg,
+                "until": until_arg,
                 "fetched_at": datetime.now(UTC).isoformat(),
             }
         except FileNotFoundError:
@@ -449,19 +541,36 @@ def tail_source(
         return {"source": source_id, "error": str(exc), "lines": []}
 
     use_gz = path.suffix == ".gz" or path.name.endswith(".gz")
-    if use_gz:
-        result = _tail_gz_jsonl(path, fetch_lines)
-        kind = "jsonl"
-        incremental = False
+    kind = "jsonl" if use_gz else src.kind
+    incremental = False
+    if not path.exists():
+        label = "Archive" if use_gz else "File"
+        result = {
+            "lines": [], "offset": 0, "size": 0,
+            "error": f"{label} not found: {_basename(path)}",
+        }
+    elif windowed and use_gz:
+        result = {
+            "lines": _scan_gz_window(
+                path, lines=lines, since=since_dt, until=until_dt, kind=kind,
+            ),
+        }
+    elif windowed:
+        result = {
+            "lines": _scan_text_window(
+                path, lines=lines, since=since_dt, until=until_dt, kind=kind,
+            ),
+        }
+    elif use_gz:
+        result = _tail_gz_jsonl(path, lines)
     else:
-        result = _tail_lines_text(path, fetch_lines, offset if not windowed else 0)
-        kind = src.kind
+        result = _tail_lines_text(path, lines, offset)
         incremental = True
 
     raw_lines = result.get("lines") or []
-    entries = _filter_entries(_entries_from_lines(raw_lines, kind=kind), since=since_dt, until=until_dt)
-    if windowed:
-        entries = entries[-lines:]
+    entries = _entries_from_lines(raw_lines, kind=kind)
+    if not windowed:
+        entries = _filter_entries(entries, since=since_dt, until=until_dt)
 
     live = _live_path(source_id)
     archive_id = "live" if live and path.resolve() == live.resolve() else _basename(path)

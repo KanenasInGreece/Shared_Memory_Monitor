@@ -6,6 +6,42 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-02
+
+### Security
+- Quoted HTML attributes escape quotes. Gateway fields that the diagram
+  and dashboard insert are escaped, including values that are usually
+  numbers.
+- The monitor no longer loads Postgres or Neo4j passwords, connection
+  strings, or host defaults from a framework env file.
+- A graph-integrity error is redacted before it is served. The release
+  secret scan prints matching filenames only.
+- The doctor does not exit ready when the read-only probe failed. Log
+  tails cap each line and each request. Journal time bounds are a parsed
+  timestamp, and journal errors are redacted.
+- An installed wheel reads its static files from the package and writes
+  runtime data under the XDG data directory. A checkout still uses
+  `data/` beside the repository.
+
+### Fixed
+- An explicit `/health` consolidation stall is not replaced by telemetry.
+  A numeric graph-invalid count from `/health`, including zero, stays the
+  verdict. Diagram database nodes follow reachability and that component,
+  and queue counts stay labels.
+- The configured outbox id list is not subtracted from the aggregate
+  failure count. The story states the count.
+- Following the live diagram stays on the newest sample, including while
+  history is empty. A scrub during the history request is kept, and polling
+  matches that choice. An idle log
+  file does not repeat its last page, and a JSON value that is not an
+  object does not fail the tail. A time filter on a missing file returns
+  an error payload. Queue size does not paint a diagram warning. The
+  memory-layer badge names the database that is actually worse. Pipeline
+  and history cells are escaped.
+- An empty `CREDENTIAL_AUDIT_LOG_PATH` disables that file. Installed unit
+  paths are quoted, and `%` in a path is escaped. `agent-status` takes
+  gateway reachability from the doctor result.
+
 ## [0.9.45] - 2026-11-02
 
 ### Changed

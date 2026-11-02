@@ -609,6 +609,9 @@ function appendLog(lines) {
   const el = document.getElementById("log");
   const html = lines.map(renderRawLine).join("");
   if (html) el.insertAdjacentHTML("beforeend", html);
+  const nodes = el.querySelectorAll(".log-line");
+  const extra = nodes.length - MAX_LOG_LINES;
+  for (let i = 0; i < extra; i++) nodes[i].remove();
   updateChips();
 }
 
@@ -885,7 +888,12 @@ function bindSourceTabs(sources) {
 }
 
 function escAttr(s) {
-  return String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 async function loadSources(){
@@ -981,7 +989,12 @@ async function refresh(clear=false){
 }
 
 function escapeHtml(s){
-  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function applyFilter() {

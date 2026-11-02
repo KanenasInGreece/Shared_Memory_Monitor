@@ -32,7 +32,7 @@ FEATURE_MATRIX = (
     ("api_breakdown_postgres", "telemetry", "Schema drawer — Postgres panels (telemetry.breakdown)"),
     ("logs_files", "log_paths", "REM audit JSONL tab"),
     ("logs_journal", "journal", "Gateway daemons tab (journalctl --user -u)"),
-    ("outbox_ignore_filter", "coordinator", "Baseline outbox ignore when SM_IGNORED_OUTBOX_IDS set"),
+    ("outbox_ignore_filter", "coordinator", "SM_IGNORED_OUTBOX_IDS is recorded; it does not subtract from the aggregate"),
 )
 
 
@@ -533,11 +533,15 @@ def main_check(*, as_json: bool = False) -> int:
     )
     # A missing or rejected token is never "partial": history keeps the dashboard rendering
     # while every poll fails, which is exactly the state an agent must not read as healthy.
-    if (report["connectivity"]["read_role"].get("token_rejected")
-            or report["keys"].get("AGENT_TOKEN") != "set"):
+    read_role = report["connectivity"].get("read_role") or {}
+    if read_role.get("token_rejected") or report["keys"].get("AGENT_TOKEN") != "set":
         return 2
     if critical and report["local_data"]["samples"] == 0:
         return 2
+    # A token that can read but was not shown to be refused on save is not ready.
+    # An inconclusive probe (the write door was not proven shut) is partial.
+    if not read_role.get("ok"):
+        return 1
     if any(not f["ok"] for f in report["features"]):
         return 1
     return 0

@@ -1,4 +1,4 @@
-"""Outbox failure filtering — ignore known stale prerelease rows."""
+"""Outbox failure counts. The configured id list is not per-row evidence."""
 
 from __future__ import annotations
 
@@ -6,9 +6,8 @@ from .config import IGNORED_OUTBOX_IDS
 
 
 def _baseline_actionable(raw: int) -> dict:
-    ignored = min(raw, len(IGNORED_OUTBOX_IDS))
-    actionable = max(0, raw - ignored)
-    return {"raw": raw, "actionable": actionable, "ignored": ignored}
+    """Keep the gateway aggregate when no poll names the ignored ids."""
+    return {"raw": raw, "actionable": raw, "ignored": 0}
 
 
 def fetch_outbox_failure_counts() -> dict | None:

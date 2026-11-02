@@ -31,16 +31,17 @@ done
 say ""
 say "==> Scan tracked files for credential patterns"
 # Placeholders in .env.example/README are fine; real tok_* hex segments are not.
-if git grep -E 'tok_[a-zA-Z0-9]{12,}' -- ':!*.example' ':!README.md' ':!docs/' ':!tests/' ':!sanitize.py' 2>/dev/null; then
-  fail "possible real AGENT_TOKEN in tracked files (see above)"
+# -l prints filenames only. A matching line can be a token, so it stays off the log.
+if git grep -l -E 'tok_[a-zA-Z0-9]{12,}' -- ':!*.example' ':!README.md' ':!docs/' ':!tests/' ':!sanitize.py' 2>/dev/null; then
+  fail "possible real AGENT_TOKEN in tracked files (names above, not the lines)"
 else
   ok "no long tok_* literals outside docs/tests"
 fi
 
-if git grep -E 'postgresql://[^[]' -- \
+if git grep -l -E 'postgresql://[^[]' -- \
     ':!tests/' ':!SECURITY.md' ':!src/sm_telemetry_monitor/sanitize.py' \
     ':!scripts/pre-publish-check.sh' 2>/dev/null; then
-  fail "postgresql:// connection string in tracked files"
+  fail "postgresql:// connection string in tracked files (names above, not the lines)"
 else
   ok "no postgresql:// connection strings"
 fi

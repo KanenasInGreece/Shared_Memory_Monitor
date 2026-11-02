@@ -1,13 +1,13 @@
 [project]
 name = "sm-telemetry-monitor"
-version = "0.9.45"
+version = "1.0.0"
 description = "Read-only view over Shared Memory gateway telemetry and framework logs — no separate data interfaces"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 keywords = ["shared-memory", "telemetry", "monitoring", "rem", "nrem", "dashboard"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",

@@ -941,9 +941,14 @@ def consolidation_from_payload(
         _normalize_cycle("fact_consolidation", rollup.get("fact_consolidation")),
     ]
 
-    stalled = bool(health_cons.get("stalled"))
-    if not stalled and rollup:
+    # /health already judged the stall. Telemetry may not override an explicit
+    # false; it is the fallback only when health omitted the key.
+    if "stalled" in health_cons:
+        stalled = bool(health_cons.get("stalled"))
+    elif rollup:
         stalled = bool(rollup.get("stalled"))
+    else:
+        stalled = False
     fresh = health_cons.get("fresh")
     if fresh is None and reachable:
         fresh = True

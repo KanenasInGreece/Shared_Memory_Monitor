@@ -146,6 +146,7 @@ class TestBacklogDoesNotInventHealth(unittest.TestCase):
         story = story_summary([self._raw(outbox_failed=3, nrem_backlog=0)])
         self.assertEqual(story["health"], "ok")
         self.assertIn("outbox failure", story["headline"])
+        self.assertNotIn("may be stuck", story["headline"])
 
     def test_gateway_stall_still_marks_story_critical(self):
         story = story_summary([self._raw(consolidation_stalled=True)])

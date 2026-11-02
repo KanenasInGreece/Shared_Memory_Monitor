@@ -906,6 +906,15 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         self.assertEqual(snap["nrem_density"]["fact_threshold"], 5)
         self.assertEqual(snap["nrem_density"]["decision_threshold"], 2)
 
+    def test_health_stalled_false_is_not_overridden_by_telemetry(self):
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {"consolidation": {"stalled": True}},
+        }
+        snap = consolidation_from_payload(health, telemetry)
+        self.assertFalse(snap["tile"]["stalled"])
+
     def test_stale_signal(self):
         health = {
             "status": "ok",

@@ -15,8 +15,13 @@ mkdir -p "$(dirname "$UNIT_DST")"
 python3 - "$ROOT" "$UNIT_SRC" "$UNIT_DST" <<'PY'
 import pathlib, sys
 root, src, dst = sys.argv[1:]
-text = pathlib.Path(src).read_text()
-pathlib.Path(dst).write_text(text.replace("@MONITOR_ROOT@", root))
+# systemd splits an unquoted path and expands %. Quotes keep one argument.
+# %% is a literal percent. Backslash and quote are escaped inside the quotes.
+escaped = (
+    root.replace("\\", "\\\\").replace("%", "%%").replace('"', '\\"')
+)
+text = pathlib.Path(src).read_text().replace("@MONITOR_ROOT@", escaped)
+pathlib.Path(dst).write_text(text)
 PY
 echo "Installed → $UNIT_DST (MONITOR_ROOT=$ROOT)"
 
