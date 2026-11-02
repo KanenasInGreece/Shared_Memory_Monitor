@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
-# Dependency audit — checks the versions a FRESH INSTALL could resolve to, not
-# just the ones happening to sit in this checkout's lockfile.
-#
-# The distinction is the whole point: pyproject declares floors, and a
-# downstream installer is entitled to any version at or above them. A
-# lockfile that is clean today says nothing about the floor a new user gets.
+# Audit the versions a fresh install can resolve, not only this lockfile.
+# pyproject declares floors, and an installer may take any version at or
+# above them, so a clean lockfile says nothing about that floor.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"

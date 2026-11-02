@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.43] - 2026-11-02
+
+### Changed
+- `audit-deps.sh` states the floor-versus-lockfile reason in two
+  sentences. The certifi and pillow floors stay. Behavior is unchanged.
+
 ## [0.9.42] - 2026-11-02
 
 ### Changed
