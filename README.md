@@ -25,7 +25,7 @@ Three browser pages, one job each:
 2. **Attend** — warnings, stalled consolidation, a warning on an LLM pool chip, a last-event fault on a backend, or a **gateway door** hint (`token verify failed` / audit log dropped — those are skill→gateway auth, not LLM faults). Something asks for a closer look; open a drawer or click a chip. Sidebar dependency chips reflect the gateway's own health verdict.
 3. **Find the detail** — **Logs** (`/logs`). Journal, REM audit, agent audit, credential audit. Filters and a File picker for live and rotated files. Logs are the detail; the dashboard never replaces them.
 
-Telemetery = signal. Logs = detail. The monitor never blurs that line.
+Telemetry = signal. Logs = detail. The monitor never blurs that line.
 
 ---
 
@@ -65,7 +65,7 @@ cd Shared_Memory_Monitor
 
 ### Gateway token (issued by the framework)
 
-The monitor is an add-on, not a stand-alone system. On the **framework host**, mint a dedicated **`monitor`** identity — register it in gateway `AGENT_TOKENS`, assign **`monitor:read`** in `AGENT_ROLES`, restart the gateway, and copy only that token into this repo’s gitignored `.env`. That role is read-only: health, telemetry, and guarded graph reads. Saves and searches return **403**.
+The monitor is an add-on, not a stand-alone system. On the **framework host**, mint a dedicated **`monitor`** identity — register it in gateway `AGENT_TOKENS`, assign **`monitor:read`** in `AGENT_ROLES`, restart the gateway, and copy only that token into this repo’s gitignored `.env`. That role is read-only: health and telemetry. Saves and searches return **403**.
 
 In your own terminal on the framework host, run
 `bash shared-memory/scripts/bootstrap_tokens.sh --add monitor --reveal monitor`
@@ -172,17 +172,22 @@ gateway reports no encoder telemetry the block says so rather than drawing zeros
 
 ### Schema & Integrity — shape of the graph, not the fold
 
-From **Drill-down → Schema & Integrity**. Entity-resolution census (mentioned vs structural, orphans, singletons, alias layer), Neo4j labels and relationships, Postgres inventory from telemetry breakdown. Useful when the pipeline looks healthy but the graph looks wrong — or when you want inventory without opening a DB client.
+From **Drill-down → Schema & Integrity**. The census (mentioned vs structural,
+orphans, singletons, the alias layer), Neo4j labels and relationships, and
+the Postgres inventory all come from telemetry. The invalid-node count is
+the one `/health` already judged, so a clean telemetry breakdown does not
+clear that warning. Project and domain identity use the gateway's
+`complete` flag; false warns. Useful when the pipeline looks healthy but
+the graph looks wrong — or when you want inventory without a DB client.
 
 ![Schema & Integrity drawer](docs/images/schema-breakdown.png)
 
 ### Diagram — who talks to whom
 
-Live topology: agents into the gateway cluster, REM/NREM beside it, memory and inference buses below. Node health from `/health`, counts from telemetry, flow emphasis from agent-audit lines.
-
-**The diagram opens on now and scrubs back 24 hours — one log rotation.** That is deliberate: the diagram answers *what is my system doing*, while `/logs` owns deep history. A window this size never has to read a rotated archive, so the page costs the same whether the monitor has been running for a day or a year. Scrubbing into the past marks the canvas amber; click the amber timestamp to return to now.
-
-**The agent layer shows only clients that actually appear in the audit log for that window.** Nothing is hardcoded: connect a new agent or MCP client and it appears on its own, and a first-time install with one agent shows one chip rather than a rack of tools you do not run.
+Live topology: agents into the gateway cluster, REM/NREM beside it, memory
+and inference buses below. Node health comes from `/health`, counts from
+telemetry, and flow from the agent audit. The 24-hour scrub is explained
+in [Walking the three pages](#walking-the-three-pages).
 
 ![Diagram — agents, gateway, memory, inference](docs/images/diagram.png)
 
@@ -366,7 +371,7 @@ Entry point alias: `sm-telemetry`.
 | `GET /api/health` | `bridge.get_health()` + consolidation enrichment + `patch_raw` |
 | `GET /api/consolidation` | Live consolidation drill-down |
 | `GET /api/latency` | Model wall/service timings and encoder latency |
-| `GET /api/breakdown` | Telemetry + graph query |
+| `GET /api/breakdown` | One telemetry read: compliance, graph shape, inventory |
 | `GET /api/diagram` | Cached telemetry + health |
 | `GET /api/history?agent_series=1` | Poll history plus per-interval agent activity |
 | `GET /api/logs/tail` (and related) | Journal or audit JSONL via `logs_reader` (`sources` and `archives` also available) |
@@ -387,10 +392,14 @@ downsampled, never reset, so the long trend survives while the store stays bound
 
 ```bash
 ./scripts/install-systemd-user.sh    # template: deploy/systemd/user/shared-memory-monitor.service
-./scripts/uninstall-systemd-user.sh  # cleanly remove service and disable linger
+./scripts/uninstall-systemd-user.sh  # removes the unit; leaves linger enabled
 ```
 
-Requires user linger for persistence after logout (Debian 13 users may encounter a linger privilege quirk, requiring the script's `sudo -n` fallback). Keep `AGENT_TOKEN` and `COORDINATOR_URL` in the monitor `.env`. See [deploy/README.md](deploy/README.md).
+Requires user linger for persistence after logout (Debian 13 users may
+encounter a linger privilege quirk, requiring the script's `sudo -n`
+fallback). Uninstall does not disable linger: it is per-user, and the
+gateway unit on the same account needs it. Keep `AGENT_TOKEN` and
+`COORDINATOR_URL` in the monitor `.env`. See [deploy/README.md](deploy/README.md).
 
 Long-running processes do **not** hot-reload after `.env` or code changes — restart the unit (`systemctl --user restart shared-memory-monitor.service`) or re-run the foreground loop.
 
