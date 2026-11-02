@@ -6,6 +6,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security
+- Dependency floors are the current pip-audit-clean releases: httpx 0.28.1,
+  matplotlib 3.11.2, certifi 2026.10.23, pillow 13.0.0. A fresh install can
+  no longer resolve the older floors.
+
 ### Fixed
 - Identity reads only `project_identity` and `domain_identity`. A short key
   named project or domain is not that verdict.

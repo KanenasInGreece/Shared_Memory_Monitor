@@ -18,11 +18,12 @@ classifiers = [
     "Topic :: System :: Monitoring",
 ]
 dependencies = [
-    "httpx>=0.27",
-    "matplotlib>=3.8",
+    "httpx>=0.28.1",
+    "matplotlib>=3.11.2",
     # Transitive via httpx. The floor drops emSign ECC Root CA - G3
-    # (GHSA-6q48-6c7w-9gw2). certifi 2026.10.19 is the compatible fix.
-    "certifi>=2026.10.19",
+    # (GHSA-6q48-6c7w-9gw2). certifi 2026.10.19 is the compatible fix;
+    # 2026.10.23 is the current release and still carries that fix.
+    "certifi>=2026.10.23",
     # Transitive via matplotlib. Pillow before 13.0.0 has the October
     # image-decoder advisories. This package does not decode untrusted images.
     "pillow>=13.0.0",
