@@ -71,7 +71,7 @@ gives the same data without secrets; `--offline` skips the GitHub check.
 
 ```bash
 ./scripts/agent-upgrade.sh                  # fast-forward main, uv sync, restart the unit, status
-./scripts/agent-upgrade.sh --ref v0.9.35    # pin a release
+./scripts/agent-upgrade.sh --ref v0.9.36    # pin a release
 ```
 
 It refuses a dirty tree. After a restart the process has new code; `.env`

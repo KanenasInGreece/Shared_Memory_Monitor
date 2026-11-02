@@ -1666,6 +1666,109 @@ class GraphIntegrityHealthTests(unittest.TestCase):
         self.assertEqual(snap["status"], "ok")
 
 
+class IdentityHealthTests(unittest.TestCase):
+    def _telemetry_payload(self, axes=None):
+        t = {
+            "consolidation": {
+                "insight": {"stalled": False, "consecutive_failures": 0},
+                "fact_consolidation": {"stalled": False, "consecutive_failures": 0},
+            },
+        }
+        if axes is not None:
+            t["axes"] = axes
+        return {"status": "success", "telemetry": t}
+
+    @patch("sm_telemetry_monitor.system_health.get_telemetry")
+    @patch("sm_telemetry_monitor.system_health.live_summary", return_value={"latest": {}})
+    @patch("sm_telemetry_monitor.system_health.get_health")
+    def test_health_project_incomplete_warns_and_health_wins_over_telemetry(
+        self, mock_health, _summary, mock_telemetry
+    ):
+        mock_health.return_value = {
+            **_healthy_gateway(),
+            "consolidation": {
+                "project_identity": {"complete": False, "unregistered": 2},
+                "domain_identity": {"complete": True},
+            },
+        }
+        mock_telemetry.return_value = self._telemetry_payload(axes={
+            "project_identity": {"complete": True},
+        })
+        snap = system_health_snapshot()
+        self.assertIsNotNone(snap.get("identity"))
+        self.assertFalse(snap["identity"]["project"]["complete"])
+        self.assertTrue(snap["identity"]["domain"]["complete"])
+        self.assertEqual(snap["status"], "warn")
+
+    @patch("sm_telemetry_monitor.system_health.get_telemetry")
+    @patch("sm_telemetry_monitor.system_health.live_summary", return_value={"latest": {}})
+    @patch("sm_telemetry_monitor.system_health.get_health")
+    def test_both_health_identities_complete_stays_ok(
+        self, mock_health, _summary, mock_telemetry
+    ):
+        mock_health.return_value = {
+            **_healthy_gateway(),
+            "consolidation": {
+                "project_identity": {"complete": True},
+                "domain_identity": {"complete": True},
+            },
+        }
+        mock_telemetry.return_value = self._telemetry_payload()
+        snap = system_health_snapshot()
+        self.assertIsNotNone(snap.get("identity"))
+        self.assertTrue(snap["identity"]["project"]["complete"])
+        self.assertTrue(snap["identity"]["domain"]["complete"])
+        self.assertEqual(snap["status"], "ok")
+
+    @patch("sm_telemetry_monitor.system_health.get_telemetry")
+    @patch("sm_telemetry_monitor.system_health.live_summary", return_value={"latest": {}})
+    @patch("sm_telemetry_monitor.system_health.get_health")
+    def test_telemetry_axes_fallback_domain_incomplete_warns_with_null_project(
+        self, mock_health, _summary, mock_telemetry
+    ):
+        mock_health.return_value = {
+            **_healthy_gateway(),
+            "consolidation": {},
+        }
+        mock_telemetry.return_value = self._telemetry_payload(axes={
+            "domain_identity": {"complete": False},
+        })
+        snap = system_health_snapshot()
+        self.assertIsNotNone(snap.get("identity"))
+        self.assertFalse(snap["identity"]["domain"]["complete"])
+        self.assertIsNone(snap["identity"]["project"])
+        self.assertEqual(snap["status"], "warn")
+
+    @patch("sm_telemetry_monitor.system_health.get_telemetry")
+    @patch("sm_telemetry_monitor.system_health.live_summary", return_value={"latest": {}})
+    @patch("sm_telemetry_monitor.system_health.get_health")
+    def test_neither_side_has_identity_snapshot_identity_is_null_and_status_ok(
+        self, mock_health, _summary, mock_telemetry
+    ):
+        mock_health.return_value = {
+            **_healthy_gateway(),
+            "consolidation": {},
+        }
+        mock_telemetry.return_value = self._telemetry_payload()
+        snap = system_health_snapshot()
+        self.assertIsNone(snap.get("identity"))
+        self.assertEqual(snap["status"], "ok")
+
+        mock_health.return_value = {
+            **_healthy_gateway(),
+            "consolidation": {
+                "project_identity": {"nodes": 3},
+            },
+        }
+        snap = system_health_snapshot()
+        self.assertIsNotNone(snap.get("identity"))
+        self.assertEqual(snap["identity"]["project"]["nodes"], 3)
+        self.assertNotIn("complete", snap["identity"]["project"])
+        self.assertIsNone(snap["identity"]["domain"])
+        self.assertEqual(snap["status"], "ok")
+
+
+
 class HealthAsVerdictTests(unittest.TestCase):
     """decision:1973 — /health is the verdict; telemetry is the numbers."""
 

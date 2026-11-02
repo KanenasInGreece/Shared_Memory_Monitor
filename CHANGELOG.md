@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.36] - 2026-11-02
+
+### Added
+- The schema drawer and `/api/health` show project and domain identity. The health
+  objects win over `telemetry.axes`, and complete false warns.
+
 ## [0.9.35] - 2026-11-02
 
 ### Fixed

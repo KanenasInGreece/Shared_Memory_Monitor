@@ -1178,6 +1178,41 @@ def _component_fault_level(component: dict) -> str | None:
     return None
 
 
+def _identity_part(raw: dict, telemetry_payload: dict | None) -> dict | None:
+    """Health already judged these two objects, and telemetry.axes is only the fallback
+    when health omitted them."""
+    cons = raw.get("consolidation") if isinstance(raw, dict) else None
+    if not isinstance(cons, dict):
+        cons = {}
+    t = telemetry_payload.get("telemetry") if isinstance(telemetry_payload, dict) else None
+    if not isinstance(t, dict):
+        t = telemetry_payload if isinstance(telemetry_payload, dict) else {}
+    axes = t.get("axes") if isinstance(t, dict) else None
+    if not isinstance(axes, dict):
+        axes = {}
+
+    keys = (("project", "project_identity"), ("domain", "domain_identity"))
+    result: dict[str, dict | None] = {}
+    found = False
+    for out_key, name in keys:
+        val = cons.get(name)
+        if not isinstance(val, dict):
+            val = cons.get(out_key)
+        if not isinstance(val, dict):
+            val = axes.get(name)
+        if not isinstance(val, dict):
+            val = axes.get(out_key)
+        if isinstance(val, dict):
+            result[out_key] = val
+            found = True
+        else:
+            result[out_key] = None
+
+    if not found:
+        return None
+    return result
+
+
 def _overall_state(
     components: list[dict],
     *,
@@ -1185,6 +1220,7 @@ def _overall_state(
     consolidation: dict | None = None,
     graph_invalid_nodes: int | None = None,
     graph_integrity: dict | None = None,
+    identity: dict | None = None,
 ) -> str:
     if not reachable:
         return "critical"
@@ -1208,6 +1244,11 @@ def _overall_state(
             and graph_integrity["invalid_nodes"] > 0
         )) and rank["warn"] > rank[worst]:
             worst = "warn"
+    if isinstance(identity, dict):
+        for obj in (identity.get("project"), identity.get("domain")):
+            if isinstance(obj, dict) and obj.get("complete") is False:
+                if rank["warn"] > rank[worst]:
+                    worst = "warn"
     # "unknown" alone does not elevate — missing optional fields are not faults.
     return worst
 
@@ -1222,6 +1263,7 @@ def system_health_snapshot() -> dict:
     telemetry = _telemetry_latest()
     telemetry_at = telemetry.get("collected_at")
     consolidation = consolidation_from_payload(raw, telemetry_payload, fetched_at=fetched_at)
+    identity = _identity_part(raw, telemetry_payload)
 
     last_backup = _resolve_last_backup(raw, reachable=raw.get("status") != "unreachable")
 
@@ -1241,6 +1283,7 @@ def system_health_snapshot() -> dict:
             "llm_oldest_inflight_age_s": None,
             "llm_suspect_wedged": None,
             "llm_affinity_live": None,
+            "identity": identity,
             "error": sanitize_error(raw.get("error")) or "gateway unreachable",
         }
 
@@ -1276,6 +1319,7 @@ def system_health_snapshot() -> dict:
         consolidation=consolidation,
         graph_invalid_nodes=graph_invalid_nodes,
         graph_integrity=graph_integrity,
+        identity=identity,
     )
 
     out = {
@@ -1299,6 +1343,7 @@ def system_health_snapshot() -> dict:
         "graph_invalid_nodes": graph_invalid_nodes,
         "graph_integrity": (telemetry_payload or {}).get("telemetry", {}).get("graph_integrity"),
         "credentials": credentials,
+        "identity": identity,
     }
     if "warnings" in raw and isinstance(raw.get("warnings"), list):
         out["warnings"] = raw["warnings"]

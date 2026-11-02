@@ -1871,49 +1871,82 @@ function renderGraphIntegrity(H) {
     }
   }
 
+  // The gateway already judged complete, and the numbers on the row are that
+  // object's own fields.
+  const idKpis = [];
+  const id = H?.identity;
+  if (id && typeof id === "object") {
+    const checks = [
+      ["Project identity", id.project],
+      ["Domain identity", id.domain],
+    ];
+    for (const [label, obj] of checks) {
+      if (obj && typeof obj === "object" && typeof obj.complete === "boolean") {
+        if (!obj.complete) {
+          hasError = true;
+        }
+        let val = "complete";
+        if (!obj.complete) {
+          const parts = ["incomplete"];
+          for (const f of ["unidentified", "mismatched", "unregistered", "unattached"]) {
+            const n = obj[f];
+            if (Number.isInteger(n) && n > 0) {
+              parts.push(`${f} ${n}`);
+            }
+          }
+          val = parts.join(" · ");
+        }
+        idKpis.push([label, val, obj.complete ? null : "warn"]);
+      }
+    }
+  }
+
   if (hasError) {
     btn.classList.add("warn");
   } else {
     btn.classList.remove("warn");
   }
 
-  if (inval != null || gi) {
+  if (inval != null || gi || idKpis.length > 0) {
     block.hidden = false;
     const kpis = [];
-    const totalInvalid = typeof inval === "number"
-      ? inval
-      : ((gi && typeof gi.invalid_nodes === "number") ? gi.invalid_nodes : inval);
-    if (totalInvalid != null) {
-      kpis.push([
-        "Invalid nodes",
-        totalInvalid === 0 ? "0 (clean)" : String(totalInvalid),
-        totalInvalid > 0 ? "warn" : null
-      ]);
-    } else {
-      kpis.push(["Invalid nodes", "not probed yet"]);
-    }
-    
-    if (gi) {
-      if (gi.error) {
-        kpis.push(["Integrity check", gi.error, "warn"]);
+    if (inval != null || gi) {
+      const totalInvalid = typeof inval === "number"
+        ? inval
+        : ((gi && typeof gi.invalid_nodes === "number") ? gi.invalid_nodes : inval);
+      if (totalInvalid != null) {
+        kpis.push([
+          "Invalid nodes",
+          totalInvalid === 0 ? "0 (clean)" : String(totalInvalid),
+          totalInvalid > 0 ? "warn" : null
+        ]);
+      } else {
+        kpis.push(["Invalid nodes", "not probed yet"]);
       }
       
-      if (gi.by_reason && typeof gi.by_reason === "object") {
-        const reasons = Object.entries(gi.by_reason);
-        if (reasons.length > 0) {
-          const reasonStr = reasons.map(([r, count]) => `${r} ×${count}`).join(", ");
-          kpis.push(["By reason", reasonStr, "warn"]);
+      if (gi) {
+        if (gi.error) {
+          kpis.push(["Integrity check", gi.error, "warn"]);
         }
-      }
-      
-      if (gi.by_label && typeof gi.by_label === "object") {
-        const labels = Object.entries(gi.by_label);
-        if (labels.length > 0) {
-          const labelStr = labels.map(([lbl, count]) => `${lbl} ×${count}`).join(", ");
-          kpis.push(["By label", labelStr, "warn"]);
+        
+        if (gi.by_reason && typeof gi.by_reason === "object") {
+          const reasons = Object.entries(gi.by_reason);
+          if (reasons.length > 0) {
+            const reasonStr = reasons.map(([r, count]) => `${r} ×${count}`).join(", ");
+            kpis.push(["By reason", reasonStr, "warn"]);
+          }
+        }
+        
+        if (gi.by_label && typeof gi.by_label === "object") {
+          const labels = Object.entries(gi.by_label);
+          if (labels.length > 0) {
+            const labelStr = labels.map(([lbl, count]) => `${lbl} ×${count}`).join(", ");
+            kpis.push(["By label", labelStr, "warn"]);
+          }
         }
       }
     }
+    kpis.push(...idKpis);
     box.innerHTML = consolidationKpiHtml(kpis);
   } else {
     block.hidden = true;
