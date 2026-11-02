@@ -6,6 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.44] - 2026-11-02
+
+### Changed
+- The README no longer lists a graph call beside the three gateway reads.
+  Graph shape rides telemetry. `patch_raw` and `patch_telemetry` remain
+  the wire-normalization step.
+
 ## [0.9.43] - 2026-11-02
 
 ### Changed
