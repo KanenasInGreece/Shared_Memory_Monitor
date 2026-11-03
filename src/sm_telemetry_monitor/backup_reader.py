@@ -59,8 +59,21 @@ def latest_backup_manifest() -> dict | None:
     if not name:
         name = latest.name[: -len(".manifest.json")]
 
+    # The fence result lives only on the manifest. A missing mode is not a
+    # clean backup; callers warn unless quiesced is true and the mode is full.
+    mode = data.get("quiesce_mode")
+    if isinstance(mode, str):
+        mode = mode.strip() or None
+    else:
+        mode = None
+    quiesced = data.get("quiesced")
+    if not isinstance(quiesced, bool):
+        quiesced = None
+
     return {
         "at": created,
         "name": str(name),
         "dir": str(dir_path),
+        "quiesced": quiesced,
+        "quiesce_mode": mode,
     }

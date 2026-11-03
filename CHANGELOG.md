@@ -6,6 +6,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-03
+
+### Changed
+- The client announces API 5. Doctor treats gateway API 4 and API 5 as
+  compatible, so this release can restart before framework 1.0.45 and stay
+  compatible after it. A mismatch only logs on the gateway.
+- A completed backup is clean only when its manifest has `quiesced` true and
+  `quiesce_mode` `full`. Any other mode, including a missing mode, warns on
+  the Backup card and names the mode. The time on `/health` does not hide
+  that mode. A failed set with no manifest is not the last backup.
+- Removed telemetry keys `rem.failing`, `rem.max_attempts`, and backend
+  `weight` stay absent. They are not shown as zero.
+
 ### Fixed
 - Installed unit paths for the working directory and the env file are not
   wrapped in quotes. systemd treated the quote as part of the path and

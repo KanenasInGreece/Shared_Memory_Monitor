@@ -10,7 +10,14 @@ from typing import Any
 
 import httpx
 
-from .bridge import API_VERSION, get_health, get_pool_status, get_telemetry, patch_raw
+from .bridge import (
+    ACCEPTED_SERVER_API_VERSIONS,
+    API_VERSION,
+    get_health,
+    get_pool_status,
+    get_telemetry,
+    patch_raw,
+)
 from .config import DATA_DIR, DB_FILE, ROOT, STATIC_DIR
 from .env_loader import (
     MONITOR_ROOT,
@@ -111,7 +118,7 @@ def _check_coordinator() -> dict[str, Any]:
     srv = raw.get("api_version")
     if srv is None:
         compat = "unknown"
-    elif srv == API_VERSION:
+    elif srv in ACCEPTED_SERVER_API_VERSIONS:
         compat = "ok"
     else:
         compat = "incompatible"

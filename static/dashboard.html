@@ -1422,10 +1422,14 @@ function renderBackup(H) {
     return;
   }
 
+  const fenceBad = b.fence_ok === false;
+  const fenceNote = fenceBad ? (b.fence_label || "missing") : "";
   if (b.last_at) {
-    setLast(`Last ${formatSampleTime(b.last_at)}`);
+    setLast(fenceNote
+      ? `${fenceNote} · ${formatSampleTime(b.last_at)}`
+      : `Last ${formatSampleTime(b.last_at)}`);
   } else {
-    setLast("Last never");
+    setLast(fenceNote || "Last never");
   }
 
   if (H?.reachable === false) {
@@ -1436,8 +1440,20 @@ function renderBackup(H) {
   }
 
   const active = b.in_progress === true;
-  card.className = "backup-card " + (active ? "active" : b.state === "unknown" ? "unknown" : "idle");
-  val.textContent = active ? "Underway" : b.state === "unknown" ? "—" : "Idle";
+  let cardState = "idle";
+  let valueText = "Idle";
+  if (active) {
+    cardState = "active";
+    valueText = "Underway";
+  } else if (b.state === "unknown") {
+    cardState = "unknown";
+    valueText = "—";
+  } else if (b.state === "warn") {
+    cardState = "warn";
+    valueText = "Fence";
+  }
+  card.className = "backup-card " + cardState;
+  val.textContent = valueText;
   const titleBits = [b.caption, b.last_name && `set ${b.last_name}`].filter(Boolean);
   card.title = titleBits.join(" · ");
 }

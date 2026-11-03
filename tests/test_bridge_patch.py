@@ -181,6 +181,26 @@ class PatchTelemetryDualEmitTests(unittest.TestCase):
         self.assertEqual(t["postgres"]["outbox_failed_oldest_age_seconds"], 7200)
         self.assertEqual(t["neo4j"]["rem_failing"], 4)
         self.assertEqual(t["llm_faults"], {"http://x": {"gateway": {"count": 1}}})
+
+    def test_removed_rem_keys_stay_absent(self):
+        t = _post_drop_t()
+        del t["rem"]["failing"]
+        del t["rem"]["max_attempts"]
+        patch_telemetry(t)
+        self.assertNotIn("rem_failing", t["neo4j"])
+        self.assertNotIn("rem_max_attempts", t["neo4j"])
+        payload = {"status": "success", "telemetry": t}
+        row = collector.flatten_snapshot(payload, datetime.now(UTC), {"status": "ok"})
+        self.assertIsNone(row["rem_failing"])
+        snap = consolidation_from_payload(
+            {"status": "ok", "consolidation": {"stalled": False, "fresh": True}},
+            payload,
+        )
+        rr = snap["rem_reliability"]
+        self.assertTrue(rr["present"])
+        self.assertIsNone(rr["failing"])
+        self.assertIsNone(rr["max_attempts"])
+        self.assertEqual(rr["dead_lettered"], 2)
         bd = postgres_breakdown_from_telemetry(t)
         keys = {row["key"] for row in bd["outbox"]}
         self.assertEqual(keys, {"pending", "applied", "failed", "rem_reviewed"})

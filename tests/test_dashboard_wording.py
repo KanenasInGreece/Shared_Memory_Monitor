@@ -30,6 +30,15 @@ class PoolWordingTests(unittest.TestCase):
         self.assertIn("<td>${esc(r[2])}</td>", self.html)
         self.assertNotIn("<td>${p.count}</td>", self.html)
 
+    def test_weight_chip_renders_only_when_present(self):
+        self.assertIn("if (b.weight != null) meta.push(`w=${b.weight}`);", self.html)
+        self.assertNotIn("w=0", self.html)
+
+    def test_backup_card_names_a_bad_fence(self):
+        self.assertIn('cardState = "warn"', self.html)
+        self.assertIn('valueText = "Fence"', self.html)
+        self.assertIn("b.fence_label || \"missing\"", self.html)
+
     def test_fact_decision_meta_rows_use_rem_pending_and_unconsolidated(self):
         self.assertIn('"neo4j Fact", "rem_pending"', self.html)
         self.assertIn('"neo4j Fact", "unconsolidated"', self.html)

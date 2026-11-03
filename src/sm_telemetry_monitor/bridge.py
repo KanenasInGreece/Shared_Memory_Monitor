@@ -20,11 +20,10 @@ bootstrap_env()
 
 _log = logging.getLogger(__name__)
 
-# Wire contract with the live gateway (GET /health api_version). Bump only when
-# the *deployed* gateway contract changes — not an unreleased framework branch.
-# Live gateway as of v0.8.33+ is API v4 (projects registry + sentinel + telemetry
-# enhancements). Mismatch only logs a gateway warning; reads still work.
-API_VERSION = 4
+# Gateway API 4 and 5 are both compatible while framework 1.0.45 rolls out: this
+# client moves first, and a mismatch only logs on the gateway. Reads are not refused.
+API_VERSION = 5
+ACCEPTED_SERVER_API_VERSIONS = (4, 5)
 CLIENT_VERSION_HEADER = "X-SM-Api-Version"
 
 _HTTP: httpx.Client | None = None

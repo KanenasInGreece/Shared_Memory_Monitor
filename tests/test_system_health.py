@@ -51,10 +51,13 @@ class SystemHealthBackupTests(unittest.TestCase):
     @patch("sm_telemetry_monitor.system_health.get_health", return_value=_healthy_gateway())
     def test_backup_idle_by_default(self, _health, _summary, mock_telemetry):
         mock_telemetry.return_value = self._telemetry_payload()
-        snap = system_health_snapshot()
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("sm_telemetry_monitor.backup_reader.backup_dir", return_value=Path(tmp)):
+                snap = system_health_snapshot()
         self.assertFalse(snap["backup"]["in_progress"])
         self.assertEqual(snap["backup"]["state"], "idle")
         self.assertEqual(snap["backup"]["value"], "idle")
+        self.assertIsNone(snap["backup"]["fence_ok"])
 
     @patch("sm_telemetry_monitor.system_health.get_telemetry")
     @patch("sm_telemetry_monitor.system_health.live_summary", return_value={"latest": {}})
@@ -99,6 +102,10 @@ class SystemHealthBackupTests(unittest.TestCase):
         self.assertEqual(snap["backup"]["last_at"], "2026-06-17T03:00:00+00:00")
         self.assertEqual(snap["backup"]["last_name"], "sm-backup-20260617-030000")
         self.assertEqual(snap["backup"]["last_source"], "manifest")
+        self.assertEqual(snap["backup"]["state"], "warn")
+        self.assertEqual(snap["backup"]["fence_label"], "missing")
+        self.assertFalse(snap["backup"]["fence_ok"])
+        self.assertEqual(snap["summary"], "backup fence missing")
 
     @patch("sm_telemetry_monitor.system_health.get_telemetry")
     @patch("sm_telemetry_monitor.system_health.live_summary", return_value={"latest": {}})
@@ -108,9 +115,136 @@ class SystemHealthBackupTests(unittest.TestCase):
     )
     def test_last_backup_prefers_health_field(self, _health, _summary, mock_telemetry):
         mock_telemetry.return_value = self._telemetry_payload()
-        snap = system_health_snapshot()
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = Path(tmp) / "sm-backup-20260617-030000.manifest.json"
+            manifest.write_text(json.dumps({
+                "name": "sm-backup-20260617-030000",
+                "created": "2026-06-17T03:00:00+00:00",
+                "quiesced": False,
+                "quiesce_mode": "lost_during_dump",
+            }))
+            with patch("sm_telemetry_monitor.backup_reader.backup_dir", return_value=Path(tmp)):
+                snap = system_health_snapshot()
         self.assertEqual(snap["backup"]["last_at"], "2026-06-16T12:00:00+00:00")
         self.assertEqual(snap["backup"]["last_source"], "health")
+        self.assertEqual(snap["backup"]["quiesce_mode"], "lost_during_dump")
+        self.assertEqual(snap["backup"]["state"], "warn")
+        self.assertEqual(snap["backup"]["fence_label"], "lost_during_dump")
+
+    @patch("sm_telemetry_monitor.system_health.get_telemetry")
+    @patch("sm_telemetry_monitor.system_health.live_summary", return_value={"latest": {}})
+    @patch("sm_telemetry_monitor.system_health.get_health", return_value=_healthy_gateway())
+    def test_full_fence_stays_idle(self, _health, _summary, mock_telemetry):
+        mock_telemetry.return_value = self._telemetry_payload()
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = Path(tmp) / "sm-backup-20261103-030000.manifest.json"
+            manifest.write_text(json.dumps({
+                "name": "sm-backup-20261103-030000",
+                "created": "2026-11-03T03:00:00+00:00",
+                "quiesced": True,
+                "quiesce_mode": "full",
+            }))
+            with patch("sm_telemetry_monitor.backup_reader.backup_dir", return_value=Path(tmp)):
+                snap = system_health_snapshot()
+        self.assertEqual(snap["backup"]["state"], "idle")
+        self.assertTrue(snap["backup"]["fence_ok"])
+        self.assertEqual(snap["backup"]["fence_label"], "full")
+
+    @patch("sm_telemetry_monitor.system_health.get_telemetry")
+    @patch("sm_telemetry_monitor.system_health.live_summary", return_value={"latest": {}})
+    @patch("sm_telemetry_monitor.system_health.get_health", return_value=_healthy_gateway())
+    def test_full_mode_quiesced_false_warns(self, _health, _summary, mock_telemetry):
+        mock_telemetry.return_value = self._telemetry_payload()
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = Path(tmp) / "sm-backup-20261103-040000.manifest.json"
+            manifest.write_text(json.dumps({
+                "name": "sm-backup-20261103-040000",
+                "created": "2026-11-03T04:00:00+00:00",
+                "quiesced": False,
+                "quiesce_mode": "full",
+            }))
+            with patch("sm_telemetry_monitor.backup_reader.backup_dir", return_value=Path(tmp)):
+                snap = system_health_snapshot()
+        self.assertEqual(snap["backup"]["state"], "warn")
+        self.assertEqual(snap["backup"]["fence_label"], "full, quiesced false")
+        self.assertFalse(snap["backup"]["fence_ok"])
+        self.assertEqual(snap["status"], "ok")
+
+    @patch("sm_telemetry_monitor.system_health.get_telemetry")
+    @patch("sm_telemetry_monitor.system_health.live_summary", return_value={"latest": {}})
+    @patch("sm_telemetry_monitor.system_health.get_health", return_value=_healthy_gateway())
+    def test_full_mode_omitting_quiesced_warns(self, _health, _summary, mock_telemetry):
+        mock_telemetry.return_value = self._telemetry_payload()
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = Path(tmp) / "sm-backup-20261103-040000.manifest.json"
+            manifest.write_text(json.dumps({
+                "name": "sm-backup-20261103-040000",
+                "created": "2026-11-03T04:00:00+00:00",
+                "quiesce_mode": "full",
+            }))
+            with patch("sm_telemetry_monitor.backup_reader.backup_dir", return_value=Path(tmp)):
+                snap = system_health_snapshot()
+        self.assertEqual(snap["backup"]["state"], "warn")
+        self.assertEqual(snap["backup"]["fence_label"], "full, quiesced missing")
+        self.assertFalse(snap["backup"]["fence_ok"])
+        self.assertEqual(snap["status"], "ok")
+
+    @patch("sm_telemetry_monitor.system_health.get_telemetry")
+    @patch("sm_telemetry_monitor.system_health.live_summary", return_value={"latest": {}})
+    @patch("sm_telemetry_monitor.system_health.get_health", return_value=_healthy_gateway())
+    def test_quiesce_mode_fence_unknown_warns(self, _health, _summary, mock_telemetry):
+        mock_telemetry.return_value = self._telemetry_payload()
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = Path(tmp) / "sm-backup-20261103-040000.manifest.json"
+            manifest.write_text(json.dumps({
+                "name": "sm-backup-20261103-040000",
+                "created": "2026-11-03T04:00:00+00:00",
+                "quiesce_mode": "fence_unknown",
+            }))
+            with patch("sm_telemetry_monitor.backup_reader.backup_dir", return_value=Path(tmp)):
+                snap = system_health_snapshot()
+        self.assertEqual(snap["backup"]["state"], "warn")
+        self.assertEqual(snap["backup"]["fence_label"], "fence_unknown")
+        self.assertFalse(snap["backup"]["fence_ok"])
+        self.assertEqual(snap["status"], "ok")
+
+    @patch("sm_telemetry_monitor.system_health.get_telemetry")
+    @patch("sm_telemetry_monitor.system_health.live_summary", return_value={"latest": {}})
+    @patch("sm_telemetry_monitor.system_health.get_health", return_value=_healthy_gateway())
+    def test_quiesce_mode_timeout_warns(self, _health, _summary, mock_telemetry):
+        mock_telemetry.return_value = self._telemetry_payload()
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = Path(tmp) / "sm-backup-20261103-040000.manifest.json"
+            manifest.write_text(json.dumps({
+                "name": "sm-backup-20261103-040000",
+                "created": "2026-11-03T04:00:00+00:00",
+                "quiesce_mode": "timeout",
+            }))
+            with patch("sm_telemetry_monitor.backup_reader.backup_dir", return_value=Path(tmp)):
+                snap = system_health_snapshot()
+        self.assertEqual(snap["backup"]["state"], "warn")
+        self.assertEqual(snap["backup"]["fence_label"], "timeout")
+        self.assertFalse(snap["backup"]["fence_ok"])
+        self.assertEqual(snap["status"], "ok")
+
+    @patch("sm_telemetry_monitor.system_health.get_telemetry")
+    @patch("sm_telemetry_monitor.system_health.live_summary", return_value={"latest": {}})
+    @patch("sm_telemetry_monitor.system_health.get_health", return_value=_healthy_gateway())
+    def test_quiesce_mode_empty_warns(self, _health, _summary, mock_telemetry):
+        mock_telemetry.return_value = self._telemetry_payload()
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = Path(tmp) / "sm-backup-20261103-040000.manifest.json"
+            manifest.write_text(json.dumps({
+                "name": "sm-backup-20261103-040000",
+                "created": "2026-11-03T04:00:00+00:00",
+                "quiesce_mode": "",
+            }))
+            with patch("sm_telemetry_monitor.backup_reader.backup_dir", return_value=Path(tmp)):
+                snap = system_health_snapshot()
+        self.assertEqual(snap["backup"]["state"], "warn")
+        self.assertEqual(snap["backup"]["fence_label"], "missing")
+        self.assertFalse(snap["backup"]["fence_ok"])
+        self.assertEqual(snap["status"], "ok")
 
     @patch("sm_telemetry_monitor.system_health.get_telemetry")
     @patch("sm_telemetry_monitor.system_health.live_summary", return_value={"latest": {}})
@@ -540,6 +674,18 @@ class LlmPoolTests(unittest.TestCase):
         self.assertIsNone(by_label["localhost:5000"]["placement"])
         self.assertEqual(pool["local"], 0)
         self.assertEqual(pool["external"], 0)
+
+    def test_absent_weight_stays_none(self):
+        health = _pool_gateway()
+        health["llm_pool"]["http://localhost:5000"].pop("weight")
+        pool = _llm_pool_summary(health)
+        by_label = {b["label"]: b for b in pool["backends"]}
+        self.assertIsNone(by_label["localhost:5000"]["weight"])
+        self.assertEqual(by_label["localhost:4000"]["weight"], 1.0)
+        cfg = _gateway_config({
+            "config": {"llm_backends": [{"url": "http://localhost:5000"}]},
+        })
+        self.assertIsNone(cfg["backends"][0]["weight"])
 
     def test_pool_joins_config_placement(self):
         health = {

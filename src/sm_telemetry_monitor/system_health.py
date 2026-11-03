@@ -1026,6 +1026,8 @@ def _status_summary(
             return f"consolidation stalled [{', '.join(types)}]"
         return "consolidation stalled"
     if status == "ok":
+        if backup and backup.get("fence_ok") is False:
+            return f"backup fence {backup.get('fence_label') or 'missing'}"
         return "all processes up"
     bits: list[str] = []
     for c in components:
@@ -1083,16 +1085,74 @@ def _backup_timestamp_from_health(raw: dict) -> str | None:
 
 def _resolve_last_backup(raw: dict, *, reachable: bool) -> dict:
     manifest = latest_backup_manifest()
+    # /health can name a time and still omit the fence. Keep the newest
+    # manifest's quiesced and quiesce_mode so that time cannot hide the mode.
+    fence = {
+        "quiesced": manifest.get("quiesced") if manifest else None,
+        "quiesce_mode": manifest.get("quiesce_mode") if manifest else None,
+    }
     health_at = _backup_timestamp_from_health(raw) if reachable else None
     if health_at:
-        return {"last_at": health_at, "last_name": None, "last_source": "health"}
+        return {
+            "last_at": health_at,
+            "last_name": None,
+            "last_source": "health",
+            **fence,
+        }
     if manifest:
         return {
             "last_at": manifest["at"],
             "last_name": manifest.get("name"),
             "last_source": "manifest",
+            **fence,
         }
-    return {"last_at": None, "last_name": None, "last_source": None}
+    return {
+        "last_at": None,
+        "last_name": None,
+        "last_source": None,
+        "quiesced": None,
+        "quiesce_mode": None,
+    }
+
+
+def _fence_view(last: dict) -> dict:
+    """Clean only when the manifest held the fence for the whole dump."""
+    quiesced = last.get("quiesced")
+    mode = last.get("quiesce_mode")
+    if not isinstance(quiesced, bool):
+        quiesced = None
+    if not isinstance(mode, str) or not mode.strip():
+        mode = None
+    else:
+        mode = mode.strip()
+    if not last.get("last_at"):
+        return {
+            "quiesced": quiesced,
+            "quiesce_mode": mode,
+            "fence_ok": None,
+            "fence_label": None,
+        }
+    if quiesced is True and mode == "full":
+        return {
+            "quiesced": True,
+            "quiesce_mode": "full",
+            "fence_ok": True,
+            "fence_label": "full",
+        }
+    if mode == "full" and quiesced is False:
+        label = "full, quiesced false"
+    elif mode == "full":
+        label = "full, quiesced missing"
+    elif mode:
+        label = mode
+    else:
+        label = "missing"
+    return {
+        "quiesced": quiesced,
+        "quiesce_mode": mode,
+        "fence_ok": False,
+        "fence_label": label,
+    }
 
 
 def _backup_part(raw: dict, *, reachable: bool, last: dict | None = None) -> dict:
@@ -1100,6 +1160,7 @@ def _backup_part(raw: dict, *, reachable: bool, last: dict | None = None) -> dic
     last_at = last.get("last_at")
     last_name = last.get("last_name")
     last_source = last.get("last_source")
+    fence = _fence_view(last)
 
     def _with_last(base: dict) -> dict:
         base.update({
@@ -1107,6 +1168,7 @@ def _backup_part(raw: dict, *, reachable: bool, last: dict | None = None) -> dic
             "last_name": last_name,
             "last_source": last_source,
         })
+        base.update(fence)
         return base
 
     if not reachable:
@@ -1126,6 +1188,14 @@ def _backup_part(raw: dict, *, reachable: bool, last: dict | None = None) -> dic
             "caption": "framework backup running",
         })
     if active is False:
+        if fence["fence_ok"] is False:
+            label = fence["fence_label"]
+            return _with_last({
+                "in_progress": False,
+                "state": "warn",
+                "value": "fence",
+                "caption": f"fence {label}",
+            })
         caption = "no backup running"
         if last_at:
             caption = f"last backup {last_at}"

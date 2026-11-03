@@ -835,6 +835,20 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         self.assertEqual(rr["passed_over_total"], 12)
         self.assertEqual(rr["starved_pending"], 2)
 
+    def test_removed_rem_keys_do_not_read_spine_failing(self):
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "neo4j": {"rem_dead_lettered": 0},
+                "spine": {"alternative_vectors": {"failing": 3, "state": "failing"}},
+            },
+        }
+        rr = consolidation_from_payload(health, telemetry)["rem_reliability"]
+        self.assertIsNone(rr["failing"])
+        self.assertIsNone(rr["max_attempts"])
+        self.assertEqual(rr["dead_lettered"], 0)
+
     def test_rem_reliability_missing_on_old_gateway(self):
         health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
         rr = consolidation_from_payload(health, {"status": "success", "telemetry": {}})["rem_reliability"]

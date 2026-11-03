@@ -489,6 +489,13 @@ body.logs-page #chip-warn.chip-filter-active {
   box-shadow: 0 0 8px var(--warn-bright);
 }
 .backup-card.active .value { color: var(--warn-bright); }
+.backup-card.warn {
+  border-color: var(--warn);
+  background: linear-gradient(90deg, var(--warn-tint), var(--card) 70%);
+}
+.backup-card.warn .backup-led { background: var(--warn-bright); }
+.backup-card.warn .value { color: var(--warn-bright); }
+.backup-card.warn .backup-last { color: var(--warn); }
 
 body.consolidation-open { overflow: hidden; }
 .consolidation-summary {
