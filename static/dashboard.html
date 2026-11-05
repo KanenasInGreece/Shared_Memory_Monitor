@@ -250,7 +250,7 @@
                 <th>Cycle</th><th>Outcome</th><th>Last success</th><th>In flight</th>
                 <th title="Consecutive cycle failures">Failures</th>
                 <th title="Context truncation / Slot acquisition failures in the last 24h">Trunc/Slot (24h)</th>
-                <th>Eligible</th><th>Oldest wait</th>
+                <th>Eligible</th><th title="Insight sets held back because a carried record is not REM-processed. Blank when the gateway did not send the field.">REM held</th><th>Oldest wait</th>
                 <th title="Completed runs in the last 24h">Runs/24h</th>
                 <th title="Average duration of completed runs (24h)">Avg</th>
                 <th title="Folds succeeded / attempted in the last 24h">Folds</th>
@@ -1014,6 +1014,7 @@ function renderConsolidationDrilldown(C) {
     ? cycles.map(c => {
         const elig = c.eligible_clusters;
         const eligText = elig == null ? "—" : String(elig);
+        const remHeld = c.rem_pending_display == null ? "—" : c.rem_pending_display;
         const outcome = c.last_outcome_display || c.last_outcome || "";
         const err = c.last_error?.class
           ? (c.last_error.superseded
@@ -1045,6 +1046,7 @@ function renderConsolidationDrilldown(C) {
           `<td>${c.consecutive_failures || 0}</td>` +
           `<td>${esc(truncSlot)}</td>` +
           `<td>${esc(eligText)}</td>` +
+          `<td>${esc(remHeld)}</td>` +
           `<td>${esc(c.eligible_oldest_age_human || "—")}</td>` +
           `<td>${esc(runs)}</td>` +
           `<td>${esc(avg)}</td>` +
@@ -1052,7 +1054,7 @@ function renderConsolidationDrilldown(C) {
           `<td>${esc(idleDeferred)}</td>` +
           `<td>${esc(status)}</td></tr>`;
       }).join("")
-    : `<tr class="schema-row-empty"><td colspan="13">No consolidation cycle data</td></tr>`;
+    : `<tr class="schema-row-empty"><td colspan="14">No consolidation cycle data</td></tr>`;
 
   const nd = C?.nrem_density || {};
   if (note) {

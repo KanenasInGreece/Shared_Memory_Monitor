@@ -948,6 +948,165 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         mock_health.assert_called_once()
         mock_telemetry.assert_called_once()
 
+    def test_insight_rem_pending_holdbacks_all_table_rows(self):
+        # Row 1: key absent, key absent -> omit both raw keys from cycle dict, display None
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        t1 = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "insight": {"last_outcome": "completed", "stalled": False},
+                    "fact_consolidation": {"last_outcome": "completed", "stalled": False},
+                },
+            },
+        }
+        snap1 = consolidation_from_payload(health, t1)
+        ins1 = next(c for c in snap1["cycles"] if c["key"] == "insight")
+        fact1 = next(c for c in snap1["cycles"] if c["key"] == "fact_consolidation")
+        self.assertNotIn("rem_pending_clusters", ins1)
+        self.assertNotIn("rem_pending_incomplete", ins1)
+        self.assertIsNone(ins1["rem_pending_display"])
+        # Fact consolidation cycle that omits both keys does not grow a zero and does not gain rem_pending_clusters
+        self.assertNotIn("rem_pending_clusters", fact1)
+        self.assertNotIn("rem_pending_incomplete", fact1)
+
+        # Row 2: null, null -> "readiness not read", raw values stay
+        t2 = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "insight": {
+                        "rem_pending_clusters": None,
+                        "rem_pending_incomplete": None,
+                        "last_outcome": "completed",
+                        "stalled": False,
+                    },
+                },
+            },
+        }
+        ins2 = next(c for c in consolidation_from_payload(health, t2)["cycles"] if c["key"] == "insight")
+        self.assertIn("rem_pending_clusters", ins2)
+        self.assertIsNone(ins2["rem_pending_clusters"])
+        self.assertIn("rem_pending_incomplete", ins2)
+        self.assertIsNone(ins2["rem_pending_incomplete"])
+        self.assertEqual(ins2["rem_pending_display"], "readiness not read")
+
+        # Row 3: integer N (including 0), false -> "N", raw values stay
+        t3 = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "insight": {
+                        "rem_pending_clusters": 0,
+                        "rem_pending_incomplete": False,
+                        "last_outcome": "completed",
+                        "stalled": False,
+                    },
+                },
+            },
+        }
+        ins3 = next(c for c in consolidation_from_payload(health, t3)["cycles"] if c["key"] == "insight")
+        self.assertEqual(ins3["rem_pending_clusters"], 0)
+        self.assertIs(ins3["rem_pending_incomplete"], False)
+        self.assertEqual(ins3["rem_pending_display"], "0")
+
+        # Row 4: integer N, true -> "at least N", raw values stay
+        t4 = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "insight": {
+                        "rem_pending_clusters": 7,
+                        "rem_pending_incomplete": True,
+                        "last_outcome": "completed",
+                        "stalled": False,
+                    },
+                },
+            },
+        }
+        ins4 = next(c for c in consolidation_from_payload(health, t4)["cycles"] if c["key"] == "insight")
+        self.assertEqual(ins4["rem_pending_clusters"], 7)
+        self.assertIs(ins4["rem_pending_incomplete"], True)
+        self.assertEqual(ins4["rem_pending_display"], "at least 7")
+
+        # Row 5a: integer N, null -> "N" (do not invent a lower bound)
+        t5a = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "insight": {
+                        "rem_pending_clusters": 4,
+                        "rem_pending_incomplete": None,
+                        "last_outcome": "completed",
+                        "stalled": False,
+                    },
+                },
+            },
+        }
+        ins5a = next(c for c in consolidation_from_payload(health, t5a)["cycles"] if c["key"] == "insight")
+        self.assertEqual(ins5a["rem_pending_clusters"], 4)
+        self.assertIn("rem_pending_incomplete", ins5a)
+        self.assertIsNone(ins5a["rem_pending_incomplete"])
+        self.assertEqual(ins5a["rem_pending_display"], "4")
+
+        # Row 5b: integer N, absent -> "N" (absent key not present)
+        t5b = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "insight": {
+                        "rem_pending_clusters": 4,
+                        "last_outcome": "completed",
+                        "stalled": False,
+                    },
+                },
+            },
+        }
+        ins5b = next(c for c in consolidation_from_payload(health, t5b)["cycles"] if c["key"] == "insight")
+        self.assertEqual(ins5b["rem_pending_clusters"], 4)
+        self.assertNotIn("rem_pending_incomplete", ins5b)
+        self.assertEqual(ins5b["rem_pending_display"], "4")
+
+        # Row 6a: null, true -> "readiness not read" (null count is not zero)
+        t6a = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "insight": {
+                        "rem_pending_clusters": None,
+                        "rem_pending_incomplete": True,
+                        "last_outcome": "completed",
+                        "stalled": False,
+                    },
+                },
+            },
+        }
+        ins6a = next(c for c in consolidation_from_payload(health, t6a)["cycles"] if c["key"] == "insight")
+        self.assertIn("rem_pending_clusters", ins6a)
+        self.assertIsNone(ins6a["rem_pending_clusters"])
+        self.assertIs(ins6a["rem_pending_incomplete"], True)
+        self.assertEqual(ins6a["rem_pending_display"], "readiness not read")
+
+        # Row 6b: null, false -> "readiness not read" (null count is not zero)
+        t6b = {
+            "status": "success",
+            "telemetry": {
+                "consolidation": {
+                    "insight": {
+                        "rem_pending_clusters": None,
+                        "rem_pending_incomplete": False,
+                        "last_outcome": "completed",
+                        "stalled": False,
+                    },
+                },
+            },
+        }
+        ins6b = next(c for c in consolidation_from_payload(health, t6b)["cycles"] if c["key"] == "insight")
+        self.assertIn("rem_pending_clusters", ins6b)
+        self.assertIsNone(ins6b["rem_pending_clusters"])
+        self.assertIs(ins6b["rem_pending_incomplete"], False)
+        self.assertEqual(ins6b["rem_pending_display"], "readiness not read")
+
 
 if __name__ == "__main__":
     unittest.main()

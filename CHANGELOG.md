@@ -6,6 +6,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-05
+
+### Changed
+- Client announces API 6. Doctor treats gateway API 4, 5, and 6 as compatible
+  while framework 1.1.0 rolls out.
+- Insight cycle shows REM hold-backs: null as "readiness not read", a count with
+  `rem_pending_incomplete` true as "at least N". An absent key stays absent.
+
 ## [1.0.1] - 2026-11-03
 
 ### Changed

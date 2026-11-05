@@ -811,6 +811,32 @@ def _normalize_cycle(key: str, raw: dict | None) -> dict:
         "truncation_failures_24h": _num_or_none(raw.get("truncation_failures_24h")),
         "slot_failures_24h": _num_or_none(raw.get("slot_failures_24h")),
     }
+
+    # Insight-only REM hold-backs (gateway ≥1.0.46, decision:1993): sets held
+    # back because a carried record is not REM-processed. Missing keys stay absent.
+    if key == "insight":
+        has_clusters = "rem_pending_clusters" in raw
+        has_incomplete = "rem_pending_incomplete" in raw
+        if has_clusters:
+            cycle["rem_pending_clusters"] = raw["rem_pending_clusters"]
+        if has_incomplete:
+            cycle["rem_pending_incomplete"] = raw["rem_pending_incomplete"]
+
+        if not has_clusters and not has_incomplete:
+            cycle["rem_pending_display"] = None
+        else:
+            clusters = raw.get("rem_pending_clusters")
+            incomplete = raw.get("rem_pending_incomplete")
+            if clusters is None:
+                cycle["rem_pending_display"] = "readiness not read"
+            elif isinstance(clusters, int) and not isinstance(clusters, bool):
+                if incomplete is True:
+                    cycle["rem_pending_display"] = f"at least {clusters}"
+                else:
+                    cycle["rem_pending_display"] = str(clusters)
+            else:
+                cycle["rem_pending_display"] = None
+
     cycle["state"] = _cycle_state(cycle)
     return cycle
 
@@ -936,9 +962,25 @@ def consolidation_from_payload(
         if isinstance(breakdown, dict) and isinstance(breakdown.get("summaries"), list):
             summaries_by_kind = breakdown["summaries"]
 
+    ins_raw = {}
+    if isinstance(health_cons.get("insight"), dict):
+        ins_raw.update(health_cons["insight"])
+    if isinstance(rollup.get("insight"), dict):
+        ins_raw.update(rollup["insight"])
+    if not ins_raw:
+        ins_raw = rollup.get("insight") or health_cons.get("insight")
+
+    fc_raw = {}
+    if isinstance(health_cons.get("fact_consolidation"), dict):
+        fc_raw.update(health_cons["fact_consolidation"])
+    if isinstance(rollup.get("fact_consolidation"), dict):
+        fc_raw.update(rollup["fact_consolidation"])
+    if not fc_raw:
+        fc_raw = rollup.get("fact_consolidation") or health_cons.get("fact_consolidation")
+
     cycles = [
-        _normalize_cycle("insight", rollup.get("insight")),
-        _normalize_cycle("fact_consolidation", rollup.get("fact_consolidation")),
+        _normalize_cycle("insight", ins_raw),
+        _normalize_cycle("fact_consolidation", fc_raw),
     ]
 
     # /health already judged the stall. Telemetry may not override an explicit

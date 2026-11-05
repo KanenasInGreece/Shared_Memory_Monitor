@@ -48,6 +48,15 @@ class PoolWordingTests(unittest.TestCase):
         self.assertNotIn('"neo4j Fact", "rem_processed"', self.html)
         self.assertNotIn('"neo4j Fact", "consolidated"', self.html)
 
+    def test_consolidation_rem_held_column_and_cell(self):
+        self.assertIn("REM held", self.html)
+        self.assertIn("rem_pending_display", self.html)
+        self.assertIn(
+            'title="Insight sets held back because a carried record is not REM-processed. Blank when the gateway did not send the field."',
+            self.html,
+        )
+        self.assertIn('<td colspan="14">No consolidation cycle data</td>', self.html)
+
 
 class FrontDoorCountTests(unittest.TestCase):
     """fact:1620 — token_verify_failed is a count, not a current rejection."""
