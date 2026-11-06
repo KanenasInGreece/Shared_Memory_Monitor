@@ -2143,6 +2143,68 @@ class HealthAsVerdictTests(unittest.TestCase):
         src = Path("static/dashboard.html").read_text()
         self.assertIn("esc(formatHealthWarning", src)
 
+    def test_refused_reranker_key_stays_degraded(self):
+        # Framework 1.0.42: a refused reranker key is degraded, not down.
+        # The probe string is a caption and must not outrank that verdict.
+        health = {
+            **_healthy_gateway(),
+            "status": "degraded",
+            "reranker": "auth_failed",
+            "dependencies": {
+                "reranker": {"state": "degraded", "reason": "auth_failed"},
+            },
+            "config": {"reranker_key_configured": True},
+            "backend_capability": {"reranker": {"status": "auth_failed"}},
+        }
+        snap = self._snap(health)
+        tile = self._comp(snap, "reranker")
+        self.assertEqual(tile["process"]["state"], "warn")
+        self.assertNotEqual(tile["workload"]["state"], "bad")
+        self.assertNotEqual(tile["state"], "bad")
+        self.assertNotIn("placement", tile)
+        detail = tile.get("detail") or ""
+        self.assertIn("auth_failed", detail)
+        self.assertIn("key set", detail)
+        self.assertNotIn("remote", detail.lower())
+
+    def test_embedder_capability_is_a_caption(self):
+        health = {
+            **_healthy_gateway(),
+            "status": "degraded",
+            "embedder": "ok",
+            "dependencies": {
+                "embedder": {"state": "degraded", "reason": "too_slow"},
+            },
+            "config": {"embedder_key_configured": False},
+            "backend_capability": {"embedder": {"status": "too_slow"}},
+        }
+        snap = self._snap(health)
+        tile = self._comp(snap, "embedder")
+        self.assertEqual(tile["state"], "warn")
+        detail = tile.get("detail") or ""
+        self.assertIn("too_slow", detail)
+        self.assertIn("no key", detail)
+        self.assertNotIn("remote", detail.lower())
+        self.assertNotIn("local", detail.lower())
+
+    def test_omitted_encoder_key_flag_adds_no_caption(self):
+        health = {
+            **_healthy_gateway(),
+            "dependencies": {"embedder": {"state": "ok"}},
+        }
+        snap = self._snap(health)
+        detail = self._comp(snap, "embedder").get("detail") or ""
+        self.assertNotIn("key", detail)
+        self.assertNotIn("probe", detail)
+
+    def test_dashboard_puts_encoder_detail_on_the_title(self):
+        # The chip title is a DOM property, so the detail is text, not HTML.
+        src = Path("static/dashboard.html").read_text()
+        self.assertIn("c.detail", src)
+        self.assertIn("nEl.title = line.title", src)
+        diagram = Path("static/diagram.html").read_text()
+        self.assertIn("c?.detail", diagram)
+
 
 if __name__ == "__main__":
     unittest.main()

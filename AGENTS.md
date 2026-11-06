@@ -37,6 +37,12 @@ uv run --with pytest python -m pytest -q
   `has_credential` and `model` it reads from `/health`.
 - `/health` is the verdict and `/memory/telemetry` is the numbers. Never derive a
   health state from counts the gateway has already judged.
+- Encoder chips follow `dependencies.embedder.state` and
+  `dependencies.reranker.state`. The probe token, the key flag, and the
+  capability status are captions. The latency drawer shows the encoder
+  ring fields the gateway sent and adds no placement label. Do not infer
+  local or remote from a URL. A configured key is not that label.
+  `system_health.py`, `latency.py`.
 - The server binds loopback and has no auth of its own. Widening the bind publishes an
   unauthenticated ops tool.
 

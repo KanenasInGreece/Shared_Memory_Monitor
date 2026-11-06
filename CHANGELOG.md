@@ -6,6 +6,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-06
+
+### Changed
+- Embedder and reranker chips follow `dependencies.*.state`. The probe
+  token, `*_key_configured`, and `backend_capability.*.status` are captions
+  on the chip. A refused reranker key stays degraded.
+- The latency drawer shows the encoder ring fields the gateway sent: calls,
+  errors, median, p95, max, last call, payload size, and the percentile
+  window. `limit_ms` appears when it is a number. Embed window overruns
+  appear when the gateway sent that key. The drawer adds no placement label.
+
 ## [1.1.0] - 2026-11-05
 
 ### Changed

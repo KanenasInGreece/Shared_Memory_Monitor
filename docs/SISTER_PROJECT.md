@@ -21,14 +21,15 @@ The monitor never imports framework Python code. **No third data path** in monit
 
 | Route | Purpose |
 |-------|---------|
-| `GET /health` | Infrastructure grid (embedder, LLM, daemons); `version` + `api_version` for client compat; non-secret `config` (LLM backends + weights; **≥0.8.9** `has_credential` + optional `model`; **≥0.9.13** roles / `n_ctx` / `private_ok` / prices); multi-backend `llm_pool` / affinity; **≥0.9.13** `llm_routing` + `llm_token_usage` |
+| `GET /health` | Infrastructure grid (embedder, reranker, LLM, daemons); `version` + `api_version` for client compat; non-secret `config` (LLM backends; **≥0.8.9** `has_credential` + optional `model`; **≥0.9.13** roles / `n_ctx` / `private_ok` / prices; no backend `weight` since framework **1.0.45**); multi-backend `llm_pool` / affinity; **≥0.9.13** `llm_routing` + `llm_token_usage` |
 | `GET /pool/status` | Dream-job `free_slots` + per-backend `serves_all` / `counts_free_slot` (framework **≥0.9.13**; monitor v0.9.19+) |
 | `GET /memory/telemetry` | Pipeline metrics, `nrem`, `breakdown`, `spine`, `compliance` (**≥1.0.7** `label_distribution` / `predicate_distribution` / `top_paths` feed the schema drawer's graph panels), `latency` (**≥0.9.60** `rem_ms.by_model` `wall_ms` / `n_service` / `timing_source` / `backend`), `entity_graph`, `consolidation`; **≥0.9.4** `llm_faults` + `credentials`; **≥0.9.8** `credentials.*_last_ts` siblings; **≥0.9.9** `credentialed_route_denied` |
 
-**Client API version:** Monitor **v1.1.0** sets `bridge.API_VERSION = 6`.
-Doctor `compat=ok` for a gateway `api_version` of **4, 5, or 6**, so this release
-can restart before framework **1.1.0** and stay compatible after it. A
-mismatch only logs on the gateway. **Alternative vectors** on first-write quality
+**Client API version:** Monitor **v1.1.1** sets `bridge.API_VERSION = 6`.
+Doctor `compat=ok` for a gateway `api_version` of **4, 5, or 6**. Framework
+**1.1.0** and **1.1.1** both serve API 6; **1.1.1** did not change the code
+or the telemetry contract. A mismatch only logs on the gateway.
+**Alternative vectors** on first-write quality
 expects **framework ≥ 0.8.40** (`telemetry.spine.alternative_vectors`). Full Status +
 diagram telemetry (LLM local/external placement, entity-graph census, latency drawer)
 expects **framework ≥ 0.8.9**. Credential last-event age expects
@@ -37,9 +38,13 @@ Infrastructure hint, `credentialed_route_denied` on the LLM pool line).
 `credentialed_route_denied` expects **≥ 0.9.9**. `llm_routing` /
 `llm_token_usage` / backend descriptors / `GET /pool/status` expect
 **≥ 0.9.13**. Wall/mixed `latency.rem_ms.by_model` (`wall_ms`, `n_service`,
-`timing_source`) expects **≥ 0.9.60**. The announced API version leads the
-gateway by one during the 1.1.0 deploy. Other panels still follow the fields
-live `/health` and `/memory/telemetry` return.
+`timing_source`) expects **≥ 0.9.60**. Encoder call timings are
+`telemetry.encoders` (**≥ 0.9.74**): the drawer shows the ring fields the
+gateway sent. Encoder chips follow `dependencies.embedder.state` and
+`dependencies.reranker.state`. The probe token, `config.*_key_configured`
+(**≥ 1.0.42**), and capability status are captions on the chip.
+Other panels still follow the fields live `/health` and `/memory/telemetry`
+return.
 
 **Out of scope for `monitor:read`:** `POST /memory/relations/review` and
 `/memory/relations/label` are the operator calibration oracle for machine-minted

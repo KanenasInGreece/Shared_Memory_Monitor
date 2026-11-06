@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from sm_telemetry_monitor.latency import latency_from_payload, latency_snapshot
@@ -223,6 +224,45 @@ class LatencyRemTests(unittest.TestCase):
         m2 = snap2["rem"]["models"][0]
         self.assertEqual(m2["model"], "custom-named-model")
         self.assertEqual(m2["backend"], "https://api.openai.com")
+
+
+class EncoderTelemetryTests(unittest.TestCase):
+    def test_window_overruns_copy_only_when_the_gateway_sent_them(self):
+        present = latency_from_payload({
+            "status": "success",
+            "telemetry": {
+                "encoders": {
+                    "embed": {"calls": 3, "errors": 1, "p50_ms": 12, "p95_ms": 40},
+                    "rerank": {"calls": 2, "errors": 0, "p50_ms": 80, "p95_ms": 90},
+                    "limit_ms": 1000,
+                    "embed_window_overruns_total": 4,
+                    "embed_window_overruns_last_ts": "2026-11-06T00:00:00Z",
+                },
+            },
+        })
+        enc = present["encoders"]
+        self.assertEqual(enc["embed_window_overruns_total"], 4)
+        self.assertEqual(
+            enc["embed_window_overruns_last_ts"], "2026-11-06T00:00:00Z",
+        )
+        self.assertNotIn("placement", enc)
+        absent = latency_from_payload({
+            "status": "success",
+            "telemetry": {
+                "encoders": {"embed": {"calls": 1, "p50_ms": 5}, "rerank": {}},
+            },
+        })
+        self.assertNotIn("embed_window_overruns_total", absent["encoders"])
+        self.assertNotIn("embed_window_overruns_last_ts", absent["encoders"])
+
+    def test_dashboard_shows_the_encoder_fields_the_gateway_sent(self):
+        src = Path("static/dashboard.html").read_text()
+        self.assertNotIn("remote encoder", src)
+        self.assertNotIn("local models", src)
+        self.assertIn("max_ms", src)
+        self.assertIn("last_payload_chars", src)
+        self.assertIn("percentile window", src)
+        self.assertIn("limit_ms", src)
 
 
 class LatencyEnvelopeTests(unittest.TestCase):

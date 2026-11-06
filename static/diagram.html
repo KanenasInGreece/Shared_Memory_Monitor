@@ -520,10 +520,12 @@ function renderGatewayNodes(health, latest) {
       setMetrics("node-llm-metrics", metricParts);
       renderLlmBackends(health, c, vis);
     } else {
-      setMetrics(`node-${key}-metrics`, [
+      const metricParts = [
         { k: "Process", v: c?.process?.value || "—" },
         { k: "Load", v: c?.workload?.value || "—", hot: vis.state === "active" || vis.state === "warn" },
-      ]);
+      ];
+      if (c?.detail) metricParts.push({ k: "Signal", v: c.detail });
+      setMetrics(`node-${key}-metrics`, metricParts);
     }
   }
 

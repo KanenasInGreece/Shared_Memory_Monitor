@@ -298,7 +298,7 @@
       </section>
       <section class="schema-block">
         <h3 class="schema-block-title">Encoders · embedding & reranking</h3>
-        <p class="consolidation-note consolidation-note-lead">Per-call latency for the local models. High latency here slows down both search and the memory system.</p>
+        <p class="consolidation-note consolidation-note-lead">Median, p95, max, and the last call, with the payload size and the window those percentiles were computed over. Errors and embed window overruns are the counts the gateway sent. A slow call here slows search and the memory system.</p>
         <div class="consolidation-summary" id="latency-encoders"></div>
         <p class="consolidation-note" id="latency-encoders-note"></p>
       </section>
@@ -491,6 +491,7 @@ function healthLine(c) {
   const title = [
     proc.caption && `${proc.caption}: ${proc.value}`,
     load.caption && `${load.caption}: ${load.value}`,
+    c.detail,
     c.quiet,
   ].filter(Boolean).join(" · ");
   if (proc.state === "bad") return { text: "down", state: "bad", title };
@@ -1325,24 +1326,40 @@ function renderLatency(L) {
       encBox.innerHTML = `<div class="consolidation-kpi"><span class="k">Latency</span><span class="v">no encoder telemetry available</span></div>`;
     } else {
       const rows = [];
-      if (enc.embed && Object.keys(enc.embed).length) {
-        const e = enc.embed;
-        const eN = e.calls != null ? ` · n=${e.calls}` : "";
-        rows.push([`Embed (median)${eN}`, fmtMs(e.p50_ms)]);
-        rows.push([`Embed (p95)`, fmtMs(e.p95_ms)]);
+      const ringRows = (name, block) => {
+        if (!block || !Object.keys(block).length) return;
+        const n = block.calls != null ? ` · n=${block.calls}` : "";
+        if ("p50_ms" in block) rows.push([`${name} median${n}`, fmtMs(block.p50_ms)]);
+        else if (block.calls != null) rows.push([`${name} calls`, String(block.calls)]);
+        if ("p95_ms" in block) rows.push([`${name} p95`, fmtMs(block.p95_ms)]);
+        if ("max_ms" in block) rows.push([`${name} max`, fmtMs(block.max_ms)]);
+        if ("last_ms" in block) rows.push([`${name} last`, fmtMs(block.last_ms)]);
+        if (block.last_payload_chars != null) {
+          rows.push([`${name} payload`, `${block.last_payload_chars} chars`]);
+        }
+        if (block.window != null) {
+          rows.push([`${name} percentile window`, String(block.window)]);
+        }
+        if (typeof block.errors === "number") {
+          rows.push([`${name} errors`, String(block.errors), block.errors > 0 ? "warn" : null]);
+        }
+      };
+      ringRows("Embed", enc.embed);
+      ringRows("Rerank", enc.rerank);
+      if (typeof enc.limit_ms === "number") {
+        rows.push(["Encoder limit", fmtMs(enc.limit_ms)]);
       }
-      if (enc.rerank && Object.keys(enc.rerank).length) {
-        const r = enc.rerank;
-        const rN = r.calls != null ? ` · n=${r.calls}` : "";
-        rows.push([`Rerank (median)${rN}`, fmtMs(r.p50_ms)]);
-        rows.push([`Rerank (p95)`, fmtMs(r.p95_ms)]);
+      if (typeof enc.embed_window_overruns_total === "number") {
+        const n = enc.embed_window_overruns_total;
+        rows.push(["Embed window overruns", String(n), n > 0 ? "warn" : null]);
+      }
+      if (enc.embed_window_overruns_last_ts) {
+        rows.push(["Embed window overrun last", String(enc.embed_window_overruns_last_ts)]);
       }
       encBox.innerHTML = consolidationKpiHtml(rows);
     }
   }
-  if (encNote) {
-    encNote.textContent = "";
-  }
+  if (encNote) encNote.textContent = "";
 
 }
 

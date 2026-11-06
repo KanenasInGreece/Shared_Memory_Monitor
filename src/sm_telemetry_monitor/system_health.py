@@ -708,6 +708,56 @@ def _process_part(key: str, raw_value, kind: str) -> dict:
     }
 
 
+def _dependency_entry(raw: dict, field: str) -> dict | None:
+    """The gateway's verdict for one dependency, when it published one.
+
+    The same name on the top of /health is the probe token. A caller that
+    already has dependencies.*.state must not let that probe outrank it.
+    """
+    deps = raw.get("dependencies")
+    if not isinstance(deps, dict):
+        return None
+    entry = deps.get(field)
+    if isinstance(entry, dict) and "state" in entry:
+        return entry
+    return None
+
+
+def _encoder_detail(raw: dict, key: str) -> str | None:
+    """Captions the gateway already published for one encoder.
+
+    A configured key is a boolean, not a local or remote label. The URL is
+    not read here, so placement is never inferred from it.
+    """
+    bits: list[str] = []
+    dep = _dependency_entry(raw, key)
+    reason = ""
+    if dep is not None:
+        raw_reason = dep.get("reason")
+        if isinstance(raw_reason, str) and raw_reason.strip():
+            reason = raw_reason.strip()
+            bits.append(reason)
+    probe = raw.get(key)
+    if isinstance(probe, str) and probe.strip():
+        token = probe.strip()
+        state = dep.get("state") if dep is not None else None
+        if token.lower() != "ok" and token != reason and token != state:
+            bits.append(f"probe {token}")
+    cfg = raw.get("config") if isinstance(raw.get("config"), dict) else {}
+    flag = cfg.get(f"{key}_key_configured")
+    if isinstance(flag, bool):
+        bits.append("key set" if flag else "no key")
+    cap = raw.get("backend_capability")
+    if isinstance(cap, dict):
+        one = cap.get(key)
+        if isinstance(one, dict):
+            status = one.get("status")
+            if isinstance(status, str) and status and status != "ok":
+                if status not in reason and all(status not in bit for bit in bits):
+                    bits.append(f"capability {status}")
+    return " · ".join(bits) if bits else None
+
+
 def _workload_part(key: str, raw: dict, t: dict, *, nrem_stalled: bool = False,
                    llm_busy: bool = False, inference_busy: str = "unknown",
                    rem_trend: str = "insufficient", llm_pool: dict | None = None) -> dict:
@@ -724,23 +774,18 @@ def _workload_part(key: str, raw: dict, t: dict, *, nrem_stalled: bool = False,
     rem_q = t.get("rem_backlog")
     nrem_q = t.get("nrem_backlog")
 
-    if key == "embedder":
-        # Save/search path — no per-request queue in telemetry; workload is informational.
-        st = _state(raw.get("embedder"))
+    if key in ("embedder", "reranker"):
+        # No per-request queue. When the gateway published a dependency
+        # state, that enum is the workload too, so a probe token such as
+        # auth_failed cannot paint a degraded reranker as down.
+        dep = _dependency_entry(raw, key)
+        st = _state(dep.get("state") if dep is not None else raw.get(key))
         if st == "ok":
             val = "standby"
         elif st == "warn":
             val = "degraded"
-        else:
-            val = "unavailable"
-        return {"value": val, "state": st, "caption": "inference path"}
-
-    if key == "reranker":
-        st = _state(raw.get("reranker"))
-        if st == "ok":
-            val = "standby"
-        elif st == "warn":
-            val = "degraded"
+        elif st == "unknown":
+            val = "unknown"
         else:
             val = "unavailable"
         return {"value": val, "state": st, "caption": "inference path"}
@@ -998,7 +1043,7 @@ def _build_component(key: str, field: str, label: str, kind: str, raw: dict, t: 
             "state": "warn",
             "caption": "GPU busy · probe saturated",
         }
-    return {
+    built = {
         "key": key,
         "label": label,
         "kind": kind,
@@ -1006,6 +1051,11 @@ def _build_component(key: str, field: str, label: str, kind: str, raw: dict, t: 
         "workload": workload,
         "state": _worst(process["state"], workload["state"]),
     }
+    if key in ("embedder", "reranker"):
+        detail = _encoder_detail(raw, key)
+        if detail:
+            built["detail"] = detail
+    return built
 
 
 def _status_summary(
