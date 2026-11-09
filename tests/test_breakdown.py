@@ -37,7 +37,7 @@ class Neo4jBreakdownFromTelemetryTests(unittest.TestCase):
         self.assertEqual(out["pipelines_as_of"], "2026-09-25T20:21:58.937340+00:00")
         self.assertIsNone(out["pipelines_error"])
         self.assertEqual(out["facts"], {"total": 1768, "rem_pending": 0, "unconsolidated": 750})
-        self.assertEqual(out["decisions"], {"total": 515, "rem_pending": 0})
+        self.assertEqual(out["decisions"], {"total": 515, "not_ready": 0})
         # deliberately NOT reconciled against label_distribution["Fact"] (1773 vs 1768)
         self.assertNotEqual(out["nodes"][0]["count"], out["facts"]["total"])
 

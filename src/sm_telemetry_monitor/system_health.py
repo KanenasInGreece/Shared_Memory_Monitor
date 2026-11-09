@@ -661,15 +661,14 @@ def _rem_trend() -> str:
         rows = load_history(since=since)
     except Exception:
         return "insufficient"
-    samples = [
-        {
-            "collected_at": r.get("collected_at"),
-            "rem_backlog": r.get("rem_backlog")
-            if r.get("rem_backlog") is not None
-            else (r.get("facts_rem_pending") or 0) + (r.get("decisions_rem_pending") or 0),
-        }
-        for r in rows
-    ]
+    # Score the fact count, not the stored rem_backlog. Rows from before this
+    # change stored facts plus decisions there (fact:3560: that sum was the
+    # compliance gap), so preferring the column makes a deploy look like a drain.
+    samples = []
+    for r in rows:
+        facts = r.get("facts_rem_pending")
+        rem = facts if isinstance(facts, int) and not isinstance(facts, bool) else None
+        samples.append({"collected_at": r.get("collected_at"), "rem_backlog": rem})
     return rem_drain_signal(samples, window_s=REM_STALL_WINDOW_S)
 
 

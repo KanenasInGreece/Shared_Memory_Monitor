@@ -54,12 +54,18 @@ def nrem_counts_from_telemetry(telemetry: dict) -> dict | None:
     total = nrem.get("total_cycles")
     if total is None:
         total = fact + decision
-    return {
+    counts = {
         "nrem_backlog": int(total),
         "nrem_fact_cycles": fact,
         "nrem_decision_cycles": decision,
         "nrem_backlog_source": "telemetry",
     }
+    # fact:3589 (framework 1.1.2 added this integer; it is absent until an
+    # insight cycle records groups excluded because a fresh decision was not
+    # ready). Copy it only when sent, and do not coerce the value.
+    if "insight_excluded_pending_rem" in nrem:
+        counts["insight_excluded_pending_rem"] = nrem["insight_excluded_pending_rem"]
+    return counts
 
 
 def compute_nrem_cycles(

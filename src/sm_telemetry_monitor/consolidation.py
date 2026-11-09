@@ -204,14 +204,17 @@ def _graph_health(entity_graph: dict | None, neo4j: dict | None = None) -> dict:
     None on missing input (one absent metric never blanks the rest), so
     pre-0.6.1 gateways simply omit the new KPIs.
 
-    **REM-pending caveat (anti-bloat).** ``entity_graph`` counts *every* entity
-    node, including those extracted from facts/decisions still awaiting REM — but
-    REM is the stage that builds an entity's relationships. Pre-REM entities are
-    therefore counted as unmentioned/singletons purely because they haven't been
-    processed yet, inflating the fragmentation share. We surface
-    ``rem_pending_facts`` / ``rem_pending_decisions`` and flag ``rem_pending`` so
-    the operator reads those counts as an *upper bound* on true fragmentation
-    until REM catches up — never as a settled quality verdict.
+    **REM-pending caveat (anti-bloat).** ``entity_graph`` counts every entity
+    node, including those taken from records still awaiting REM, and REM is
+    the stage that builds an entity's relationships. Those entities inflate
+    the fragmentation share. ``rem_pending`` is true only when
+    ``facts_rem_pending`` or ``retrospectives_rem_pending`` is a positive
+    int, so the share is an upper bound until that REM work clears.
+    ``decisions_rem_pending`` stays on the payload as ``rem_pending_decisions``
+    and does not set the flag: it is computed readiness (decision:3582: a
+    decision is ready when the facts and retrospectives it points at are
+    processed), not REM work (fact:3560: this monitor was adding that count
+    into the REM queue).
 
     **Gateway ≥0.8.6 — genuinely referenced (fact 895; decision 890 refined via
     retro 893 / fact 892).** ``entities_total`` is a mixed population: Decision
@@ -252,10 +255,11 @@ def _graph_health(entity_graph: dict | None, neo4j: dict | None = None) -> dict:
     alias_coverage_uses_genuine = isinstance(genuinely_ref, int)
 
     rem_pending_facts = census.get("facts_rem_pending")
+    rem_pending_retros = census.get("retrospectives_rem_pending")
     rem_pending_decisions = census.get("decisions_rem_pending")
-    pending_total = sum(
-        v for v in (rem_pending_facts, rem_pending_decisions) if isinstance(v, int)
-    )
+
+    def _positive(value: object) -> bool:
+        return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
     present = isinstance(total, int) and total > 0
     return {
@@ -278,11 +282,12 @@ def _graph_health(entity_graph: dict | None, neo4j: dict | None = None) -> dict:
         "alias_coverage_uses_genuine": alias_coverage_uses_genuine,
         "max_hub_degree": hubs[0]["degree"] if hubs and hubs[0].get("degree") is not None else None,
         "top_hubs": hubs[:5],
-        # REM-pending context: unmentioned/singleton counts overstate true
-        # fragmentation while records still await entity extraction.
+        # Fragmentation is an upper bound while records still await REM.
+        # The decision count is kept and does not set rem_pending.
         "rem_pending_facts": rem_pending_facts,
+        "rem_pending_retrospectives": rem_pending_retros,
         "rem_pending_decisions": rem_pending_decisions,
-        "rem_pending": pending_total > 0,
+        "rem_pending": _positive(rem_pending_facts) or _positive(rem_pending_retros),
     }
 
 

@@ -14,6 +14,16 @@ from .config import (
 from .nrem_backlog import estimate_nrem_backlog
 from .outbox import apply_outbox_ignore
 
+# Readings added in framework 1.1.2 (fact:3589: four integers, API stays 6,
+# nothing removed). A missing one stays None in the pipeline and in history
+# so an old sample does not draw a fake zero.
+_NEW_READINGS = (
+    "retrospectives_rem_pending",
+    "rem_backlog_older_prompt",
+    "rem_backlog_withheld",
+    "insight_excluded_pending_rem",
+)
+
 # Pipeline stages in dream-cycle order (matches framework architecture).
 PIPELINE_STAGES = (
     ("technical_docs", "Postgres docs", "All saved artifacts"),
@@ -21,12 +31,51 @@ PIPELINE_STAGES = (
     ("outbox_failed", "Outbox failed", "Sync errors — investigate"),
     ("facts_total", "Neo4j facts", "Facts in knowledge graph"),
     ("facts_rem_pending", "REM queue (facts)", "Awaiting LLM enrichment"),
-    ("decisions_rem_pending", "REM queue (decisions)", "Awaiting decision enrichment"),
+    (
+        "retrospectives_rem_pending",
+        "REM queue (retrospectives)",
+        "Live retrospectives REM has not processed. Shown on their own "
+        "and not added to rem_backlog.",
+    ),
+    (
+        "decisions_rem_pending",
+        "Decisions not ready",
+        "Computed readiness (decision:3582: a decision is ready when the "
+        "facts and retrospectives it points at are processed). Not added "
+        "to the REM queue.",
+    ),
+    (
+        "rem_backlog_older_prompt",
+        "Older prompt",
+        "Live facts and retrospectives whose summary stamp is older or "
+        "missing, and not withheld.",
+    ),
+    (
+        "rem_backlog_withheld",
+        "Withheld",
+        "Older-stamp nodes withheld by a REM backlog row.",
+    ),
+    (
+        "insight_excluded_pending_rem",
+        "Insight excluded",
+        "Insight groups or components excluded only because a fresh "
+        "decision was not ready.",
+    ),
     ("nrem_backlog", "NREM cycles", f"Clusters that met the density gate (≥{NREM_FACT_CLUSTER_MIN} facts or ≥{NREM_DECISION_CLUSTER_MIN} decisions per domain) and are queued for the next consolidation sweep"),
     ("facts_unconsolidated", "Unconsolidated", f"REM-processed facts not yet folded into a summary — they wait until a cluster meets the gate (≥{NREM_FACT_CLUSTER_MIN}/domain). A pool, not a backlog or pending cycles"),
     ("facts_consolidated", "Consolidated facts", "Merged into entity hubs"),
     ("summaries_total", "Tier-3 summaries", "Community narratives"),
 )
+
+
+def _stored_int(value: object) -> int | None:
+    """An integer the gateway sent, or None.
+
+    bool is a subclass of int, so a flag must not become a count of 1.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
 
 
 def rem_items_per_hour() -> float:
@@ -46,23 +95,36 @@ def _apply_nrem_counts(row: dict, nrem_counts: dict | None) -> dict:
         row["nrem_fact_cycles"] = row["nrem_backlog"]
         row["nrem_decision_cycles"] = 0
         row["nrem_backlog_source"] = "estimate"
+    # Copy only a key this payload actually carries. fact:3589 (framework
+    # 1.1.2 added insight_excluded_pending_rem; it is absent until an insight
+    # cycle records groups excluded because a fresh decision was not ready).
+    if nrem_counts and "insight_excluded_pending_rem" in nrem_counts:
+        row["insight_excluded_pending_rem"] = nrem_counts[
+            "insight_excluded_pending_rem"
+        ]
     return row
 
 
 def enrich_row(row: dict, *, pg_counts: dict | None = None, nrem_counts: dict | None = None) -> dict:
     """Add derived pipeline metrics to a snapshot."""
     facts_total = row.get("facts_total") or 0
-    facts_rem = row.get("facts_rem_pending") or 0
+    facts_rem = _stored_int(row.get("facts_rem_pending"))
     facts_uncon = row.get("facts_unconsolidated") or 0
-    decisions_rem = row.get("decisions_rem_pending") or 0
 
     row = dict(row)
     row.setdefault("outbox_pending", 0)
     row = apply_outbox_ignore(row, pg_counts=pg_counts)
-    row["facts_consolidated"] = max(0, facts_total - facts_rem - facts_uncon)
-    row["rem_backlog"] = facts_rem + decisions_rem
+    row["facts_consolidated"] = max(0, facts_total - (facts_rem or 0) - facts_uncon)
+    # rem_backlog is the fact REM queue alone. A missing fact count stays
+    # unset (None) rather than a stored 0. decisions_rem_pending is computed
+    # readiness (decision:3582: a decision is ready when the facts and
+    # retrospectives it points at are processed) and is never added
+    # (fact:3560: this monitor was summing that count into rem_backlog and
+    # labelling it a REM queue).
+    row["rem_backlog"] = facts_rem
     row = _apply_nrem_counts(row, nrem_counts)
-    row["dream_backlog"] = row["rem_backlog"] + row["nrem_backlog"]
+    nrem = _stored_int(row.get("nrem_backlog")) or 0
+    row["dream_backlog"] = (facts_rem or 0) + nrem
     # The gateway already judged health, and rem_backlog, nrem_backlog, and
     # dream_backlog are counts. decision:1973 (framework 0.9.74+: GET /health
     # is the verdict and GET /memory/telemetry is the numbers; a count must
@@ -152,11 +214,16 @@ def pipeline_snapshot(row: dict) -> list[dict]:
     """Ordered funnel values for the current snapshot."""
     if "dream_backlog" not in row:
         row = enrich_row(row)
-    keys = [s[0] for s in PIPELINE_STAGES]
-    return [
-        {"key": key, "label": label, "hint": hint, "value": row.get(key, 0) or 0}
-        for key, label, hint in PIPELINE_STAGES
-    ]
+    out = []
+    for key, label, hint in PIPELINE_STAGES:
+        # Existing stages still coerce a hole to 0. The 1.1.2 readings keep
+        # None, so a gateway that has not sent the key is not shown as zero.
+        if key in _NEW_READINGS:
+            value = row[key] if key in row else None
+        else:
+            value = row.get(key, 0) or 0
+        out.append({"key": key, "label": label, "hint": hint, "value": value})
+    return out
 
 
 def story_summary(rows: list[dict]) -> dict:
@@ -174,7 +241,11 @@ def story_summary(rows: list[dict]) -> dict:
     failed = latest.get("outbox_failed") or 0
     ignored = latest.get("outbox_failed_ignored") or 0
     backlog = latest["dream_backlog"]
-    rem = latest["rem_backlog"]
+    # An unset REM queue stays unset on the row. Comparisons below use 0 so
+    # a missing fact count does not raise, and the sentence keeps the em dash.
+    rem_known = _stored_int(latest.get("rem_backlog"))
+    rem = rem_known if rem_known is not None else 0
+    rem_text = rem_known if rem_known is not None else "—"
     nrem = latest.get("nrem_backlog") or 0
     uncon_raw = latest.get("facts_unconsolidated") or 0
     nrem_src = latest.get("nrem_backlog_source", "estimate")
@@ -222,7 +293,7 @@ def story_summary(rows: list[dict]) -> dict:
     else:
         headline = f"{nrem} consolidation cycle(s) pending"
         detail = (
-            f"REM queue is {rem}. NREM triggers per domain cluster "
+            f"REM queue is {rem_text}. NREM triggers per domain cluster "
             f"(≥{NREM_FACT_CLUSTER_MIN} facts or ≥{NREM_DECISION_CLUSTER_MIN} decisions); "
             f"{uncon_raw} raw unconsolidated facts."
         )
@@ -272,7 +343,9 @@ def range_stats(rows: list[dict]) -> dict:
         "dream_backlog_delta": first["dream_backlog"] - last["dream_backlog"],
         "dream_backlog_min": min(backlog_vals),
         "dream_backlog_max": max(backlog_vals),
-        "rem_cleared_total": max(0, first["rem_backlog"] - last["rem_backlog"]),
+        "rem_cleared_total": max(
+            0, (first.get("rem_backlog") or 0) - (last.get("rem_backlog") or 0)
+        ),
         "nrem_cleared_total": max(0, (first.get("nrem_backlog") or 0)
                                  - (last.get("nrem_backlog") or 0)),
         "summaries_added_total": max(0, (last.get("summaries_total") or 0)
@@ -306,6 +379,12 @@ def build_api_payload(
         "decisions_rem_pending", "facts_consolidated", "summaries_total", "facts_total",
         "outbox_pending", "outbox_applied", "outbox_rem_reviewed", "technical_docs",
     )}
+    # Old keys use 0 when the sample never had them. A new reading is None
+    # on a row that never carried the key, so history does not draw a zero
+    # for a field the gateway had not started sending (fact:3589: the four
+    # integers were added in 1.1.2 and nothing was removed).
+    for key in _NEW_READINGS:
+        series[key] = [r[key] if key in r else None for r in enriched]
     series["outbox_failed"] = [r.get("outbox_failed", 0) for r in enriched]
     if IGNORED_OUTBOX_IDS:
         series["outbox_failed_ignored"] = [r.get("outbox_failed_ignored", 0) for r in enriched]

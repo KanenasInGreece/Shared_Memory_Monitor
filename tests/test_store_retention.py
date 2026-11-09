@@ -159,5 +159,35 @@ class BreakdownNotPersistedTests(unittest.TestCase):
         self.assertNotIn("telemetry_breakdown", row)
 
 
+class DecisionReadinessDuplicateTests(unittest.TestCase):
+    def test_a_readiness_change_inside_the_window_is_kept(self):
+        from sm_telemetry_monitor import store
+        t0 = datetime.now(UTC).replace(microsecond=0)
+        base = {
+            "collected_at": t0.isoformat(),
+            "facts_total": 10,
+            "facts_rem_pending": 1,
+            "decisions_rem_pending": 2,
+            "nrem_backlog": 3,
+            "nrem_fact_cycles": 3,
+            "nrem_decision_cycles": 0,
+            "nrem_backlog_source": "telemetry",
+            "gateway_status": "ok",
+        }
+        changed = dict(base)
+        changed["collected_at"] = (t0 + timedelta(seconds=30)).isoformat()
+        changed["decisions_rem_pending"] = 5
+        same = dict(base)
+        same["collected_at"] = (t0 + timedelta(seconds=20)).isoformat()
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "t.db"
+            jsonl = Path(td) / "t.jsonl"
+            with mock.patch.multiple(store, DB_FILE=db, DATA_FILE=jsonl):
+                store.init_db()
+                self.assertTrue(store.insert_snapshot(base))
+                self.assertFalse(store.insert_snapshot(same))
+                self.assertTrue(store.insert_snapshot(changed))
+
+
 if __name__ == "__main__":
     unittest.main()

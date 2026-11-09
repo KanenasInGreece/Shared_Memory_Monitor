@@ -1725,6 +1725,26 @@ class RemDrainSignalTests(unittest.TestCase):
         self.assertEqual(rem_drain_signal(s, window_s=300), "insufficient")
 
 
+class RemTrendAcrossUpgradeTests(unittest.TestCase):
+    def test_flat_facts_stay_flat_when_old_rows_stored_the_sum(self):
+        rows = [
+            {
+                "collected_at": "2026-06-26T12:00:00+00:00",
+                "rem_backlog": 10,
+                "facts_rem_pending": 4,
+                "decisions_rem_pending": 6,
+            },
+            {
+                "collected_at": "2026-06-26T13:00:00+00:00",
+                "rem_backlog": 4,
+                "facts_rem_pending": 4,
+                "decisions_rem_pending": 6,
+            },
+        ]
+        with patch("sm_telemetry_monitor.system_health.load_history", return_value=rows):
+            self.assertEqual(_system_health_mod._rem_trend(), "flat")
+
+
 class GraphIntegrityHealthTests(unittest.TestCase):
     def _telemetry_payload(self, integrity=None):
         t = {

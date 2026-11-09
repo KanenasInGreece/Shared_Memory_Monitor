@@ -64,6 +64,17 @@ def flatten_snapshot(payload: dict, collected_at: datetime, health: dict) -> dic
         # reachability. Prefer /health, fall back to telemetry's top-level copy.
         "inference_busy": health.get("inference_busy") or t.get("inference_busy"),
     }
+    # fact:3589 (framework 1.1.2 added four integers; API stays 6 and nothing
+    # was removed). Copy a key only when the gateway sent it, and do not
+    # coerce a missing one to 0.
+    if "retrospectives_rem_pending" in nj:
+        row["retrospectives_rem_pending"] = nj["retrospectives_rem_pending"]
+    rem = t.get("rem")
+    if isinstance(rem, dict):
+        if "backlog_older_prompt" in rem:
+            row["rem_backlog_older_prompt"] = rem["backlog_older_prompt"]
+        if "backlog_withheld" in rem:
+            row["rem_backlog_withheld"] = rem["backlog_withheld"]
     nrem = nrem_counts_from_telemetry(t)
     if nrem and nrem.get("nrem_backlog_source") == "telemetry":
         row.update(nrem)
