@@ -254,8 +254,8 @@ const HISTORY_RANGE_LABEL = "last 24 hours";
 const SERIES_KEYS = [
   "technical_docs", "outbox_pending", "outbox_applied", "outbox_rem_reviewed",
   "outbox_failed", "summaries_total", "facts_total", "facts_rem_pending",
-  "facts_unconsolidated", "decisions_rem_pending", "rem_backlog", "nrem_backlog",
-  "dream_backlog",
+  "retrospectives_rem_pending", "facts_unconsolidated", "decisions_rem_pending",
+  "rem_backlog", "nrem_backlog", "dream_backlog",
 ];
 
 let historyData = null;
@@ -598,15 +598,26 @@ function renderGatewayNodes(health, latest) {
     failed > 0 ? { k: "Outbox failed", v: failed, bad: true } : null,
   ]);
 
-  const remP = latest?.facts_rem_pending || 0;
-  const decP = latest?.decisions_rem_pending || 0;
+  // REM pending is facts, plus retrospectives when that number was sent.
+  // decisions_rem_pending is computed readiness (decision:3582: a decision
+  // is ready when the facts and retrospectives it points at are processed),
+  // so it is a separate metric and is not added (fact:3560). Neither count
+  // colors the node; /health does.
+  const asCount = (v) => (typeof v === "number" ? v : null);
+  const factsRem = asCount(latest?.facts_rem_pending);
+  const retrosRem = asCount(latest?.retrospectives_rem_pending);
+  const remPending = factsRem == null && retrosRem == null
+    ? "—"
+    : (factsRem ?? 0) + (retrosRem ?? 0);
+  const notReady = asCount(latest?.decisions_rem_pending);
   const njVis = !reachable
     ? { state: "unknown", label: "—" }
     : deriveVisualState(by.neo4j, {});
   setNodeState(document.getElementById("node-neo4j"), njVis.state, njVis.label);
   setMetrics("node-neo4j-metrics", [
     { k: "Facts", v: latest?.facts_total ?? "—" },
-    { k: "REM pending", v: remP + decP, hot: remP + decP > 0 },
+    { k: "REM pending", v: remPending },
+    { k: "Decisions not ready", v: notReady == null ? "—" : notReady },
     { k: "Unconsolidated", v: latest?.facts_unconsolidated ?? "—" },
     { k: "Decisions", v: latest?.decisions_total ?? "—" },
   ]);
@@ -665,7 +676,11 @@ function rowAt(index) {
   if (!historyData?.series) return {};
   const row = {};
   for (const k of SERIES_KEYS) {
-    row[k] = historyData.series[k]?.[index] ?? 0;
+    const v = historyData.series[k]?.[index];
+    // retrospectives_rem_pending is absent on samples from before framework
+    // 1.1.2 (fact:3589: the integer was added and nothing was removed). A
+    // hole must stay null so replay does not add a zero the gateway never sent.
+    row[k] = k === "retrospectives_rem_pending" ? (v ?? null) : (v ?? 0);
   }
   row.collected_at = historyData.timestamps?.[index] || historyData.labels?.[index];
   return row;

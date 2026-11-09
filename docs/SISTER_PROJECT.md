@@ -25,7 +25,7 @@ The monitor never imports framework Python code. **No third data path** in monit
 | `GET /pool/status` | Dream-job `free_slots` + per-backend `serves_all` / `counts_free_slot` (framework **≥0.9.13**; monitor v0.9.19+) |
 | `GET /memory/telemetry` | Pipeline metrics, `nrem`, `breakdown`, `spine`, `compliance` (**≥1.0.7** `label_distribution` / `predicate_distribution` / `top_paths` feed the schema drawer's graph panels), `latency` (**≥0.9.60** `rem_ms.by_model` `wall_ms` / `n_service` / `timing_source` / `backend`), `entity_graph`, `consolidation`; **≥0.9.4** `llm_faults` + `credentials`; **≥0.9.8** `credentials.*_last_ts` siblings; **≥0.9.9** `credentialed_route_denied` |
 
-**Client API version:** Monitor **v1.1.1** sets `bridge.API_VERSION = 6`.
+**Client API version:** Monitor **v1.1.2** sets `bridge.API_VERSION = 6`.
 Doctor `compat=ok` for a gateway `api_version` of **4, 5, or 6**. Framework
 **1.1.0** and **1.1.1** both serve API 6; **1.1.1** did not change the code
 or the telemetry contract. A mismatch only logs on the gateway.

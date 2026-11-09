@@ -4,7 +4,16 @@ All notable changes to Shared Memory Monitor are documented here.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [1.1.2] - 2026-11-09
+
+### Changed
+- `rem_backlog` is the fact REM queue only. `decisions_rem_pending` is
+  labelled not ready and is not added to that queue, the dream backlog,
+  or the entity-graph `rem_pending` flag.
+- Four framework 1.1.2 readings appear when the gateway sends them:
+  retrospectives awaiting REM, older prompt, withheld, and insight groups
+  excluded because a decision was not ready. A missing reading stays
+  absent. A real zero stays zero. None of these counts is a health badge.
 
 ## [1.1.1] - 2026-11-06
 

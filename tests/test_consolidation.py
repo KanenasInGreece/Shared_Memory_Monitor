@@ -376,6 +376,34 @@ class ConsolidationFromPayloadTests(unittest.TestCase):
         self.assertTrue(gh["present"])
         self.assertFalse(gh["rem_pending"])
 
+    def test_graph_health_decisions_not_ready_does_not_set_rem_pending(self):
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "neo4j": {"decisions_rem_pending": 6},
+                "entity_graph": {"entities_total": 100, "orphan_entities": 1,
+                                 "singleton_entities": 1, "top_hubs": []},
+            },
+        }
+        gh = consolidation_from_payload(health, telemetry)["graph_health"]
+        self.assertEqual(gh["rem_pending_decisions"], 6)
+        self.assertFalse(gh["rem_pending"])
+
+    def test_graph_health_retrospectives_set_rem_pending(self):
+        health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
+        telemetry = {
+            "status": "success",
+            "telemetry": {
+                "neo4j": {"retrospectives_rem_pending": 4},
+                "entity_graph": {"entities_total": 100, "orphan_entities": 1,
+                                 "singleton_entities": 1, "top_hubs": []},
+            },
+        }
+        gh = consolidation_from_payload(health, telemetry)["graph_health"]
+        self.assertEqual(gh["rem_pending_retrospectives"], 4)
+        self.assertTrue(gh["rem_pending"])
+
     def test_graph_health_missing(self):
         health = {"status": "ok", "consolidation": {"stalled": False, "fresh": True}}
         gh = consolidation_from_payload(health, {"status": "success", "telemetry": {}})["graph_health"]

@@ -42,7 +42,8 @@ class PoolWordingTests(unittest.TestCase):
     def test_fact_decision_meta_rows_use_rem_pending_and_unconsolidated(self):
         self.assertIn('"neo4j Fact", "rem_pending"', self.html)
         self.assertIn('"neo4j Fact", "unconsolidated"', self.html)
-        self.assertIn('"neo4j Decision", "rem_pending"', self.html)
+        self.assertIn('"neo4j Decision", "not_ready"', self.html)
+        self.assertNotIn('"neo4j Decision", "rem_pending"', self.html)
         # "REM-processed facts" elsewhere is the unrelated consolidation-coverage
         # KPI (coverage.rem_processed) — only the neo4j meta-row labels rename.
         self.assertNotIn('"neo4j Fact", "rem_processed"', self.html)

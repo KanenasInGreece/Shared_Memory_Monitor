@@ -1,8 +1,12 @@
 import unittest
 
-from sm_telemetry_monitor.analytics import enrich_row, story_summary
+from datetime import UTC, datetime
+
+from sm_telemetry_monitor.analytics import build_api_payload, enrich_row, story_summary
+from sm_telemetry_monitor.collector import flatten_snapshot
 from sm_telemetry_monitor.nrem_backlog import (
     compute_nrem_cycles,
+    nrem_counts_from_telemetry,
     partition_domain_clusters,
 )
 
@@ -65,8 +69,9 @@ class TestEnrichRowNrem(unittest.TestCase):
             },
         )
         self.assertEqual(row["nrem_backlog"], 3)
-        self.assertEqual(row["rem_backlog"], 3)
-        self.assertEqual(row["dream_backlog"], 6)
+        self.assertEqual(row["rem_backlog"], 1)
+        self.assertEqual(row["dream_backlog"], 4)
+        self.assertEqual(row["decisions_rem_pending"], 2)
         self.assertEqual(row["facts_unconsolidated"], 24)
         self.assertEqual(row["nrem_backlog_source"], "telemetry")
 
@@ -89,6 +94,122 @@ class TestEnrichRowNrem(unittest.TestCase):
         self.assertEqual(row["nrem_backlog"], 4)
         self.assertEqual(row["nrem_backlog_source"], "estimate")
         self.assertEqual(row["dream_backlog"], 4)
+        self.assertIsNone(row["rem_backlog"])
+
+
+class TestNewReadingsStayAbsent(unittest.TestCase):
+    """A key the gateway did not send stays None. A sent 1490 is kept."""
+
+    def test_missing_new_key_stays_none_and_decisions_are_not_rem(self):
+        row = enrich_row(
+            {"facts_rem_pending": 1, "decisions_rem_pending": 2, "facts_total": 10},
+            nrem_counts={
+                "nrem_backlog": 3,
+                "nrem_fact_cycles": 3,
+                "nrem_decision_cycles": 0,
+                "nrem_backlog_source": "telemetry",
+            },
+        )
+        self.assertEqual(row["rem_backlog"], 1)
+        self.assertEqual(row["dream_backlog"], 4)
+        self.assertNotIn("retrospectives_rem_pending", row)
+        self.assertNotIn("rem_backlog_older_prompt", row)
+        self.assertNotIn("rem_backlog_withheld", row)
+        self.assertNotIn("insight_excluded_pending_rem", row)
+        payload = build_api_payload([{
+            "collected_at": "2026-11-09T00:00:00+00:00",
+            **row,
+        }])
+        for key in (
+            "retrospectives_rem_pending",
+            "rem_backlog_older_prompt",
+            "rem_backlog_withheld",
+            "insight_excluded_pending_rem",
+        ):
+            self.assertIsNone(payload["series"][key][0])
+        stages = {s["key"]: s["value"] for s in payload["pipeline"]}
+        self.assertIsNone(stages["rem_backlog_older_prompt"])
+        self.assertEqual(stages["decisions_rem_pending"], 2)
+        decisions = next(s for s in payload["pipeline"] if s["key"] == "decisions_rem_pending")
+        self.assertEqual(decisions["label"], "Decisions not ready")
+
+    def test_present_1490_is_kept(self):
+        row = enrich_row({
+            "facts_rem_pending": 0,
+            "decisions_rem_pending": 7,
+            "facts_total": 10,
+            "rem_backlog_older_prompt": 1490,
+            "rem_backlog_withheld": 0,
+            "retrospectives_rem_pending": 4,
+            "nrem_backlog": 3,
+            "nrem_fact_cycles": 3,
+            "nrem_decision_cycles": 0,
+            "nrem_backlog_source": "telemetry",
+            "insight_excluded_pending_rem": 1490,
+        })
+        self.assertEqual(row["rem_backlog"], 0)
+        self.assertEqual(row["dream_backlog"], 3)
+        self.assertEqual(row["rem_backlog_older_prompt"], 1490)
+        self.assertEqual(row["rem_backlog_withheld"], 0)
+        self.assertEqual(row["insight_excluded_pending_rem"], 1490)
+        self.assertEqual(row["retrospectives_rem_pending"], 4)
+        payload = build_api_payload([{
+            "collected_at": "2026-11-09T00:00:00+00:00",
+            **{k: v for k, v in row.items() if k != "rem_backlog"},
+        }])
+        # enrich runs again. The stored 1490 is still the series point.
+        self.assertEqual(payload["series"]["rem_backlog_older_prompt"], [1490])
+        self.assertEqual(payload["series"]["insight_excluded_pending_rem"], [1490])
+        self.assertEqual(payload["series"]["rem_backlog_withheld"], [0])
+        self.assertEqual(payload["latest"]["rem_backlog"], 0)
+
+    def test_nrem_counts_copy_insight_only_when_present(self):
+        absent = nrem_counts_from_telemetry({
+            "nrem": {"fact_cycles": 1, "decision_cycles": 2, "total_cycles": 3},
+        })
+        self.assertNotIn("insight_excluded_pending_rem", absent)
+        present = nrem_counts_from_telemetry({
+            "nrem": {
+                "fact_cycles": 0,
+                "decision_cycles": 0,
+                "total_cycles": 0,
+                "insight_excluded_pending_rem": 1490,
+            },
+        })
+        self.assertEqual(present["insight_excluded_pending_rem"], 1490)
+
+    def test_flatten_copies_sent_keys_and_omits_missing_ones(self):
+        payload = {
+            "status": "success",
+            "telemetry": {
+                "postgres": {},
+                "neo4j": {"facts_rem_pending": 0, "retrospectives_rem_pending": 3},
+                "rem": {"backlog_older_prompt": 1490},
+                "nrem": {
+                    "fact_cycles": 0,
+                    "decision_cycles": 0,
+                    "total_cycles": 0,
+                    "insight_excluded_pending_rem": 0,
+                },
+            },
+        }
+        row = flatten_snapshot(payload, datetime.now(UTC), {"status": "ok"})
+        self.assertEqual(row["retrospectives_rem_pending"], 3)
+        self.assertEqual(row["rem_backlog_older_prompt"], 1490)
+        self.assertEqual(row["insight_excluded_pending_rem"], 0)
+        self.assertNotIn("rem_backlog_withheld", row)
+        bare = flatten_snapshot(
+            {"status": "success", "telemetry": {"postgres": {}, "neo4j": {}}},
+            datetime.now(UTC),
+            {"status": "ok"},
+        )
+        for key in (
+            "retrospectives_rem_pending",
+            "rem_backlog_older_prompt",
+            "rem_backlog_withheld",
+            "insight_excluded_pending_rem",
+        ):
+            self.assertNotIn(key, bare)
 
 
 class TestBacklogDoesNotInventHealth(unittest.TestCase):

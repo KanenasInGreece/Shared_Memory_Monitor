@@ -296,7 +296,21 @@ def _is_duplicate(last: dict, cur: dict) -> bool:
     keys = (
         "dream_backlog", "rem_backlog", "nrem_backlog", "facts_unconsolidated",
         "outbox_failed", "summaries_total", "outbox_applied",
+        # rem_backlog no longer moves when only readiness changes, so the
+        # column has to be compared itself (fact:3560: decisions were in the sum).
+        "decisions_rem_pending",
     )
+    # These four live only in raw_json. Compare the value itself, not `or 0`,
+    # so a row that gains one is not dropped as a duplicate of a row that
+    # never had the key (fact:3589: framework 1.1.2 added the four integers).
+    new_keys = (
+        "retrospectives_rem_pending",
+        "rem_backlog_older_prompt",
+        "rem_backlog_withheld",
+        "insight_excluded_pending_rem",
+    )
+    if any(last.get(key) != cur.get(key) for key in new_keys):
+        return False
     return all((last.get(k) or 0) == (cur.get(k) or 0) for k in keys)
 
 

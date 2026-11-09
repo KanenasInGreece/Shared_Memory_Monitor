@@ -53,7 +53,7 @@ def _style_time_axis(ax, times: list[datetime]) -> None:
 def _render_status_panel(rows: list[dict]) -> None:
     """Visual gauge panel — backlog bars + donut, not plain text."""
     latest, first = rows[-1], rows[0]
-    backlog_labels = ["Facts REM\npending", "Unconsolidated\nfacts", "Decisions REM\npending"]
+    backlog_labels = ["Facts REM\npending", "Unconsolidated\nfacts", "Decisions\nnot ready"]
     backlog_vals = [
         latest.get("facts_rem_pending", 0) or 0,
         latest.get("facts_unconsolidated", 0) or 0,
@@ -84,7 +84,7 @@ def _render_status_panel(rows: list[dict]) -> None:
     for key, label in (
         ("facts_rem_pending", "facts REM"),
         ("facts_unconsolidated", "unconsolidated"),
-        ("decisions_rem_pending", "decisions REM"),
+        ("decisions_rem_pending", "decisions not ready"),
     ):
         s, c = first.get(key, 0) or 0, latest.get(key, 0) or 0
         cleared.append(f"{label}: {s}→{c} ({max(0, s - c)} cleared)")
@@ -111,7 +111,7 @@ def render_graphs(rows: list[dict]) -> None:
     _shade_rem_bursts(ax, t0, t1)
     ax.plot(times, _series(rows, "facts_rem_pending"), marker="o", label="facts REM pending")
     ax.plot(times, _series(rows, "facts_unconsolidated"), marker="s", label="facts unconsolidated")
-    ax.plot(times, _series(rows, "decisions_rem_pending"), marker="^", label="decisions REM pending")
+    ax.plot(times, _series(rows, "decisions_rem_pending"), marker="^", label="decisions not ready")
     ax.set_title("Dream-cycle backlog (shaded bands = 120 s REM poll windows)")
     ax.set_ylabel("count")
     ax.legend(loc="upper right")
@@ -172,7 +172,7 @@ def render_graphs(rows: list[dict]) -> None:
         ax.bar(d_times, [d["rem_pending_delta"] for d in deltas], width=0.003,
                label="facts REM pending cleared", alpha=0.85)
         ax.bar(d_times, [d["decisions_rem_delta"] for d in deltas], width=0.003,
-               label="decisions REM pending cleared", alpha=0.55)
+               label="decisions not ready cleared", alpha=0.55)
         ax.axhline(
             MAX_REM_PER_INTERVAL, color="gray", linestyle="--", linewidth=1,
             label=f"max REM throughput / {POLL_INTERVAL_S // 60} min (~{MAX_REM_PER_INTERVAL})",

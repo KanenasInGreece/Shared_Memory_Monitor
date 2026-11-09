@@ -946,11 +946,15 @@ function renderConsolidationDrilldown(C) {
       if (gh.largest_alias_component != null && gh.alias_edges > 0) {
         kpis.push(["Largest alias group", String(gh.largest_alias_component)]);
       }
-      // REM-pending entities aren't yet wired up, so they inflate the
-      // fragmentation share — show the backlog as explicit context, flagged warn.
+      // rem_pending is facts or retrospectives still awaiting REM. The
+      // decision count is computed readiness and is not this sentence.
       if (gh.rem_pending) {
-        const fp = gh.rem_pending_facts || 0, dp = gh.rem_pending_decisions || 0;
-        kpis.push(["Awaiting REM", `${fp} facts · ${dp} decisions`, "warn"]);
+        const parts = [];
+        if (typeof gh.rem_pending_facts === "number") parts.push(`${gh.rem_pending_facts} facts`);
+        if (typeof gh.rem_pending_retrospectives === "number") {
+          parts.push(`${gh.rem_pending_retrospectives} retrospectives`);
+        }
+        kpis.push(["Awaiting REM", parts.join(" · ") || "records"]);
       }
       ghHead.hidden = false;
       ghBox.hidden = false;
@@ -2245,7 +2249,8 @@ function renderBreakdown(B) {
   if (nj.facts?.rem_pending != null) metaRows.push(["neo4j Fact", "rem_pending", nj.facts.rem_pending]);
   if (nj.facts?.unconsolidated != null) metaRows.push(["neo4j Fact", "unconsolidated", nj.facts.unconsolidated]);
   if (nj.decisions?.total != null) metaRows.push(["neo4j Decision", "total", nj.decisions.total]);
-  if (nj.decisions?.rem_pending != null) metaRows.push(["neo4j Decision", "rem_pending", nj.decisions.rem_pending]);
+  const decNotReady = nj.decisions?.not_ready ?? nj.decisions?.rem_pending;
+  if (decNotReady != null) metaRows.push(["neo4j Decision", "not_ready", decNotReady]);
   const metaFallback = pg.error || nj.error || "No outbox or summary rows";
   document.querySelector("#bd-pg-meta tbody").innerHTML = metaRows.length
     ? metaRows.map(r => `<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td><td>${esc(r[2])}</td></tr>`).join("")
@@ -2413,20 +2418,26 @@ function renderSidebarMetrics(D) {
   const stages = [
     {k:"outbox_failed", l:"Failed", hot: v => v > 0, bad: true},
     {k:"facts_rem_pending", l:"Facts REM", hot: v => v > 0},
-    {k:"decisions_rem_pending", l:"Dec REM", hot: v => v > 5},
+    {k:"decisions_rem_pending", l:"Not ready", plain: true},
+    {k:"retrospectives_rem_pending", l:"Retros REM", plain: true},
+    {k:"rem_backlog_older_prompt", l:"Older prompt", plain: true},
+    {k:"rem_backlog_withheld", l:"Withheld", plain: true},
+    {k:"insight_excluded_pending_rem", l:"Insight excluded", plain: true},
     {k:"nrem_backlog", l:"NREM cycles", nrem: true},
     {k:"facts_unconsolidated", l:"Unconsolidated", nrem: true},
   ];
-  document.getElementById("pipeline").innerHTML = stages.map(({k,l,hot,bad,nrem}) => {
+  document.getElementById("pipeline").innerHTML = stages.map(({k,l,hot,bad,nrem,plain}) => {
     const cell = pmap[k] || {};
-    const v = cell.value ?? 0;
-    // NREM cells: green = healthy (gated work is normal); red only when the
-    // consolidation signal is stalled — matches the Consolidation tile and the
-    // Infrastructure NREM daemon, so the same count never shows two colors.
-    const cls = bad && v > 0 ? "bad"
+    // Plain cells read the sample. A missing value is an em dash and a real
+    // 0 stays 0. They take no hot class: the count is not a health badge.
+    const raw = plain ? L[k] : (cell.value ?? 0);
+    const missing = raw == null;
+    const v = missing ? "—" : raw;
+    const cls = plain ? ""
+      : bad && raw > 0 ? "bad"
       : nrem ? (consolidationStalled ? "bad" : "good")
-      : (hot && hot(v)) ? "hot"
-      : v === 0 ? "good" : "";
+      : (hot && hot(raw)) ? "hot"
+      : raw === 0 ? "good" : "";
     const title = cell.hint ? ` title="${esc(cell.hint)}"` : "";
     return `<div class="pipe-cell ${cls}"${title}><div class="n">${esc(v)}</div><div class="l">${esc(l)}</div></div>`;
   }).join("");

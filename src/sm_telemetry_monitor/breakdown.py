@@ -77,7 +77,11 @@ def fetch_neo4j_breakdown(t: dict | None) -> dict:
         }
         out["decisions"] = {
             "total": count("decisions_total"),
-            "rem_pending": count("decisions_rem_pending"),
+            # decisions_rem_pending is computed readiness, not a REM queue
+            # (decision:3582: a decision is ready when the facts and
+            # retrospectives it points at are processed). The drawer prints
+            # not_ready so the row is not labelled rem_pending (fact:3560).
+            "not_ready": count("decisions_rem_pending"),
         }
 
     return out
