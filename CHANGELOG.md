@@ -4,6 +4,19 @@ All notable changes to Shared Memory Monitor are documented here.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.3] - 2026-11-16
+
+### Fixed
+- The sleep-cycle chart no longer stops the poll loop when a framework
+  1.1.2 reading is absent. A missing count is left off the funnel. It is
+  not drawn as zero, and a real zero on those readings stays off the
+  funnel as before. Outbox failed and pending stay visible at zero.
+
+### Changed
+- `config.llm_affinity.max_inflight` is copied only when the gateway
+  sends it. Framework 1.1.4 removed that health key. An older gateway
+  that still sends the key keeps the value, including an explicit null.
+
 ## [1.1.2] - 2026-11-09
 
 ### Changed

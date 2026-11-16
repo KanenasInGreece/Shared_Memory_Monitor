@@ -449,6 +449,30 @@ class GatewayConfigTests(unittest.TestCase):
         self.assertNotIn("local", cfg["summary"])
         self.assertEqual(cfg["pool_tuning"]["cooldown_s"], 300.0)
         self.assertEqual(cfg["affinity"]["prefix_chars"], 6144)
+        self.assertEqual(cfg["affinity"]["ttl_s"], 600.0)
+        self.assertEqual(cfg["affinity"]["max_inflight"], 4)
+
+    def test_affinity_omits_max_inflight_when_gateway_does(self):
+        """Framework 1.1.4 removed the knob. Absence stays absent."""
+        health = {
+            **_healthy_gateway(),
+            "config": {
+                "llm_backends": [{"url": "http://localhost:4000"}],
+                "llm_affinity": {"prefix_chars": 6144, "ttl_s": 600.0},
+            },
+        }
+        affinity = _gateway_config(health)["affinity"]
+        self.assertEqual(affinity, {"prefix_chars": 6144, "ttl_s": 600.0})
+        self.assertNotIn("max_inflight", affinity)
+
+    def test_affinity_keeps_an_explicit_null(self):
+        health = {
+            **_healthy_gateway(),
+            "config": {"llm_affinity": {"prefix_chars": 6144, "max_inflight": None}},
+        }
+        affinity = _gateway_config(health)["affinity"]
+        self.assertIn("max_inflight", affinity)
+        self.assertIsNone(affinity["max_inflight"])
 
     def test_config_placement_local_and_external(self):
         """Framework ≥0.8.9: has_credential + model on config.llm_backends (no secrets)."""
