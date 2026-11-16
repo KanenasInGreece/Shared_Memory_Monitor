@@ -588,6 +588,14 @@ def _gateway_config(raw: dict) -> dict | None:
 
     pool_tuning = cfg.get("llm_pool_tuning") if isinstance(cfg.get("llm_pool_tuning"), dict) else {}
     affinity = cfg.get("llm_affinity") if isinstance(cfg.get("llm_affinity"), dict) else {}
+    # Framework 1.1.4 removed config.llm_affinity.max_inflight (fact:3687:
+    # the knob was only copied onto /health). Copy a key only when this
+    # gateway sent it, including an explicit null.
+    affinity_out = {
+        key: affinity[key]
+        for key in ("prefix_chars", "ttl_s", "max_inflight")
+        if key in affinity
+    }
     embed_max = cfg.get("embed_max_chars")
 
     n = len(backends)
@@ -634,11 +642,7 @@ def _gateway_config(raw: dict) -> dict | None:
             "cooldown_s": pool_tuning.get("cooldown_s"),
             "max_tries": pool_tuning.get("max_tries"),
         } if pool_tuning else None,
-        "affinity": {
-            "prefix_chars": affinity.get("prefix_chars"),
-            "ttl_s": affinity.get("ttl_s"),
-            "max_inflight": affinity.get("max_inflight"),
-        } if affinity else None,
+        "affinity": affinity_out or None,
         "summary": " · ".join(bits) if bits else "configured",
     }
     # Only when the gateway sent it (config preferred, else top-level health bool).
