@@ -26,19 +26,24 @@ class DoctorTests(unittest.TestCase):
                 self.assertIn(state, ("missing", "set"))
 
     def test_client_api_version_matches_bridge(self):
-        self.assertEqual(API_VERSION, 6)
+        self.assertEqual(API_VERSION, 7)
         with patch("sm_telemetry_monitor.doctor.get_telemetry", return_value={}), patch("sm_telemetry_monitor.doctor.get_health", return_value={
             "status": "ok", "version": "1.0.44", "api_version": 4,
         }):
             from sm_telemetry_monitor.doctor import _check_coordinator
             block = _check_coordinator()
-        self.assertEqual(block["client_api_version"], 6)
+        self.assertEqual(block["client_api_version"], 7)
         self.assertEqual(block["api_version"], 4)
         self.assertEqual(block["compat"], "ok")
         self.assertFalse(block["has_llm_placement"])
 
     def test_api_compat_gateways(self):
         from sm_telemetry_monitor.doctor import _check_coordinator
+        with patch("sm_telemetry_monitor.doctor.get_telemetry", return_value={}), patch(
+            "sm_telemetry_monitor.doctor.get_health",
+            return_value={"status": "ok", "version": "1.2.0", "api_version": 7},
+        ):
+            self.assertEqual(_check_coordinator()["compat"], "ok")
         with patch("sm_telemetry_monitor.doctor.get_telemetry", return_value={}), patch(
             "sm_telemetry_monitor.doctor.get_health",
             return_value={"status": "ok", "version": "1.1.0", "api_version": 6},
@@ -55,7 +60,7 @@ class DoctorTests(unittest.TestCase):
         ):
             block = _check_coordinator()
         self.assertEqual(block["compat"], "incompatible")
-        self.assertEqual(block["client_api_version"], 6)
+        self.assertEqual(block["client_api_version"], 7)
 
     def test_coordinator_llm_placement_from_config(self):
         with patch("sm_telemetry_monitor.doctor.get_telemetry", return_value={}), patch("sm_telemetry_monitor.doctor.get_health", return_value={

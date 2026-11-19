@@ -1,4 +1,6 @@
 import json
+import shutil
+import subprocess
 import tempfile
 import unittest
 from datetime import UTC, datetime
@@ -2248,6 +2250,218 @@ class HealthAsVerdictTests(unittest.TestCase):
         self.assertIn("nEl.title = line.title", src)
         diagram = Path("static/diagram.html").read_text()
         self.assertIn("c?.detail", diagram)
+        # The diagram prints detail as Signal. Age must not recolour a node.
+        self.assertNotIn("oldest_outstanding_age_s", diagram)
+        self.assertNotIn("encoder_wait", diagram)
+
+    def test_encoder_wait_copies_sent_keys_including_null(self):
+        health = {
+            **_healthy_gateway(),
+            "dependencies": {
+                "embedder": {
+                    "state": "ok",
+                    "outstanding_count": None,
+                    "oldest_outstanding_age_s": None,
+                    "last_completed_at": None,
+                },
+                "reranker": {"state": "ok", "outstanding_count": 0},
+            },
+            "backend_capability": {
+                "embedder": {
+                    "status": "ok",
+                    "probe_outstanding_age_s": None,
+                    "projection_stale": False,
+                    "ceiling_s": 30,
+                    "serves_full_payload": True,
+                },
+            },
+        }
+        snap = self._snap(health)
+        embed = self._comp(snap, "embedder")
+        rerank = self._comp(snap, "reranker")
+        self.assertEqual(embed["state"], "ok")
+        self.assertEqual(embed["process"]["state"], "ok")
+        self.assertEqual(embed["workload"]["state"], "ok")
+        wait = embed["encoder_wait"]
+        self.assertIsNone(wait["outstanding_count"])
+        self.assertIsNone(wait["oldest_outstanding_age_s"])
+        self.assertIsNone(wait["last_completed_at"])
+        self.assertIsNone(wait["probe_outstanding_age_s"])
+        self.assertIs(wait["projection_stale"], False)
+        self.assertNotIn("last_deadline_cancelled_at", wait)
+        self.assertNotIn("ceiling_s", wait)
+        self.assertNotIn("serves_full_payload", wait)
+        self.assertNotIn("ceiling_s", embed)
+        self.assertNotIn("placement", embed)
+        detail = embed.get("detail") or ""
+        self.assertNotIn("waiting", detail)
+        self.assertNotIn("projection stale", detail)
+        self.assertNotIn("local", detail.lower())
+        self.assertNotIn("remote", detail.lower())
+        rwait = rerank["encoder_wait"]
+        self.assertEqual(rwait, {"outstanding_count": 0})
+        self.assertNotIn("waiting", rerank.get("detail") or "")
+        self.assertEqual(rerank["state"], "ok")
+
+    def test_encoder_wait_omitted_when_no_wait_key_was_sent(self):
+        health = {
+            **_healthy_gateway(),
+            "dependencies": {
+                "embedder": {"state": "ok"},
+                "reranker": {"state": "ok"},
+            },
+            "backend_capability": {"embedder": {"status": "ok"}},
+        }
+        snap = self._snap(health)
+        embed = self._comp(snap, "embedder")
+        self.assertNotIn("encoder_wait", embed)
+        self.assertEqual(embed["state"], "ok")
+        self.assertEqual(embed["process"]["state"], "ok")
+        self.assertEqual(embed["workload"]["state"], "ok")
+
+    def test_positive_wait_and_stale_projection_leave_state_ok(self):
+        # A queued call and a stale projection are captions. The dependency
+        # state stays the chip state, including an old too_slow status.
+        health = {
+            **_healthy_gateway(),
+            "embedder": "ok",
+            "reranker": "ok",
+            "dependencies": {
+                "embedder": {
+                    "state": "ok",
+                    "outstanding_count": 2,
+                    "oldest_outstanding_age_s": 12.4,
+                    "last_completed_at": "2026-11-19T10:00:00Z",
+                    "last_deadline_cancelled_at": "2026-11-19T09:00:00Z",
+                },
+                "reranker": {
+                    "state": "ok",
+                    "outstanding_count": 0,
+                    "oldest_outstanding_age_s": 9.5,
+                    "last_completed_at": "",
+                },
+            },
+            "backend_capability": {
+                "embedder": {
+                    "status": "too_slow",
+                    "probe_outstanding_age_s": 4,
+                    "projection_stale": True,
+                    "ceiling_s": 30,
+                    "serves_full_payload": False,
+                },
+                "reranker": {"status": "ok", "projection_stale": False},
+            },
+        }
+        snap = self._snap(health)
+        embed = self._comp(snap, "embedder")
+        self.assertEqual(embed["process"]["state"], "ok")
+        self.assertEqual(embed["workload"]["value"], "standby")
+        self.assertEqual(embed["workload"]["state"], "ok")
+        self.assertEqual(embed["state"], "ok")
+        self.assertEqual(
+            embed["encoder_wait"],
+            {
+                "outstanding_count": 2,
+                "oldest_outstanding_age_s": 12.4,
+                "last_completed_at": "2026-11-19T10:00:00Z",
+                "last_deadline_cancelled_at": "2026-11-19T09:00:00Z",
+                "probe_outstanding_age_s": 4,
+                "projection_stale": True,
+            },
+        )
+        self.assertEqual(
+            embed["detail"],
+            "capability too_slow · 2 waiting 12.4s · probe waiting 4s · "
+            "projection stale · deadline cancelled 2026-11-19T09:00:00Z · "
+            "last completed 2026-11-19T10:00:00Z",
+        )
+        self.assertNotIn("remote", embed["detail"].lower())
+        self.assertNotIn("local", embed["detail"].lower())
+        self.assertNotIn("ceiling_s", embed["encoder_wait"])
+        rerank = self._comp(snap, "reranker")
+        self.assertEqual(rerank["state"], "ok")
+        self.assertNotIn("waiting", rerank.get("detail") or "")
+        self.assertNotIn("probe waiting", rerank.get("detail") or "")
+
+    def test_count_without_age_and_bool_count_add_no_false_caption(self):
+        health = {
+            **_healthy_gateway(),
+            "dependencies": {
+                "embedder": {
+                    "state": "ok",
+                    "outstanding_count": 1,
+                },
+                "reranker": {
+                    "state": "ok",
+                    "outstanding_count": True,
+                    "oldest_outstanding_age_s": 3,
+                },
+            },
+        }
+        snap = self._snap(health)
+        embed = self._comp(snap, "embedder")
+        self.assertEqual(embed["detail"], "1 waiting")
+        self.assertEqual(embed["state"], "ok")
+        rerank = self._comp(snap, "reranker")
+        self.assertNotIn("waiting", rerank.get("detail") or "")
+
+    def test_dashboard_shows_waiting_on_the_visible_text(self):
+        src = Path("static/dashboard.html").read_text()
+        start = src.index("const _BORING_LOAD")
+        end = src.index("function consolidationCardClass")
+        body = src[start:end]
+        self.assertNotIn("placement", body)
+        self.assertNotIn("remote", body.lower())
+        self.assertNotIn("local", body.lower())
+        node = shutil.which("node")
+        self.assertIsNotNone(node)
+        script = body + r"""
+const cases = [
+  [{key: "embedder", kind: "service",
+    process: {value: "up", state: "ok"},
+    workload: {value: "standby", state: "ok"},
+    encoder_wait: {outstanding_count: 2, oldest_outstanding_age_s: 12.4}},
+   "up · 2 waiting 12.4s", "ok"],
+  [{key: "reranker", kind: "service",
+    process: {value: "up", state: "ok"},
+    workload: {value: "standby", state: "ok"},
+    encoder_wait: {outstanding_count: 0, oldest_outstanding_age_s: 9}},
+   "up", "ok"],
+  [{key: "embedder", kind: "service",
+    process: {value: "up", state: "ok"},
+    workload: {value: "standby", state: "ok"},
+    encoder_wait: {outstanding_count: 1, oldest_outstanding_age_s: null}},
+   "up · 1 waiting", "ok"],
+  [{key: "embedder", kind: "service",
+    process: {value: "degraded", state: "warn"},
+    workload: {value: "degraded", state: "warn"},
+    encoder_wait: {outstanding_count: 3, oldest_outstanding_age_s: 1}},
+   "degraded · 3 waiting 1s", "warn"],
+  [{key: "embedder", kind: "service",
+    process: {value: "up", state: "ok"},
+    workload: {value: "standby", state: "ok"}},
+   "up", "ok"],
+  [{key: "llm", kind: "service",
+    process: {value: "up", state: "ok"},
+    workload: {value: "ready", state: "ok"},
+    encoder_wait: {outstanding_count: 4, oldest_outstanding_age_s: 8}},
+   "up", "ok"],
+];
+for (const [component, text, state] of cases) {
+  const line = healthLine(component);
+  if (line.text !== text || line.state !== state) {
+    console.error(JSON.stringify({got: line, text, state, key: component.key}));
+    process.exit(1);
+  }
+}
+"""
+        ran = subprocess.run(
+            [node, "-e", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(ran.returncode, 0, ran.stderr or ran.stdout)
 
 
 if __name__ == "__main__":

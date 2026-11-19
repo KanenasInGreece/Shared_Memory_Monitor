@@ -520,7 +520,20 @@ function healthLine(c) {
     if (load.state === "warn") return { text: lv || p, state: "warn", title };
     return { text: p, state: "ok", title };
   }
-  return { text: p, state: healthUiState(proc.state), title };
+  // A waiting call is visible text. The age is not a chip state.
+  let text = p;
+  if (c.key === "embedder" || c.key === "reranker") {
+    const wait = c.encoder_wait || {};
+    const n = wait.outstanding_count;
+    if (typeof n === "number" && Number.isInteger(n) && n > 0) {
+      text += ` · ${n} waiting`;
+      const age = wait.oldest_outstanding_age_s;
+      if (typeof age === "number" && Number.isFinite(age)) {
+        text += ` ${age}s`;
+      }
+    }
+  }
+  return { text, state: healthUiState(proc.state), title };
 }
 
 function consolidationCardClass(state) {

@@ -13,7 +13,7 @@ This sister repository is that picture. It does not install databases or daemons
 | **What you get** | Live ops view over framework telemetry and logs |
 | **What you do not get** | A second metrics store, DB credentials, or write access to memory |
 | **Dashboard** | **http://127.0.0.1:8765/** |
-| **This release** | **v1.1.3** — API **v6** client, compatible with gateway API **4**, **5**, and **6** · wire-compatible with framework **≥ 0.8.33** · full panels on **≥ 0.8.9** · alternative vectors on **≥ 0.8.40** · credential-audit / `llm_faults` on **≥ 0.9.4** · credential last-event age on **≥ 0.9.8** · `credentialed_route_denied` on **≥ 0.9.9** · LLM routing / token usage / backend descriptors / `GET /pool/status` dream-ready slots on **≥ 0.9.13** · wall/mixed `by_model` latency on **≥ 0.9.60** · encoder percentiles / health-as-verdict on **≥ 0.9.74** · dual-emit drop ready for **≥ 0.9.90** · backup fence on framework **1.0.45** |
+| **This release** | **v1.2.0** — API **v7** client, compatible with gateway API **4**, **5**, **6**, and **7** · wire-compatible with framework **≥ 0.8.33** · full panels on **≥ 0.8.9** · alternative vectors on **≥ 0.8.40** · credential-audit / `llm_faults` on **≥ 0.9.4** · credential last-event age on **≥ 0.9.8** · `credentialed_route_denied` on **≥ 0.9.9** · LLM routing / token usage / backend descriptors / `GET /pool/status` dream-ready slots on **≥ 0.9.13** · wall/mixed `by_model` latency on **≥ 0.9.60** · encoder percentiles / health-as-verdict on **≥ 0.9.74** · dual-emit drop ready for **≥ 0.9.90** · backup fence on framework **1.0.45** |
 
 ---
 
@@ -119,7 +119,7 @@ Everything on screen is one of those two upstreams, or a **poll cache** of past 
 | **Role** | Memory layer — gateway, daemons, stores | Presentation only |
 | **Credentials** | Full gateway + DB secrets on the gateway host | `monitor:read` token in monitor `.env` |
 | **Upstream data** | Serves telemetry; writes journal + audit JSONL | Reads those — never Postgres/Neo4j |
-| **Wire contract** | `api_version` on `GET /health` | Client advertises **API 6** (`X-SM-Api-Version: 6`) |
+| **Wire contract** | `api_version` on `GET /health` | Client advertises **API 7** (`X-SM-Api-Version: 7`) |
 
 **Surface:** the monitor binds **`127.0.0.1:8765`** and asks the gateway for three read-only
 things — `GET /health`, `GET /memory/telemetry` and `GET /pool/status` — the schema drawer's
@@ -133,7 +133,7 @@ set `SERVER_HOST` if you deliberately want to reach the dashboard from another m
 around **20 MB/year** instead of growing without limit. Nothing is reset — thinning keeps the
 long trend and drops only minute-level detail nobody scrubs to.
 
-**Compatibility:** Monitor **v1.1.3** announces **API v6** and reports `compat=ok` for gateway API **4**, **5**, or **6** (framework **≥ 0.8.33**). Prefer **≥ 0.8.9** for the full Status picture (LLM local/external placement, entity census, latency drawer), **≥ 0.8.40** for alternative-vectors on first-write quality, **≥ 0.9.4** for credential-audit tails and `llm_faults` on pool chips, **≥ 0.9.8** for `credentials.*_last_ts` last-failure age, **≥ 0.9.9** for `credentialed_route_denied`, **≥ 0.9.13** for `llm_routing` / `llm_token_usage` / backend descriptors / `GET /pool/status` dream-ready slots, **≥ 0.9.60** for wall/mixed `by_model` latency (external OpenAI-compatible backends), **≥ 0.9.74** for encoder latency percentiles and dependency health verdicts, and **≥ 0.9.90** for telemetry dual-emit drop readiness (`patch_telemetry` normalizes relocated outbox, REM, and fault keys). Older gateways stay on the wire; missing panels simply omit fields rather than fail hard.
+**Compatibility:** Monitor **v1.2.0** announces **API v7** and reports `compat=ok` for gateway API **4**, **5**, **6**, or **7** (framework **≥ 0.8.33**). Prefer **≥ 0.8.9** for the full Status picture (LLM local/external placement, entity census, latency drawer), **≥ 0.8.40** for alternative-vectors on first-write quality, **≥ 0.9.4** for credential-audit tails and `llm_faults` on pool chips, **≥ 0.9.8** for `credentials.*_last_ts` last-failure age, **≥ 0.9.9** for `credentialed_route_denied`, **≥ 0.9.13** for `llm_routing` / `llm_token_usage` / backend descriptors / `GET /pool/status` dream-ready slots, **≥ 0.9.60** for wall/mixed `by_model` latency (external OpenAI-compatible backends), **≥ 0.9.74** for encoder latency percentiles and dependency health verdicts, and **≥ 0.9.90** for telemetry dual-emit drop readiness (`patch_telemetry` normalizes relocated outbox, REM, and fault keys). Older gateways stay on the wire; missing panels simply omit fields rather than fail hard.
 
 Where a number on the screen comes from is always the framework payload or a log line. For the field-level mapping of telemetry keys to UI bands, see [docs/SISTER_PROJECT.md](docs/SISTER_PROJECT.md) and the framework’s own telemetry docs — this README stays on the operator path, not the catalog.
 
@@ -162,8 +162,10 @@ From **Drill-down → Throughput & latency**. Per-model REM bars split model com
 **Encoders · embedding & reranking** sits at the foot of the same drawer, from
 `telemetry.encoders` (framework **≥ 0.9.74**). For `embed` and `rerank` it shows
 the fields the gateway sent: calls, errors, median, p95, max, last call, last
-payload size, and the percentile window. `encoders.limit_ms` appears when it is
-a number. `embed_window_overruns_total` and its last timestamp appear when the
+payload size, and the percentile window. The Encoder limit row appears only
+when an older gateway still sends `encoders.limit_ms` as a number. Framework
+1.2.0 publishes the wait fields on the encoder chip instead of a limit.
+`embed_window_overruns_total` and its last timestamp appear when the
 gateway sent those keys (framework **≥ 0.9.104**). Chip colour follows
 `dependencies.embedder.state` and `dependencies.reranker.state`. The probe
 string, `config.*_key_configured` (framework **≥ 1.0.42**), and a non-ok
