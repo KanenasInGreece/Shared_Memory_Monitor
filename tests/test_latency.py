@@ -245,7 +245,10 @@ class EncoderTelemetryTests(unittest.TestCase):
         self.assertEqual(
             enc["embed_window_overruns_last_ts"], "2026-11-06T00:00:00Z",
         )
+        self.assertEqual(enc["limit_ms"], 1000)
         self.assertNotIn("placement", enc)
+        self.assertNotIn("local", str(enc).lower())
+        self.assertNotIn("remote", str(enc).lower())
         absent = latency_from_payload({
             "status": "success",
             "telemetry": {
@@ -254,6 +257,19 @@ class EncoderTelemetryTests(unittest.TestCase):
         })
         self.assertNotIn("embed_window_overruns_total", absent["encoders"])
         self.assertNotIn("embed_window_overruns_last_ts", absent["encoders"])
+        self.assertNotIn("limit_ms", absent["encoders"])
+        nulled = latency_from_payload({
+            "status": "success",
+            "telemetry": {
+                "encoders": {
+                    "embed": {"calls": 1},
+                    "rerank": {},
+                    "limit_ms": None,
+                },
+            },
+        })
+        self.assertIn("limit_ms", nulled["encoders"])
+        self.assertIsNone(nulled["encoders"]["limit_ms"])
 
     def test_dashboard_shows_the_encoder_fields_the_gateway_sent(self):
         src = Path("static/dashboard.html").read_text()

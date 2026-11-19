@@ -4,6 +4,20 @@ All notable changes to Shared Memory Monitor are documented here.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.0] - 2026-11-19
+
+### Changed
+- The client announces API 7 and accepts gateway API 4 through 7. A mismatch
+  only logs on the gateway. Reads are not refused.
+- `ceiling_s`, `serves_full_payload`, and `encoders.limit_ms` are not
+  required. `limit_ms` is copied only when an older gateway still sends it,
+  including null. The Encoder limit row appears only when that value is a
+  number.
+- Embedder and reranker chips show the wait fields the gateway sent:
+  outstanding count and age, last completion, last deadline cancellation,
+  probe age, and a stale projection. An omitted key stays absent. An
+  explicit null is kept. These fields are captions, not a health badge.
+
 ## [1.1.3] - 2026-11-16
 
 ### Fixed

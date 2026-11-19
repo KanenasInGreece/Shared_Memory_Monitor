@@ -60,8 +60,8 @@ def _p95(value: float | dict | None) -> float | int | None:
 def _encoders_part(encoders: dict | None) -> dict:
     """Copy the encoder rings the gateway sent.
 
-    An overrun key the gateway omitted stays absent, so the drawer does
-    not invent a zero the contract never published.
+    An omitted overrun key or ``limit_ms`` stays absent so the drawer does
+    not invent a zero. An explicit null is kept for an older gateway.
     """
     encoders = encoders if isinstance(encoders, dict) else {}
     embed = encoders.get("embed") or {}
@@ -70,8 +70,9 @@ def _encoders_part(encoders: dict | None) -> dict:
         "present": bool(embed or rerank),
         "embed": embed,
         "rerank": rerank,
-        "limit_ms": encoders.get("limit_ms"),
     }
+    if "limit_ms" in encoders:
+        part["limit_ms"] = encoders.get("limit_ms")
     for key in ("embed_window_overruns_total", "embed_window_overruns_last_ts"):
         if key in encoders:
             part[key] = encoders[key]

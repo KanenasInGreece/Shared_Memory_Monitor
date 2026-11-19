@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime, timedelta
 
 from .analytics import rem_drain_signal
@@ -726,6 +727,77 @@ def _dependency_entry(raw: dict, field: str) -> dict | None:
     return None
 
 
+# Wait fields copied onto an encoder chip only when the gateway sent the
+# key. Age and a stale projection are captions, not a state.
+_ENCODER_DEP_WAIT = (
+    "outstanding_count",
+    "oldest_outstanding_age_s",
+    "last_completed_at",
+    "last_deadline_cancelled_at",
+)
+_ENCODER_CAP_WAIT = (
+    "probe_outstanding_age_s",
+    "projection_stale",
+)
+
+
+def _finite_number(value) -> bool:
+    """True for a real number. A bool is an int in Python and is not an age."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return math.isfinite(value)
+
+
+def _encoder_wait(raw: dict, key: str) -> dict | None:
+    """Copy the wait fields the gateway sent for one encoder.
+
+    An omitted key stays absent so a missing age is not zero, and an
+    explicit null is kept. These fields are captions, not chip state.
+    """
+    wait: dict = {}
+    deps = raw.get("dependencies")
+    dep = deps.get(key) if isinstance(deps, dict) else None
+    if isinstance(dep, dict):
+        for name in _ENCODER_DEP_WAIT:
+            if name in dep:
+                wait[name] = dep[name]
+    cap = raw.get("backend_capability")
+    one = cap.get(key) if isinstance(cap, dict) else None
+    if isinstance(one, dict):
+        for name in _ENCODER_CAP_WAIT:
+            if name in one:
+                wait[name] = one[name]
+    return wait or None
+
+
+def _wait_captions(wait: dict) -> list[str]:
+    """Caption a positive queue, a probe age, and the last deadline events.
+
+    A count of zero, a null age, and a missing key add nothing. None of
+    these phrases is a health state.
+    """
+    bits: list[str] = []
+    count = wait.get("outstanding_count")
+    if isinstance(count, int) and not isinstance(count, bool) and count > 0:
+        phrase = f"{count} waiting"
+        age = wait.get("oldest_outstanding_age_s")
+        if _finite_number(age):
+            phrase += f" {age}s"
+        bits.append(phrase)
+    probe_age = wait.get("probe_outstanding_age_s")
+    if _finite_number(probe_age):
+        bits.append(f"probe waiting {probe_age}s")
+    if wait.get("projection_stale") is True:
+        bits.append("projection stale")
+    cancelled = wait.get("last_deadline_cancelled_at")
+    if isinstance(cancelled, str) and cancelled:
+        bits.append(f"deadline cancelled {cancelled}")
+    completed = wait.get("last_completed_at")
+    if isinstance(completed, str) and completed:
+        bits.append(f"last completed {completed}")
+    return bits
+
+
 def _encoder_detail(raw: dict, key: str) -> str | None:
     """Captions the gateway already published for one encoder.
 
@@ -758,6 +830,9 @@ def _encoder_detail(raw: dict, key: str) -> str | None:
             if isinstance(status, str) and status and status != "ok":
                 if status not in reason and all(status not in bit for bit in bits):
                     bits.append(f"capability {status}")
+    wait = _encoder_wait(raw, key)
+    if wait:
+        bits.extend(_wait_captions(wait))
     return " · ".join(bits) if bits else None
 
 
@@ -1058,6 +1133,10 @@ def _build_component(key: str, field: str, label: str, kind: str, raw: dict, t: 
         detail = _encoder_detail(raw, key)
         if detail:
             built["detail"] = detail
+        # Wait fields ride along. They do not enter process, workload, or state.
+        wait = _encoder_wait(raw, key)
+        if wait:
+            built["encoder_wait"] = wait
     return built
 
 

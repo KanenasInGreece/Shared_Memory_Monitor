@@ -20,10 +20,10 @@ bootstrap_env()
 
 _log = logging.getLogger(__name__)
 
-# The client announces 6. Gateway 4, 5, and 6 stay compatible while framework
-# 1.1.0 rolls out: a mismatch only logs on the gateway, and reads are not refused.
-API_VERSION = 6
-ACCEPTED_SERVER_API_VERSIONS = (4, 5, 6)
+# The client announces 7 and treats gateway API 4, 5, 6, and 7 as compatible.
+# A mismatch only logs on the gateway, and reads are not refused.
+API_VERSION = 7
+ACCEPTED_SERVER_API_VERSIONS = (4, 5, 6, 7)
 CLIENT_VERSION_HEADER = "X-SM-Api-Version"
 
 _HTTP: httpx.Client | None = None
